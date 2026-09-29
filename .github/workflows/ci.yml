@@ -1,0 +1,49 @@
+# Verificação do próprio painel. Os workflows que o painel *gera* para os
+# repositórios dos clientes ficam em server/workflows/.
+name: Verificação
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Uma verificação por branch: um push novo cancela a anterior, que já não
+# importa.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, tipos, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    steps:
+      # Actions fixadas por commit (a tag ao lado é só referência): uma tag
+      # pode ser movida para outro código.
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          # Mesma versão que roda o painel na máquina do operador.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            web/package-lock.json
+
+      - name: Instalar dependências
+        run: |
+          npm ci --prefix server
+          npm ci --prefix web
+
+      # Sem .env: a API não lê o arquivo dentro do `node --test`, e nenhum
+      # teste fala com Drive, GitHub ou Lovable.
+      - name: Verificar
+        run: npm run check

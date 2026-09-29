@@ -1,0 +1,28 @@
+node_modules/
+dist/
+
+# Segredos do painel. O padrão cobre as cópias (.env.backup-*, .env.local…),
+# que carregam os mesmos tokens do .env; só o modelo vai para o repositório.
+.env
+.env.*
+!.env.example
+*.local
+
+# Chaves de service account nunca vão para o repositório
+g-suite-*.json
+*service-account*.json
+
+# Estado local do painel: tags, gerações, chaves (hash), sessões (hash) e
+# tokens do Lovable
+server/data/
+
+# Logs de execução local
+*.log
+
+# Lançador compilado (launcher/build.ps1) e o log que ele grava
+/Painel Sites Express.exe
+launcher/obj/
+painel.log.1
+
+# Configurações locais de teste do Vite (portas alternativas)
+web/vite.teste-*.config.ts

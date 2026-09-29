@@ -1,0 +1,5 @@
+{
+  "//": "Código compartilhado entre a API (Node) e a interface (Vite). ES modules.",
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,8 @@
+# Finais de linha LF no repositório e na cópia de trabalho, em qualquer sistema.
+# Os scripts .sh viram passos de workflow no Linux do GitHub Actions, e um CRLF
+# ali quebra o bash; o resto segue junto para os diffs não mudarem sozinhos.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary

@@ -1,0 +1,23 @@
+{
+  "name": "painel-gerenciador-sites-express",
+  "version": "1.0.0",
+  "description": "Painel de gerenciamento dos projetos captados no Google Drive e publicação dos sites via GitHub Actions + FTP",
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix server run start",
+    "setup": "npm install && npm --prefix server install && npm --prefix web install",
+    "test": "npm --prefix server run test && npm --prefix web run test",
+    "lint": "npm --prefix web run lint",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "test:server": "npm --prefix server run test",
+    "test:web": "npm --prefix web run test",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck"
+  },
+  "private": true,
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

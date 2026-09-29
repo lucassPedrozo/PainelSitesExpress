@@ -1,0 +1,26 @@
+{
+  // Checagem de tipos do JavaScript da API, sem compilar nada: o código
+  // continua sendo .js executado direto pelo Node. Os tipos vêm do JSDoc e
+  // das bibliotecas. `npm run typecheck`.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "noFallthroughCasesInSwitch": true,
+    // Sem `strict`: o objetivo é pegar erro real (propriedade inexistente,
+    // argumento do tipo errado, import quebrado) no JavaScript que existe, e
+    // não exigir anotação em todo parâmetro. `strict` é o padrão do TS 6.
+    "strict": false
+  },
+  "include": ["src/**/*.js", "src/**/*.d.ts", "../shared/**/*.js"],
+  // Os testes usam asserções dinâmicas (`assert.rejects` entrega `unknown`);
+  // tipá-los traria ruído sem pegar defeito. Eles rodam no `npm test`.
+  "exclude": ["src/**/*.test.js", "../shared/**/*.test.js"]
+}

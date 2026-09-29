@@ -1,0 +1,96 @@
+# Gerado pelo painel Joinvix Deploy. Alteracoes manuais serao sobrescritas.
+# joinvix-deploy-template: 9
+# Actions fixadas por commit (a tag ao lado e so referencia): uma tag pode ser
+# movida para outro codigo, e estes passos recebem a senha do FTP.
+name: Build
+
+on:
+  push:
+    branches:
+      - __DEFAULT_BRANCH__
+
+  pull_request:
+    branches:
+      - __DEFAULT_BRANCH__
+
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build project
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Detect package manager
+        id: package-manager
+        shell: bash
+        run: |
+          __DETECT_PACKAGE_MANAGER__
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: ${{ steps.package-manager.outputs.cache }}
+
+      - name: Setup Bun
+        if: steps.package-manager.outputs.manager == 'bun'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # Versao fixa: `latest` fazia o mesmo commit gerar builds diferentes
+          # conforme o dia em que rodava.
+          bun-version: 1.4.2
+
+      - name: Enable Corepack
+        if: steps.package-manager.outputs.manager == 'pnpm' || steps.package-manager.outputs.manager == 'yarn'
+        shell: bash
+        run: corepack enable
+
+      - name: Ensure static build
+        shell: bash
+        run: |
+          __ENSURE_STATIC_BUILD__
+
+      - name: Install dependencies and build
+        shell: bash
+        env:
+          PACKAGE_MANAGER: ${{ steps.package-manager.outputs.manager }}
+          BUILD_ENV_FILE: ${{ secrets.BUILD_ENV_FILE }}
+        run: |
+          __INSTALL_AND_BUILD__
+
+      - name: Resolve build output
+        id: build-output
+        shell: bash
+        env:
+          PUBLISH_DIR: ${{ vars.PUBLISH_DIR }}
+          SPA_FALLBACK: ${{ vars.SPA_FALLBACK }}
+        run: |
+          __RESOLVE_BUILD_OUTPUT__
+
+      - name: Ensure Joinvix signature
+        shell: bash
+        env:
+          DIST_DIR: ${{ steps.build-output.outputs.dist-dir }}
+        run: |
+          __ENSURE_JOINVIX_SIGNATURE__
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-output
+          path: ${{ steps.build-output.outputs.dist-dir }}/
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
