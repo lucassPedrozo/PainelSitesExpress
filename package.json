@@ -14,7 +14,8 @@
     "check": "npm run lint && npm run typecheck && npm run test && npm run build",
     "test:server": "npm --prefix server run test",
     "test:web": "npm --prefix web run test",
-    "typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck"
+    "typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck",
+    "segredos": "node scripts/verificar-segredos.mjs"
   },
   "private": true,
   "devDependencies": {

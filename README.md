@@ -41,6 +41,8 @@ A API inteira roda atrás de uma política de rede própria: escuta só em `127.
 |-- launcher/
 |   |-- PainelLauncher.cs
 |   `-- build.ps1
+|-- scripts/
+|   `-- verificar-segredos.mjs
 |-- server/
 |   |-- src/
 |   |   |-- ai/
@@ -101,6 +103,7 @@ A API inteira roda atrás de uma política de rede própria: escuta só em `127.
 - `web/` — interface em React, organizada por funcionalidade
 - `shared/` — o que API e interface precisam enxergar igual: permissões, leitura do domínio da coleta e nome do repositório
 - `launcher/` — lançador para Windows, compilado localmente com `build.ps1`
+- `scripts/` — varredura de segredos, para rodar antes de cada publicação
 
 ## Como executar
 
@@ -149,6 +152,14 @@ npm test
 ```
 
 Nenhum teste fala com Drive, Lovable, GitHub ou FTP de verdade: as integrações são exercitadas com dublês, e o CI roda sem nenhuma chave configurada.
+
+**Varredura de segredos antes de publicar.** Procura, em tudo o que um push enviaria (histórico incluído), cada segredo real desta máquina — `.env`, chave da service account e `server/data/` —, arquivos que nunca devem ser versionados e formatos de credencial conhecidos. Nunca imprime um valor secreto e sai com erro se achar algo:
+
+```bash
+npm run segredos -- main
+```
+
+Com `--arvore` no lugar do ref, confere os arquivos que entrariam no próximo commit.
 
 A arquitetura completa — política de rede, chaves de acesso, API, geração no Lovable, área de aprovação, encurtador, publicação por FTP, permissões do token e detecção do build — está em [`docs/GUIA-TECNICO.md`](docs/GUIA-TECNICO.md).
 
