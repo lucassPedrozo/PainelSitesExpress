@@ -1,7 +1,9 @@
 import { Globe, History, Loader2 } from "lucide-react";
 import type { Publication } from "@/lib/api/deploy";
 import { formatDateTime, relativeTime } from "@/lib/format";
+import { EmptyNotice } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -44,24 +46,24 @@ export function PublicationsCard({
           )}
         </div>
         <CardDescription>
-          Domínios configurados por este painel e o último envio de cada um.
+          Domínios configurados por este painel e o último envio de cada um
+          {onOpen ? " — clique num domínio para abrir o repositório dele." : "."}
         </CardDescription>
       </CardHeader>
 
       <CardContent>
         <div className="overflow-hidden rounded-lg border">
           {loading ? (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-              Carregando…
-            </p>
-          ) : items.length === 0 ? (
-            <div className="flex flex-col items-center gap-1.5 px-6 py-8 text-center">
-              <History className="size-6 text-muted-foreground" />
-              <p className="text-sm font-medium">Nenhuma publicação ainda</p>
-              <p className="text-xs text-muted-foreground">
-                O histórico começa na primeira configuração salva.
-              </p>
+            <div className="space-y-2 p-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
             </div>
+          ) : items.length === 0 ? (
+            <EmptyNotice
+              icon={<History />}
+              title="Nenhuma publicação ainda"
+              description="O histórico começa na primeira configuração salva."
+            />
           ) : (
             <ul className="divide-y">
               {items.map((item) => {
@@ -83,9 +85,24 @@ export function PublicationsCard({
                   >
                     <Globe className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {item.domain ?? item.repoFullName}
-                      </p>
+                      {/* A linha inteira responde ao clique, mas só um botão
+                          de verdade entra na ordem do teclado. */}
+                      {onOpen && !atual ? (
+                        <button
+                          type="button"
+                          className="block max-w-full truncate rounded-sm text-left text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onOpen(item);
+                          }}
+                        >
+                          {item.domain ?? item.repoFullName}
+                        </button>
+                      ) : (
+                        <p className="truncate text-sm font-medium">
+                          {item.domain ?? item.repoFullName}
+                        </p>
+                      )}
                       <p className="truncate text-xs text-muted-foreground">
                         {item.repoFullName}
                         {item.branch ? ` · ${item.branch}` : ""}
@@ -119,7 +136,7 @@ export function PublicationsCard({
                       <p className="truncate text-xs text-muted-foreground">
                         {item.lastDeployAt ? (
                           <span title={formatDateTime(item.lastDeployAt)}>
-                            no ar · último envio {relativeTime(item.lastDeployAt)}
+                            último envio {relativeTime(item.lastDeployAt)}
                           </span>
                         ) : (
                           "configurado, nunca publicado"
@@ -133,6 +150,19 @@ export function PublicationsCard({
                             : ""}
                       </p>
                     </div>
+                    {tentativa?.status === "failure" ? (
+                      <Badge variant="destructive" className="shrink-0">
+                        falhou
+                      </Badge>
+                    ) : tentativa?.status === "pending" ? (
+                      <Badge variant="info" className="shrink-0">
+                        publicando
+                      </Badge>
+                    ) : item.lastDeployAt ? (
+                      <Badge variant="success" className="shrink-0">
+                        no ar
+                      </Badge>
+                    ) : null}
                     {ultimo?.dryRun && (
                       <Badge variant="secondary" className="shrink-0">
                         último foi simulação

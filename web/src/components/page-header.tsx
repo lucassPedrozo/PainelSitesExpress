@@ -68,3 +68,35 @@ export function EmptyState({
     </Card>
   );
 }
+
+/**
+ * Estado vazio **dentro** de uma lista ou cartão (workflows, execuções,
+ * chaves…): o mesmo desenho do `EmptyState`, sem o cartão em volta e mais
+ * baixo. Antes cada lista escrevia o seu.
+ */
+export function EmptyNotice({
+  icon,
+  title,
+  description,
+  action,
+  className,
+}: {
+  icon: ReactNode;
+  title: string;
+  description?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col items-center gap-2 px-6 py-8 text-center", className)}>
+      <div className="grid size-9 place-items-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4">
+        {icon}
+      </div>
+      <div className="max-w-sm space-y-0.5">
+        <p className="text-sm font-medium">{title}</p>
+        {description && <div className="text-xs text-muted-foreground">{description}</div>}
+      </div>
+      {action}
+    </div>
+  );
+}

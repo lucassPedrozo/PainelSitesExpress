@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import type { Generation, Project } from "@/lib/api";
 import { checkSharePreview, publishToDevArea } from "@/lib/api";
+import { pluralize } from "@/lib/format";
 import { usePermissions } from "@/lib/permissions";
 import type { TagsController } from "@/features/tags/use-tags";
 import { tagDotClass } from "@/features/tags/tag-colors";
@@ -76,7 +77,7 @@ export function BulkActionsBar({
     }
   };
 
-  const plural = (n: number) => `${n} ${n === 1 ? "projeto" : "projetos"}`;
+  const plural = (n: number) => pluralize(n, "projeto");
 
   const aplicarTags = (rotulo: string, alvos: Project[], update: (ids: string[]) => string[]) =>
     run("tags", async () => {
@@ -127,12 +128,12 @@ export function BulkActionsBar({
       const total = contagem.alive + contagem.dead + contagem.unknown;
       if (!total) toast.info("Nenhum dos selecionados tem link de cliente ainda");
       else if (contagem.dead) toast.error(`${contagem.dead} de ${total} links não abrem`);
-      else toast.success(`${total} link(s) conferido(s)`, { description: contagem.unknown ? `${contagem.unknown} sem resposta.` : "Todos abrem para o cliente." });
+      else toast.success(`${pluralize(total, "link conferido", "links conferidos")}`, { description: contagem.unknown ? `${contagem.unknown} sem resposta.` : "Todos abrem para o cliente." });
     });
 
   return (
     <div className="sticky bottom-3 z-30 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl border bg-popover/95 px-3 py-2 shadow-xl backdrop-blur">
-      <span className="px-1 text-sm font-medium tabular-nums">
+      <span className="pl-1 text-sm font-medium tabular-nums sm:pr-1">
         {selecionados.length} {selecionados.length === 1 ? "selecionado" : "selecionados"}
       </span>
       {!todosVisiveis && (
@@ -141,7 +142,15 @@ export function BulkActionsBar({
         </Button>
       )}
 
-      <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+      {/* No celular o "fechar" fica na primeira linha, ao lado da contagem; a
+          partir de `sm` volta para o fim da barra. */}
+      <Button variant="ghost" size="icon-sm" className="ml-auto sm:order-last sm:ml-0" onClick={list.clearSelection} aria-label="Limpar seleção" title="Limpar seleção">
+        <X />
+      </Button>
+      {/* Quebra de linha só no celular: as ações começam na linha de baixo. */}
+      <span className="basis-full sm:hidden" aria-hidden />
+
+      <span className="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden />
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -235,7 +244,7 @@ export function BulkActionsBar({
         </Button>
       )}
 
-      <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+      <span className="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden />
 
       <Button
         variant="outline"
@@ -243,14 +252,15 @@ export function BulkActionsBar({
         disabled={!can("gerar") || busy !== null}
         title={
           can("gerar")
-            ? "Abre a geração em lote com os selecionados. Nada é enviado antes da confirmação."
+            ? semSite.length < selecionados.length
+              ? `Abre a geração em lote com os ${selecionados.length} selecionados; ${selecionados.length - semSite.length} já têm site e o diálogo avisa. Nada é enviado antes da confirmação.`
+              : "Abre a geração em lote com os selecionados. Nada é enviado antes da confirmação."
             : semPermissao
         }
         onClick={() => onGenerate(selecionados)}
       >
-        <Sparkles className="size-3.5" />
-        Gerar em lote
-        {semSite.length > 0 && semSite.length < selecionados.length ? ` (${semSite.length} sem site)` : ""}
+        <Sparkles />
+        Gerar em lote ({selecionados.length})
       </Button>
 
       {approvalAreaReady && comSite.length > 0 && (
@@ -281,9 +291,6 @@ export function BulkActionsBar({
 
       {busy === "tags" && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
 
-      <Button variant="ghost" size="icon" className="size-7" onClick={list.clearSelection} aria-label="Limpar seleção" title="Limpar seleção">
-        <X className="size-4" />
-      </Button>
     </div>
   );
 }

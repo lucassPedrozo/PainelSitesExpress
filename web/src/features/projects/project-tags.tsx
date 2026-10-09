@@ -44,7 +44,7 @@ export function ProjectTags({
       onClick={(event) => event.stopPropagation()}
     >
       {!podeOrganizar && applied.length === 0 && singleLine && (
-        <span className="truncate text-xs text-muted-foreground/70 italic">Sem tags</span>
+        <span className="truncate text-xs text-muted-foreground italic">Sem tags</span>
       )}
       {visiveis.map((tag) => (
         <TagBadge

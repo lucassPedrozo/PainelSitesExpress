@@ -67,6 +67,9 @@ export const ProjectCard = memo(function ProjectCard({
   const isEmpty = project.fileCount === 0 && project.folderCount === 0;
   const temLink = isLive(project) || Boolean(site && clientUrlOf(site));
   const emAndamento = progressOf(project) !== null;
+  // Com seleção em curso, clicar marca — como numa lista de arquivos. Sem
+  // ela, abre o projeto.
+  const abrir = () => (selecting && onToggleSelect ? onToggleSelect(project.id) : onOpen(project));
 
   // Os ícones de tipo desceram para a linha de contexto. Como uma faixa
   // própria eles eram três números sem rótulo, repetindo em resolução menor a
@@ -77,9 +80,7 @@ export const ProjectCard = memo(function ProjectCard({
 
   return (
     <Card
-      // Com seleção em curso, clicar no card marca — como numa lista de
-      // arquivos. Sem ela, abre o projeto.
-      onClick={() => (selecting && onToggleSelect ? onToggleSelect(project.id) : onOpen(project))}
+      onClick={abrir}
       className={cn(
         "group h-full cursor-pointer gap-0 overflow-hidden p-0 transition",
         "hover:border-foreground/20 hover:shadow-md",
@@ -106,12 +107,21 @@ export const ProjectCard = memo(function ProjectCard({
           ela ocupava o começo da linha e empurrava o título para dentro.
         */}
         <div className="flex h-6 items-center gap-2">
-          <p
-            className="min-w-0 flex-1 truncate text-[0.9375rem] leading-tight font-semibold"
-            title={renamed ? `${label} · pasta: ${project.name}` : project.name}
-          >
-            {label}
-          </p>
+          {/* O card inteiro responde ao clique, mas é este botão que entra
+              na ordem do teclado: sem ele, abrir um projeto exigia mouse. */}
+          <h3 className="min-w-0 flex-1">
+            <button
+              type="button"
+              className="relative block max-w-full truncate rounded-sm text-left text-[0.9375rem] leading-tight font-semibold after:absolute after:inset-x-0 after:-inset-y-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              title={renamed ? `${label} · pasta: ${project.name}` : project.name}
+              onClick={(event) => {
+                event.stopPropagation();
+                abrir();
+              }}
+            >
+              {label}
+            </button>
+          </h3>
           {onToggleSelect && (
             <Checkbox
               checked={selected}
@@ -164,7 +174,7 @@ export const ProjectCard = memo(function ProjectCard({
                 {project.domain && project.domainCollections > 1 && (
                   <button
                     type="button"
-                    className="shrink-0 inline-flex h-5 items-center rounded-md border px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    className="relative inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-2xs text-muted-foreground transition-colors after:absolute after:-inset-x-1 after:-inset-y-2 hover:bg-accent hover:text-accent-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                     title={`${project.domain} tem ${project.domainCollections} coletas. Clique para ver só as deste domínio.`}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -176,7 +186,7 @@ export const ProjectCard = memo(function ProjectCard({
                 )}
               </span>
             ) : (
-              <Empty>Sem domínio no nome da pasta</Empty>
+              <Empty>{project.source === "panel" ? "Sem domínio no nome do projeto" : "Sem domínio no nome da pasta"}</Empty>
             )}
           </Field>
 
@@ -184,7 +194,13 @@ export const ProjectCard = memo(function ProjectCard({
             {temLink ? (
               <ProjectSite project={project} inline className="min-w-0 flex-1" />
             ) : (
-              <Empty>{site ? "Link do cliente ainda não criado" : "Nenhum site gerado"}</Empty>
+              <Empty>
+                {site
+                  ? "Link do cliente ainda não criado"
+                  : project.source === "panel"
+                    ? "Nenhum site enviado ao GitHub"
+                    : "Nenhum site gerado"}
+              </Empty>
             )}
           </Field>
 
@@ -192,11 +208,18 @@ export const ProjectCard = memo(function ProjectCard({
             <ProjectTags project={project} tags={tags} onChange={onTagsChange} singleLine className="flex-1" />
           </Field>
 
-          <Field label="Andamento">
+          {/* Com algo rodando, o andamento; senão, o que falta — a frase da
+              etapa, que antes só aparecia ao passar o mouse sobre o selo. */}
+          <Field label={emAndamento ? "Andamento" : "Próximo"}>
             {emAndamento ? (
               <ProjectProgress project={project} compact />
             ) : (
-              <Empty>Nada em andamento</Empty>
+              <span
+                className={cn("truncate", status.attention ? "text-foreground" : "text-muted-foreground")}
+                title={status.detail}
+              >
+                {status.detail}
+              </span>
             )}
           </Field>
         </dl>
@@ -212,7 +235,7 @@ export const ProjectCard = memo(function ProjectCard({
         */}
         <span
           className="ml-auto min-w-0 truncate px-1 text-2xs text-muted-foreground"
-          title={`Última atividade no Drive: ${formatDate(project.lastActivity)}`}
+          title={`Última atividade ${project.source === "panel" ? "nos arquivos" : "no Drive"}: ${formatDate(project.lastActivity)}`}
         >
           {/* Sem rótulo, "há 6 dias" competia com a data da coleta, logo acima. */}
           atividade {relativeTime(project.lastActivity)}
@@ -238,5 +261,5 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 /** O campo existe, mas não há o que mostrar nele. */
 function Empty({ children }: { children: ReactNode }) {
-  return <span className="truncate pr-0.5 text-muted-foreground/60 italic">{children}</span>;
+  return <span className="truncate pr-0.5 text-muted-foreground italic">{children}</span>;
 }

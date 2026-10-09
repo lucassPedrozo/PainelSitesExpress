@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import type { Publication, RepoOption } from "@/lib/api/deploy";
-import { suggestRepository, type PublishTarget } from "./publish-target";
+import {
+  suggestRepository,
+  type PublishTarget,
+  type RepositorySuggestion,
+} from "./publish-target";
 
 type Options = {
   /** Publicação aberta a partir de um projeto do Drive. */
@@ -14,7 +17,8 @@ type Options = {
 
 /**
  * O repositório que a coleta sugere, quando a tela foi aberta a partir de um
- * projeto. Avisa uma vez, quando a lista de repositórios chega.
+ * projeto — e o motivo da sugestão, que a tela escreve embaixo do seletor.
+ * Antes o motivo ia num toast, que sumia antes de a pessoa decidir.
  */
 export function useSuggestedRepository({
   target,
@@ -33,7 +37,7 @@ export function useSuggestedRepository({
    * Repositório sugerido pela coleta, enquanto ninguém escolheu outro. Fica
    * derivado, e não copiado para o estado: a lista chega depois da tela.
    */
-  const sugerido = useMemo(
+  const sugestao: RepositorySuggestion | null = useMemo(
     () => (alvo ? suggestRepository(repos, publishedByDomain, alvo) : null),
     [alvo, repos, publishedByDomain],
   );
@@ -46,22 +50,5 @@ export function useSuggestedRepository({
     onTargetConsumed();
   }, [onTargetConsumed, target]);
 
-  /** Aviso do casamento por coleta — uma vez, quando a lista chega. */
-  const avisado = useRef(false);
-  useEffect(() => {
-    if (avisado.current || !alvo || repos.length === 0) return;
-    avisado.current = true;
-
-    if (sugerido) {
-      toast.success(`Repositório sugerido: ${sugerido.repo.name}`, {
-        description: `A partir da coleta "${alvo.projectLabel}". Confirme antes de publicar.`,
-      });
-      return;
-    }
-    toast.info("Escolha o repositório", {
-      description: `Nenhum repositório da organização casou com "${alvo.projectLabel}".`,
-    });
-  }, [alvo, repos, sugerido]);
-
-  return { target: alvo, suggested: sugerido?.repo ?? null };
+  return { target: alvo, suggestion: sugestao, suggested: sugestao?.repo ?? null };
 }

@@ -7,6 +7,7 @@ import {
   setGenerationPreview,
   setGenerationPreviewState,
 } from "../store/generations.js";
+import { getLocalProject } from "../store/local-projects.js";
 import { listProjectNames } from "../store/project-names.js";
 import {
   ensureShortLink,
@@ -48,10 +49,17 @@ export async function slugForProject(projectId) {
     if (slug) return slug;
   }
 
-  const meta = await cached(`meta:${projectId}`, () => getFileMeta(projectId));
-  const slug = slugifyShortlink(nomeSemData(meta?.name));
+  const slug = slugifyShortlink(nomeSemData(await projectNameOf(projectId)));
   // Pasta sem nome aproveitável cai no id do Drive, que é feio mas único.
   return slug || slugifyShortlink(projectId);
+}
+
+/** O nome do projeto: o da pasta no Drive, ou o dado ao criá-lo no painel. */
+async function projectNameOf(projectId) {
+  const local = await getLocalProject(projectId);
+  if (local) return local.name;
+  const meta = await cached(`meta:${projectId}`, () => getFileMeta(projectId));
+  return meta?.name;
 }
 
 /**
@@ -71,8 +79,7 @@ export async function attachSharePreview(projectId, lovableId, rawUrl) {
   }
 
   const slug = await slugForProject(projectId);
-  const meta = await cached(`meta:${projectId}`, () => getFileMeta(projectId));
-  const titulo = nomeSemData(meta?.name) || slug;
+  const titulo = nomeSemData(await projectNameOf(projectId)) || slug;
 
   const geracoes = (await listGenerations())[projectId] ?? [];
   if (!geracoes.some((item) => item.id === lovableId)) {

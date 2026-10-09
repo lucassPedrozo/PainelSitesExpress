@@ -1,12 +1,14 @@
 import { HttpError } from "../http.js";
 import { runtimeConfig } from "../config.js";
 import { getGitHubConfig, GitHubRequestError } from "./github/client.js";
-import { deleteFile, getWorkflowFileContent } from "./github/contents.js";
+import { createOrUpdateFile, deleteFile, getWorkflowFileContent } from "./github/contents.js";
 import { dispatchWorkflow } from "./github/repositories.js";
 import {
   BUILD_WORKFLOW_FILE,
+  buildWorkflowFiles,
   DEPLOY_WORKFLOW_FILE,
   readTemplateVersion,
+  WORKFLOW_TEMPLATE_VERSION,
 } from "./workflow-template.js";
 import { readAutoDeploy } from "./workflow-render.js";
 
@@ -80,6 +82,67 @@ export const describeManagedWorkflows = ({ owner, repo, branch, files }) =>
       }
     }),
   );
+
+/**
+ * Antes de publicar, regrava os workflows gerados pelo painel que estão numa
+ * versão antiga do template. Sem isto, uma correção no template só chegava ao
+ * repositório quando alguém lembrava de salvar a configuração de novo — e o
+ * botão de publicar seguia rodando o workflow velho (eixo-express: a correção
+ * do build estático estava no painel, e a publicação falhou igual).
+ *
+ * Só toca no que traz o marcador do painel; o gatilho automático é mantido
+ * como está. Os secrets não mudam.
+ *
+ * @returns {Promise<string[]>} caminhos regravados
+ */
+export const refreshOutdatedWorkflows = async ({ owner, repo, branch }, deps = {}) => {
+  const {
+    read = (path) => getWorkflowFileContent(githubConfig(), { owner, repo, path, branch }),
+    write = (file) =>
+      createOrUpdateFile({ config: githubConfig(), owner, repo, branch, ...file }),
+  } = deps;
+
+  let deploy;
+  try {
+    deploy = await read(`.github/workflows/${DEPLOY_WORKFLOW_FILE}`);
+  } catch (error) {
+    // Sem o workflow de deploy, o disparo a seguir já explica o que falta.
+    if (error instanceof GitHubRequestError && error.status === 404) return [];
+    throw error;
+  }
+  const versao = readTemplateVersion(deploy);
+  if (!versao || versao === WORKFLOW_TEMPLATE_VERSION) return [];
+
+  const regravados = [];
+  // O de deploy primeiro: com o gatilho automático, o commit do de build
+  // também dispara uma publicação, e ela precisa achar o deploy já novo.
+  const arquivos = buildWorkflowFiles({ branch, autoDeploy: readAutoDeploy(deploy) }).sort(
+    (a, b) => Number(b.path.endsWith(DEPLOY_WORKFLOW_FILE)) - Number(a.path.endsWith(DEPLOY_WORKFLOW_FILE)),
+  );
+  for (const arquivo of arquivos) {
+    // O de build pode ter sido removido de propósito: não volta sozinho.
+    if (!arquivo.path.endsWith(DEPLOY_WORKFLOW_FILE)) {
+      const existe = await read(arquivo.path).then(
+        () => true,
+        (error) => {
+          if (error instanceof GitHubRequestError && error.status === 404) return false;
+          throw error;
+        },
+      );
+      if (!existe) continue;
+    }
+    const { action } = await write({
+      path: arquivo.path,
+      content: arquivo.content,
+      message: `Atualizar workflow do painel (versao ${WORKFLOW_TEMPLATE_VERSION})`,
+    });
+    if (action !== "unchanged") regravados.push(arquivo.path);
+  }
+  console.log(
+    `[deploy] ${owner}/${repo}: workflows da versao ${versao} atualizados para ${WORKFLOW_TEMPLATE_VERSION}.`,
+  );
+  return regravados;
+};
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 

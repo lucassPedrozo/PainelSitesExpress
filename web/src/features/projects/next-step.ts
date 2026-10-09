@@ -1,6 +1,6 @@
 import type { Project } from "@/lib/api";
 import type { AccessPermission } from "@shared/access-permissions.js";
-import { devAreaOf, isExternalSite, latestGeneration, projectStatus } from "./project-status";
+import { devAreaOf, isClaudeSite, isExternalSite, latestGeneration, projectStatus } from "./project-status";
 
 /**
  * O que fazer agora com o projeto — uma ação só, a que a etapa pede.
@@ -24,6 +24,17 @@ export type NextStep =
   | { kind: "publish"; label: string }
   /** Publica a prévia na área de aprovação (site vinculado de fora do painel). */
   | { kind: "approval"; label: string }
+  /** Manda o código do site (projeto criado no painel) ao GitHub. */
+  | { kind: "push-site"; label: string }
+  /**
+   * Abre o projeto na aba do Claude — é lá que se acompanha a execução,
+   * revisa o briefing, aprova a direção, vê o erro ou retoma o que parou.
+   */
+  | { kind: "claude"; label: string }
+  /** Manda ao GitHub o site que o Claude gerou e validou. */
+  | { kind: "push-claude"; label: string }
+  /** Abre os arquivos do projeto. */
+  | { kind: "files"; label: string }
   /** Endereço externo: editor do Lovable, execução no GitHub, site, Drive. */
   | { kind: "link"; label: string; href: string | null };
 
@@ -36,6 +47,8 @@ export const stepPermission: Partial<Record<NextStep["kind"], AccessPermission>>
   send: "gerar",
   publish: "publicar",
   approval: "publicar",
+  "push-site": "publicar",
+  "push-claude": "publicar",
 };
 
 /** O editor do projeto no Lovable — é lá que se cria o Share preview. */
@@ -57,6 +70,20 @@ export function nextStep(project: Project): NextStep {
       return { kind: "link", label: "Ver erro", href: runUrl };
     case "deploying":
       return { kind: "link", label: "Acompanhar", href: runUrl };
+    case "claude-interrupted":
+      return { kind: "claude", label: "Retomar ou descartar" };
+    case "claude-failed":
+      return { kind: "claude", label: "Ver erro" };
+    case "claude-approval":
+      return { kind: "claude", label: "Aprovar direção" };
+    case "claude-building":
+    case "claude-briefing":
+    case "claude-queued":
+      return { kind: "claude", label: "Acompanhar" };
+    case "claude-brief-refused":
+      return { kind: "claude", label: "Corrigir briefing" };
+    case "claude-brief-ready":
+      return { kind: "claude", label: "Revisar e gerar" };
     case "live":
       return {
         kind: "link",
@@ -87,8 +114,9 @@ export function nextStep(project: Project): NextStep {
         ? { kind: "verify-link", label: "Verificar link" }
         : { kind: "create-link", label: "Novo link", href: editor ?? "" };
     case "generated":
-      // Site vinculado: o link do cliente nasce na área de aprovação.
-      if (site?.origin === "linked" && !site.sharePreviewUrl) {
+      // Site vinculado, ou gerado pelo Claude: o link do cliente nasce na
+      // área de aprovação.
+      if ((site?.origin === "linked" || isClaudeSite(site)) && !site?.sharePreviewUrl) {
         return { kind: "approval", label: "Publicar prévia" };
       }
       // Link colado mas ainda não conferido: basta conferir. Sem link, é
@@ -101,5 +129,13 @@ export function nextStep(project: Project): NextStep {
       return { kind: "generate", label: "Gerar" };
     case "empty":
       return { kind: "link", label: "Abrir no Drive", href: project.webViewLink };
+    case "to-github":
+      // O site do Claude sai da pasta de trabalho do motor; o de um projeto
+      // criado no painel, dos arquivos enviados a ele.
+      return isClaudeSite(site)
+        ? { kind: "push-claude", label: "Enviar ao GitHub" }
+        : { kind: "push-site", label: "Enviar ao GitHub" };
+    case "storage":
+      return { kind: "files", label: "Abrir arquivos" };
   }
 }

@@ -37,7 +37,7 @@ export const DEV_AREA_WORKFLOW_FILE = "Area-de-desenvolvimento.yml";
  * Versão do workflow da área de desenvolvimento, separada da do deploy: o
  * painel regrava sozinho o workflow de área velho, sem ninguém pedir.
  */
-export const DEV_AREA_TEMPLATE_VERSION = "3";
+export const DEV_AREA_TEMPLATE_VERSION = "6";
 
 export const buildWorkflowFiles = (options) => [
   {

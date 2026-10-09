@@ -2,7 +2,9 @@ import { config } from "../config.js";
 import { loadBrief } from "../brief.js";
 import { GOOGLE_NATIVE_PDF, kindOf, walkProjectFiles } from "../drive.js";
 import { httpError } from "../http.js";
+import { isPixabayConfigured, parseStockSelection, pixabay } from "../images/pixabay.js";
 import { listSignatureFiles, SIGNATURE_VARIANTS } from "./signature.js";
+import { STOCK_ZIP_NAME } from "../../../shared/stock-images.js";
 
 /**
  * O que seria enviado ao Lovable: o prompt do briefing, os arquivos do projeto
@@ -175,8 +177,20 @@ export async function buildPackage(projectId, { refresh = false } = {}) {
   };
 }
 
-/** Valida a seleção contra o projeto e devolve o plano do que seria enviado. */
-export async function planFor(projectId, prompt, fileIds) {
+/**
+ * Valida a seleção contra o projeto e devolve o plano do que seria enviado.
+ *
+ * As fotos de banco vão todas num zip, que ocupa uma vaga no teto de anexos —
+ * qualquer que seja a quantidade de fotos. Cada uma é conferida no Pixabay
+ * pelo id: a mesma consulta que a geração usa depois para baixá-la.
+ *
+ * @param {string} projectId
+ * @param {unknown} prompt
+ * @param {unknown} fileIds
+ * @param {unknown} [stockImages]
+ */
+export async function planFor(projectId, prompt, fileIds, stockImages) {
+  const stockSelection = parseStockSelection(stockImages);
   const pkg = await buildPackage(projectId);
   const text = String(prompt ?? "").trim();
 
@@ -189,12 +203,15 @@ export async function planFor(projectId, prompt, fileIds) {
   }
 
   const byId = new Map(pkg.files.map((file) => [file.id, file]));
-  const unique = [...new Set(fileIds ?? [])];
+  const unique = [...new Set(Array.isArray(fileIds) ? fileIds : [])];
 
-  if (unique.length > config.lovable.maxAttachments) {
+  const zipDasFotos = stockSelection.length > 0 ? 1 : 0;
+  if (unique.length + zipDasFotos > config.lovable.maxAttachments) {
     throw httpError(
       400,
-      `Selecione no máximo ${config.lovable.maxAttachments} anexos`,
+      zipDasFotos
+        ? `Selecione no máximo ${config.lovable.maxAttachments} anexos — o zip das imagens de banco ocupa um deles`
+        : `Selecione no máximo ${config.lovable.maxAttachments} anexos`,
     );
   }
 
@@ -209,10 +226,16 @@ export async function planFor(projectId, prompt, fileIds) {
     return file;
   });
 
+  if (stockSelection.length && !isPixabayConfigured()) {
+    throw httpError(409, "Há imagens de banco na seleção, mas a chave do Pixabay não está configurada.");
+  }
+  const stock = stockSelection.length ? await pixabay.resolve(stockSelection) : [];
+
   return {
     pkg,
     text,
     attachments,
+    stock,
     plan: {
       promptChars: text.length,
       promptSource: pkg.prompt.file?.name ?? null,
@@ -226,6 +249,15 @@ export async function planFor(projectId, prompt, fileIds) {
       // Nativos do Google não informam tamanho antes da exportação.
       totalBytes: attachments.reduce((sum, file) => sum + (file.size ?? 0), 0),
       unknownSizes: attachments.filter((file) => file.size === null).length,
+      stockZip: stock.length ? STOCK_ZIP_NAME : null,
+      stockImages: stock.map(({ id, path, term, section, user, pageUrl }) => ({
+        id,
+        path,
+        term,
+        section,
+        user,
+        pageUrl,
+      })),
     },
   };
 }
@@ -234,7 +266,7 @@ export async function planFor(projectId, prompt, fileIds) {
  * Ensaio: valida a seleção e mostra exatamente o que seria enviado, sem tocar
  * no Lovable. Nenhum crédito é consumido aqui.
  */
-export async function previewGeneration(projectId, { prompt, fileIds }) {
-  const { plan, pkg } = await planFor(projectId, prompt, fileIds);
+export async function previewGeneration(projectId, { prompt, fileIds, stockImages }) {
+  const { plan, pkg } = await planFor(projectId, prompt, fileIds, stockImages);
   return { dryRun: true, plan, generation: pkg.generation };
 }

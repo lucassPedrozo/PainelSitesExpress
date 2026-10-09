@@ -51,7 +51,18 @@ const empty = () => ({
   names: {},
   accessUsers: [],
   publications: {},
+  localProjects: [],
+  claude: emptyClaude(),
 });
+
+/**
+ * O que o painel guarda do motor Claude — ver `store/claude.js`. Os sites que
+ * ele gera entram em `generations`, como os outros; aqui fica o que vem antes
+ * do site (a pasta de trabalho de cada projeto), a fila e as execuções.
+ */
+function emptyClaude() {
+  return { projects: {}, queue: [], runs: [] };
+}
 
 let state = null;
 /** Carga em andamento: quem chega durante a primeira leitura espera a mesma. */
@@ -125,6 +136,14 @@ async function load() {
       // Nasceu depois: arquivos antigos não têm a lista.
       accessUsers: Array.isArray(parsed.accessUsers) ? parsed.accessUsers : [],
       publications: parsed.publications ?? {},
+      // Projetos criados no painel, sem pasta no Drive.
+      localProjects: Array.isArray(parsed.localProjects) ? parsed.localProjects : [],
+      // Nasceu com o motor Claude: arquivos antigos não têm a chave.
+      claude: {
+        projects: parsed.claude?.projects ?? {},
+        queue: Array.isArray(parsed.claude?.queue) ? parsed.claude.queue : [],
+        runs: Array.isArray(parsed.claude?.runs) ? parsed.claude.runs : [],
+      },
     };
 
     // A etiqueta de finalizado nasceu depois das outras: adota a existente pelo

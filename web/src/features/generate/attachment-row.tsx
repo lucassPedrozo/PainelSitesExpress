@@ -11,10 +11,13 @@ export function AttachmentRow({
   file,
   checked,
   onToggle,
+  briefLabel = "já está no prompt",
 }: {
   file: BuildFile;
   checked: boolean;
   onToggle: () => void;
+  /** Por que o arquivo das informações do site não vem marcado. */
+  briefLabel?: string;
 }) {
   const disabled = Boolean(file.blockedReason);
 
@@ -66,7 +69,7 @@ export function AttachmentRow({
 
       {file.isBrief && (
         <Badge variant="secondary" className="shrink-0 font-normal">
-          já está no prompt
+          {briefLabel}
         </Badge>
       )}
       {file.exportedToPdf && !file.isBrief && (

@@ -38,17 +38,26 @@ const run = (root) =>
     },
   })
 
-test('site com a assinatura no bundle não é alterado', { skip: !hasBash }, () => {
-  const html = '<html><body><div id="root"></div></body></html>'
+const REGRA = /<style id="joinvix-assinatura-tamanho">a\[href\*="joinvix\.com\.br"\] img,#joinvix-assinatura img\{height:45px!important;[^<]*@media \(max-width:767px\)\{[^<]*height:36px!important\}\}<\/style><\/head>/
+
+test('site com a assinatura no bundle: nada é inserido além da regra de altura da logo, em toda página', { skip: !hasBash }, () => {
+  const html = '<html><head><title>x</title></head><body><div id="root"></div></body></html>'
   const root = setup({
     'dist/index.html': html,
+    'dist/servicos/index.html': html,
     'dist/assets/index.js': 'a({href:"https://www.joinvix.com.br/"})',
   })
   try {
     const result = run(root)
     assert.equal(result.status, 0, result.stderr)
-    assert.equal(readFileSync(resolve(root, 'dist/index.html'), 'utf8'), html)
+    const saida = readFileSync(resolve(root, 'dist/index.html'), 'utf8')
+    assert.match(saida, REGRA)
+    assert.equal(saida.replace(/<style id="joinvix-assinatura-tamanho">[^<]*<\/style>/, '').trimEnd(), html, 'o resto da página fica igual')
+    assert.match(readFileSync(resolve(root, 'dist/servicos/index.html'), 'utf8'), REGRA, 'as páginas internas também')
     assert.equal(existsSync(resolve(root, 'dist/joinvix-assinatura.png')), false)
+    // Rodar de novo não repete a regra.
+    assert.equal(run(root).status, 0)
+    assert.equal(readFileSync(resolve(root, 'dist/index.html'), 'utf8').split('joinvix-assinatura-tamanho').length, 2)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -63,7 +72,11 @@ test('sem assinatura, insere a faixa antes de </body> e copia a logo', { skip: !
     const result = run(root)
     assert.equal(result.status, 0, result.stderr)
     const html = readFileSync(resolve(root, 'dist/index.html'), 'utf8')
-    assert.match(html, /<div id="joinvix-assinatura"[^]*href="https:\/\/www\.joinvix\.com\.br\/"[^]*<\/div><\/body>/)
+    assert.match(html, /<div id="joinvix-assinatura"[^]*href="https:\/\/www\.joinvix\.com\.br\/"[^]*<\/div><script>[^]*<\/script><\/body>/)
+    // A faixa toma a cor do rodapé do site quando a página abre, e troca a logo pela branca em rodapé escuro.
+    assert.match(html, /data-clara="\.\/joinvix-assinatura-clara\.png"/)
+    assert.match(html, /querySelectorAll\("footer"\)/)
+    assert.equal(existsSync(resolve(root, 'dist/joinvix-assinatura-clara.png')), true)
     assert.match(html, /src="\.\/joinvix-assinatura\.png"/)
     assert.equal(existsSync(resolve(root, 'dist/joinvix-assinatura.png')), true)
     assert.match(result.stdout, /foi inserida/)

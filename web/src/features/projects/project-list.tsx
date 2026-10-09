@@ -2,10 +2,9 @@ import { Fragment, memo, type ReactNode } from "react";
 import { StageBadge } from "@/features/projects/stage-badge";
 import type { Project } from "@/lib/api";
 import type { TagsController } from "@/features/tags/use-tags";
-import type { DatedGroup } from "@/features/projects/date-groups";
+import { groupAnchor, type DatedGroup } from "@/features/projects/date-groups";
 import {
   describeMaterial,
-  formatBytes,
   formatDate,
   projectIdentity,
   relativeTime,
@@ -17,9 +16,8 @@ import { ProjectSite } from "@/features/projects/project-site";
 import { ProjectProgress } from "@/features/projects/project-progress-view";
 import { isInProgress } from "@/features/projects/project-progress";
 import { ProjectTags } from "@/features/projects/project-tags";
-import {
-  isLive,
-} from "@/features/projects/project-status";
+import { isLive, projectStatus } from "@/features/projects/project-status";
+import { queueGroupOf, queueToneClass } from "@/features/projects/work-queue";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,11 +33,35 @@ import { Separator } from "@/components/ui/separator";
  * card independente do tamanho da lista.
  */
 
+/** O número do grupo, na cor da urgência dele (a mesma do selo de etapa). */
+function GroupCount({ groupKey, count }: { groupKey: string; count: number }) {
+  const tone = queueGroupOf(groupKey)?.tone ?? null;
+  return (
+    <span
+      className={cn(
+        "text-sm font-medium tabular-nums",
+        tone ? queueToneClass[tone] : "text-muted-foreground",
+      )}
+    >
+      {count}
+    </span>
+  );
+}
+
+/**
+ * O título de um grupo: o nome em peso de título e, ao lado, quantos projetos
+ * ele tem. Era uma legenda miúda em caixa alta, mais apagada que qualquer
+ * campo dos cards — e na fila o número do grupo é justamente o que se procura.
+ */
 export function GroupHeading({
+  id,
+  groupKey,
   label,
   count,
   action,
 }: {
+  id?: string;
+  groupKey: string;
   label: string;
   count: number;
   /** Ação sobre o grupo inteiro — "gerar em lote", na fila. */
@@ -47,12 +69,10 @@ export function GroupHeading({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <h2 id={id} className="text-sm leading-tight font-semibold">
         {label}
       </h2>
-      <span className="text-xs text-muted-foreground tabular-nums">
-        {count}
-      </span>
+      <GroupCount groupKey={groupKey} count={count} />
       <Separator className="flex-1" />
       {action}
     </div>
@@ -104,10 +124,21 @@ export function ProjectGrid({
   if (!groups) return <div className={CARD_GRID}>{cards(projects)}</div>;
 
   return (
-    <div className="space-y-6">
+    // Mais espaço entre grupos do que entre o título e os cards dele: é o
+    // intervalo que diz onde um grupo acaba. `scroll-mt` deixa o cabeçalho
+    // fixo de fora quando o resumo rola até aqui.
+    <div className="space-y-8">
       {groups.map((group) => (
-        <section key={group.key} className="space-y-3">
+        <section
+          key={group.key}
+          id={groupAnchor(group.key)}
+          aria-labelledby={`${groupAnchor(group.key)}-titulo`}
+          tabIndex={-1}
+          className="scroll-mt-32 space-y-3 outline-none md:scroll-mt-24"
+        >
           <GroupHeading
+            id={`${groupAnchor(group.key)}-titulo`}
+            groupKey={group.key}
             label={group.label}
             count={group.items.length}
             action={renderGroupAction?.(group)}
@@ -146,12 +177,18 @@ export function ProjectTable({
   );
   return (
     <Card className="overflow-x-auto p-0">
-      <table className="w-full min-w-2xl text-sm">
+      {/* Largura mínima que deixa a coluna do nome legível: com menos, as
+          colunas fixas tomavam tudo e o nome virava "jdre…". A tabela rola. */}
+      <table className="w-full min-w-4xl text-sm">
         <thead className="bg-muted/50 text-xs text-muted-foreground">
           <tr>
-            {onToggleSelect && <th className="w-8 py-2.5 pl-3" aria-label="Seleção" />}
+            {onToggleSelect && (
+              <th className="w-8 py-2.5 pl-3">
+                <span className="sr-only">Seleção</span>
+              </th>
+            )}
             <th className="px-4 py-2.5 text-left font-medium">Projeto</th>
-            <th className="w-36 px-4 py-2.5 text-left font-medium">Estado</th>
+            <th className="w-52 px-4 py-2.5 text-left font-medium">Etapa</th>
             <th className="w-56 px-4 py-2.5 text-left font-medium">Link e tags</th>
             <th className="w-32 px-4 py-2.5 text-left font-medium">Datas</th>
             <th className="w-px px-4 py-2.5 text-right font-medium whitespace-nowrap">
@@ -163,19 +200,17 @@ export function ProjectTable({
           {groups
             ? groups.map((group) => (
                 <Fragment key={group.key}>
-                  <tr className="border-t bg-muted/30">
-                    <td
-                      colSpan={onToggleSelect ? 6 : 5}
-                      className="px-4 py-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase"
-                    >
+                  {/* O mesmo título da grade, numa linha da tabela. */}
+                  <tr
+                    id={groupAnchor(group.key)}
+                    tabIndex={-1}
+                    className="scroll-mt-32 border-t bg-muted/30 outline-none md:scroll-mt-24"
+                  >
+                    <td colSpan={onToggleSelect ? 6 : 5} className="px-4 py-2">
                       <div className="flex items-center gap-2">
-                        {group.label}
-                        <span className="font-normal tabular-nums">
-                          {group.items.length}
-                        </span>
-                        <span className="ml-auto normal-case">
-                          {renderGroupAction?.(group)}
-                        </span>
+                        <span className="text-sm leading-tight font-semibold">{group.label}</span>
+                        <GroupCount groupKey={group.key} count={group.items.length} />
+                        <span className="ml-auto">{renderGroupAction?.(group)}</span>
                       </div>
                     </td>
                   </tr>
@@ -209,6 +244,7 @@ const ProjectRow = memo(function ProjectRow({
   onToggleSelect?: (projectId: string) => void;
 } & ProjectActionHandlers) {
   const { label, collectedAt, renamed } = projectIdentity(project);
+  const status = projectStatus(project);
   const isEmpty = project.fileCount === 0 && project.folderCount === 0;
   const emCurso = isInProgress(project);
   const abrir = () => (selecting && onToggleSelect ? onToggleSelect(project.id) : onOpen(project));
@@ -239,26 +275,31 @@ const ProjectRow = memo(function ProjectRow({
       {/* Projeto: nome, material e o que falta — o material era coluna
           própria, mas é contexto do nome, não critério de leitura. */}
       <td className="max-w-0 px-4 py-2">
-        <p
-          className="truncate font-medium"
+        <button
+          type="button"
+          className="block max-w-full truncate rounded-sm text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
           title={renamed ? `${label} · pasta: ${project.name}` : project.name}
+          onClick={(event) => {
+            event.stopPropagation();
+            abrir();
+          }}
         >
           {label}
-        </p>
+        </button>
         <p
           className="truncate text-xs text-muted-foreground"
           title={isEmpty ? "Pasta vazia" : describeMaterial(project)}
         >
-          {isEmpty
-            ? "pasta vazia"
-            : `${project.fileCount} arquivo(s) · ${formatBytes(project.totalSize)}`}
-          {project.folderCount > 0 && ` · ${project.folderCount} subpasta(s)`}
+          {isEmpty ? "pasta vazia" : describeMaterial(project)}
         </p>
       </td>
 
-      {/* Estado: um selo, o mesmo do card. */}
+      {/* Estado: o selo do card e, embaixo, o que falta. */}
       <td className="px-4 py-2">
         <StageBadge project={project} size="sm" />
+        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={status.detail}>
+          {status.detail}
+        </p>
       </td>
 
       {/* Largura presa: sem ela, o link do cliente (longo, com o prefixo do
@@ -269,7 +310,7 @@ const ProjectRow = memo(function ProjectRow({
           {(project.generations.length > 0 || isLive(project)) && (
             <ProjectSite project={project} />
           )}
-          <ProjectTags project={project} tags={tags} onChange={onTagsChange} />
+          <ProjectTags project={project} tags={tags} onChange={onTagsChange} singleLine />
         </div>
       </td>
 

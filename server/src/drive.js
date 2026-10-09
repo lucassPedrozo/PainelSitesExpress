@@ -96,16 +96,22 @@ export async function statsForFolder(folderId) {
     folderCount: 0,
     size: 0,
     lastActivity: null,
+    // Quando o último item entrou na pasta. `modifiedTime` não serve para
+    // isso: num upload ele é a data do arquivo no computador do cliente.
+    lastAdded: null,
     kinds: {},
     brief: null,
   };
 
   const files = await listAll({
     q: `'${folderId}' in parents and trashed = false`,
-    fields: "nextPageToken, files(id, name, mimeType, size, modifiedTime)",
+    fields: "nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime)",
   });
 
   for (const file of files) {
+    if (file.createdTime && (!entry.lastAdded || file.createdTime > entry.lastAdded)) {
+      entry.lastAdded = file.createdTime;
+    }
     if (file.mimeType === FOLDER_MIME) entry.folderCount += 1;
     else {
       entry.fileCount += 1;
@@ -124,6 +130,8 @@ export async function statsForFolder(folderId) {
       id: brief.id,
       name: brief.name,
       mimeType: brief.mimeType,
+      // Quando o briefing chegou — um marco da linha do tempo do projeto.
+      createdTime: brief.createdTime ?? null,
       // Mais de um: a tela avisa qual foi usado.
       count,
     };
@@ -276,6 +284,23 @@ export function streamFile(fileId, mimeType, { range } = {}) {
     { fileId, alt: "media", supportsAllDrives: true },
     { responseType: "stream", ...(range ? { headers: { Range: range } } : {}) },
   );
+}
+
+/**
+ * Um trecho do arquivo, em memória — o índice de um `.zip` fica nos últimos
+ * bytes, e lê-lo assim dispensa baixar o compactado inteiro.
+ *
+ * @param {string} fileId
+ * @param {number} start primeiro byte
+ * @param {number} end último byte, inclusive
+ */
+export async function readFileRange(fileId, start, end) {
+  const { data } = await drive.files.get(
+    { fileId, alt: "media", supportsAllDrives: true },
+    { responseType: "arraybuffer", headers: { Range: `bytes=${start}-${end}` } },
+  );
+  // Como na extração do briefing: com `arraybuffer`, `data` é o binário.
+  return Buffer.from(/** @type {ArrayBuffer} */ (/** @type {unknown} */ (data)));
 }
 
 /* ------------------------------------------------------------------ *

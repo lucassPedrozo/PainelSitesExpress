@@ -111,7 +111,11 @@ const getRetryDelayMs = (response, attempt) => {
 
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
-export const requestRaw = async (url, config, init) => {
+/**
+ * `timeoutMs` em `init` troca o prazo padrão — o envio de um arquivo grande
+ * (blob) não cabe nos 20 s de uma chamada comum.
+ */
+export const requestRaw = async (url, config, { timeoutMs = REQUEST_TIMEOUT_MS, ...init }) => {
   const method = (init.method ?? "GET").toUpperCase();
   const isIdempotent = method === "GET" || method === "HEAD";
   let lastError;
@@ -121,7 +125,7 @@ export const requestRaw = async (url, config, init) => {
     try {
       response = await fetch(url, {
         ...init,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
         headers: { ...createGitHubHeaders(config), ...(init.headers ?? {}) },
       });
     } catch (error) {

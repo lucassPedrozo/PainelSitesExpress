@@ -49,6 +49,22 @@ export function stageAlerts(
               tone: "success",
             },
       );
+    } else if (anterior === "claude-briefing" || anterior === "claude-building") {
+      // O Claude terminou — ou parou. O aviso diz o que ficou esperando.
+      const oQue = anterior === "claude-briefing" ? "Briefing" : "Site";
+      if (stage === "claude-failed") {
+        alerts.push({ projectId: project.id, title: `${oQue} falhou: ${nome}`, body: detail, tone: "error" });
+      } else if (stage === "claude-approval") {
+        alerts.push({ projectId: project.id, title: `Direção para aprovar: ${nome}`, body: detail, tone: "warning" });
+      } else if (stage === "claude-brief-refused") {
+        alerts.push({ projectId: project.id, title: `Briefing recusado: ${nome}`, body: detail, tone: "warning" });
+      } else if (stage === "claude-brief-ready") {
+        alerts.push({ projectId: project.id, title: `Briefing pronto: ${nome}`, body: "Revise e gere o site.", tone: "success" });
+      } else if (stage === "to-github") {
+        alerts.push({ projectId: project.id, title: `Site pronto: ${nome}`, body: "Gerado e validado. Falta enviar ao GitHub.", tone: "success" });
+      } else if (stage !== "claude-queued" && stage !== "claude-briefing" && stage !== "claude-building" && stage !== "claude-interrupted") {
+        alerts.push({ projectId: project.id, title: `O Claude terminou: ${nome}`, body: detail, tone: "success" });
+      }
     } else if (anterior === "dev-publishing") {
       if (stage === "dev-failed") {
         alerts.push({ projectId: project.id, title: `Prévia falhou: ${nome}`, body: detail, tone: "error" });

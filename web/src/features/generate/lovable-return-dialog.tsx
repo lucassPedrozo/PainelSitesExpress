@@ -100,7 +100,7 @@ export function LovableReturnDialog({ connection }: { connection: Connection }) 
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => fechar(false)}>
+          <Button variant="outline" onClick={() => fechar(false)}>
             Fechar
           </Button>
           <Button onClick={() => void concluir()} disabled={!url.trim() || enviando}>

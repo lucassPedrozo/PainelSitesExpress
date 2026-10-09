@@ -1,4 +1,5 @@
 import type { AgentActivity, Project, RunProgress } from "@/lib/api";
+import { pluralize } from "@/lib/format";
 import { devAreaOf, latestGeneration } from "./project-status";
 
 /**
@@ -27,6 +28,8 @@ export type ProgressModel =
       counts: string | null;
       /** Parado esperando alguém: o relógio conta a espera. */
       waiting: boolean;
+      /** Na fila, ainda sem começar: espera sem alarme. */
+      queued?: boolean;
     }
   | {
       kind: "run";
@@ -98,11 +101,55 @@ function runModel(
   };
 }
 
-const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+const plural = pluralize;
+
+/** As etapas de cada pedido ao Claude, na ordem — o card mostra em qual está. */
+const CLAUDE_PHASES: Record<string, Array<[etapa: string, label: string]>> = {
+  analisar: [["briefing", "Lendo o material e escrevendo o briefing"]],
+  ajuste: [["ajuste", "Ajustando o site"]],
+  site: [
+    ["direcao", "Direção criativa"],
+    ["geracao", "Escrevendo o site"],
+    ["revisao", "Revisando"],
+  ],
+};
+
+const CLAUDE_TITLES: Record<string, string> = {
+  analisar: "Gerando briefing",
+  ajuste: "Ajustando com o Claude",
+  site: "Gerando com o Claude",
+};
+
+/** O pedido do projeto na fila do Claude: esperando a vez ou rodando. */
+function claudeModel(fila: NonNullable<NonNullable<Project["claude"]>["queue"]>): ProgressModel {
+  const pedido = fila.tipo === "analisar" || fila.tipo === "ajuste" ? fila.tipo : "site";
+  const etapas = CLAUDE_PHASES[pedido];
+  const esperando = fila.estado === "esperando";
+  // Antes de o claude abrir a primeira etapa, vale a primeira da lista.
+  const atual = Math.max(0, etapas.findIndex(([etapa]) => etapa === fila.etapa));
+  return {
+    kind: "agent",
+    title: esperando
+      ? fila.posicao
+        ? `Na fila do Claude · ${fila.posicao}º`
+        : "Na fila do Claude"
+      : CLAUDE_TITLES[pedido],
+    startedAt: esperando ? fila.criadoEm : (fila.inicio ?? fila.criadoEm),
+    phases: etapas.map(([, label], indice) => ({
+      label,
+      state: esperando ? "todo" : indice < atual ? "done" : indice === atual ? "active" : "todo",
+    })),
+    current: esperando ? "Esperando a execução anterior terminar" : etapas[atual][1],
+    counts: null,
+    waiting: false,
+    queued: esperando,
+  };
+}
 
 /**
  * O que está em curso, por ordem de importância: a publicação no domínio do
- * cliente, o agente do Lovable e a área de aprovação. `null` quando nada roda.
+ * cliente, o pedido ao Claude, o agente do Lovable e a área de aprovação.
+ * `null` quando nada roda.
  */
 export function progressOf(project: Project): ProgressModel | null {
   const tentativa = project.publication?.lastAttempt;
@@ -114,6 +161,11 @@ export function progressOf(project: Project): ProgressModel | null {
       tentativa.runUrl,
     );
   }
+
+  // A execução interrompida não está em curso: espera uma decisão, e é o
+  // selo do card que diz isso.
+  const fila = project.claude?.queue;
+  if (fila && fila.estado !== "interrompida") return claudeModel(fila);
 
   const site = latestGeneration(project);
   if (site?.agentState === "running" || site?.agentState === "awaiting") {

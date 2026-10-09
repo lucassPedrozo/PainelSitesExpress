@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { aiConfig } from "../ai/providers.js";
 import { getStatus as lovableStatus } from "../lovable/oauth.js";
+import { servicoClaude } from "./claude/service.js";
 
 /**
  * Os motores que produzem os sites. Hoje só o Lovable gera; o "Lovable
@@ -34,12 +35,15 @@ import { getStatus as lovableStatus } from "../lovable/oauth.js";
 
 /** @typedef {{ id: string, label: string, description: string, available: boolean, reason: string | null, details: Record<string, unknown> }} EngineStatus */
 
-export const ENGINE_IDS = ["lovable", "own"];
+export const ENGINE_IDS = ["lovable", "claude", "own"];
 
-/** O motor escolhido no `.env`. Enquanto o próprio não gera, vale o Lovable. */
+/**
+ * O motor que a tela de geração traz marcado. Cada geração escolhe o seu; o
+ * `.env` só diz qual vem pré-selecionado.
+ */
 export function activeEngineId() {
   const escolhido = (process.env.GENERATION_ENGINE ?? "").trim();
-  return escolhido === "own" ? "own" : "lovable";
+  return escolhido === "claude" || escolhido === "own" ? escolhido : "lovable";
 }
 
 /** @returns {Promise<EngineStatus[]>} */
@@ -56,6 +60,7 @@ export async function engineStatuses() {
       reason: lovable.connected ? null : "O painel não está conectado ao Lovable.",
       details: { connected: Boolean(lovable.connected), creditEnabled: config.lovable.enableGeneration },
     },
+    claudeStatus(),
     {
       id: "own",
       label: "Lovable próprio",
@@ -70,4 +75,25 @@ export async function engineStatuses() {
       },
     },
   ];
+}
+
+/**
+ * O motor Claude: o pacote `joinvixable/` rodando o Claude Code desta
+ * máquina. Disponível quando o pacote está instalado; gastar ainda depende da
+ * trava dele (`CLAUDE_ENABLE_GENERATION`).
+ *
+ * @returns {EngineStatus}
+ */
+function claudeStatus() {
+  const servico = servicoClaude();
+  const pacote = servico.pacote();
+  return {
+    id: "claude",
+    label: "Claude",
+    description:
+      "O Claude Code desta máquina escreve o briefing e o site, pelo login da assinatura; o painel envia o código ao GitHub e publica na área de aprovação.",
+    available: pacote.instalado,
+    reason: pacote.motivo,
+    details: { installed: pacote.instalado, enabled: servico.liberacao().enabled },
+  };
 }

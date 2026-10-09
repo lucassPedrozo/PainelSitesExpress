@@ -177,4 +177,24 @@ describe("site vinculado de fora do painel", () => {
     expect(projectStatus(entregue).stage).toBe("delivered");
     expect(nextStep(entregue)).toEqual({ kind: "publish", label: "Publicar" });
   });
+
+  it("criado no painel: enviar ao GitHub, ou só abrir os arquivos", () => {
+    const site = projeto({ source: "panel", purpose: "site", fileCount: 0, webViewLink: "" });
+    expect(projectStatus(site).stage).toBe("to-github");
+    expect(nextStep(site)).toEqual({ kind: "push-site", label: "Enviar ao GitHub" });
+
+    // Só material: não cobra passo, mesmo vazio (não é "Sem material").
+    const arquivos = projeto({ source: "panel", purpose: "files", fileCount: 0, webViewLink: "" });
+    expect(projectStatus(arquivos)).toMatchObject({ stage: "storage", attention: false });
+    expect(nextStep(arquivos)).toEqual({ kind: "files", label: "Abrir arquivos" });
+  });
+
+  it("criado no painel, com o site já no GitHub: segue o caminho dos vinculados", () => {
+    const enviado = projeto({
+      source: "panel",
+      purpose: "site",
+      generations: [geracao({ id: "ext-abc123", origin: "linked", repoFullName: "org/cliente" })],
+    });
+    expect(nextStep(enviado)).toEqual({ kind: "approval", label: "Publicar prévia" });
+  });
 });

@@ -77,6 +77,16 @@ describe("createSiteGenerator", () => {
     assert.deepEqual(calls, { upload: 1, create: 1, record: 1 });
   });
 
+  it("grava quem gerou o site", async () => {
+    const { generateSite } = setup();
+    const comChave = await generateSite("pasta-1", { ...input, by: "Ana" });
+    assert.equal(comChave.generation.createdBy, "Ana");
+
+    // Painel sem chaves de acesso: não há a quem atribuir.
+    const semChave = await generateSite("pasta-2", input);
+    assert.equal(semChave.generation.createdBy, null);
+  });
+
   it("a assinatura Joinvix vai junto com os anexos, com o nome que a Knowledge reconhece", async () => {
     let enviados = [];
     const { generateSite } = setup({
@@ -97,6 +107,60 @@ describe("createSiteGenerator", () => {
 
     await generateSite("pasta-1", input);
     assert.deepEqual(enviados, ["logo.png", "Rodapé Claro.png"]);
+  });
+
+  it("as imagens de banco sobem num zip só, depois dos anexos do Drive", async () => {
+    let recebido;
+    let zipado;
+    let enviados = [];
+    const { generateSite } = setup({
+      plan: async (_projectId, _prompt, _fileIds, stockImages) => {
+        recebido = stockImages;
+        return {
+          text: "Site para a padaria",
+          attachments: [{ id: "logo", uploadName: "logo.png" }],
+          stock: [
+            { id: 7, term: "pão", section: "hero", name: "pixabay-hero-7.jpg", hit: {} },
+            { id: 8, term: "pão", section: "hero", name: "pixabay-hero-8.jpg", hit: {} },
+          ],
+        };
+      },
+      uploadStock: async (images) => {
+        zipado = images.map((image) => image.id);
+        return { fileId: "up-zip", name: "imagens-pixabay.zip", mimeType: "application/zip", bytes: 40 };
+      },
+      call: async (_tool, args) => {
+        enviados = args.files.map((file) => file.file_name);
+        return { id: "lov-1", workspace_id: args.workspace_id };
+      },
+    });
+
+    const stockImages = [
+      { id: 7, term: "pão", section: "hero" },
+      { id: 8, term: "pão", section: "hero" },
+    ];
+    await generateSite("pasta-1", { ...input, stockImages });
+    assert.deepEqual(recebido, stockImages);
+    assert.deepEqual(zipado, [7, 8]);
+    assert.deepEqual(enviados, ["logo.png", "imagens-pixabay.zip"]);
+  });
+
+  it("falha ao baixar uma imagem de banco não chama o Lovable", async () => {
+    const { generateSite, calls } = setup({
+      plan: async () => ({
+        text: "Site para a padaria",
+        attachments: [],
+        stock: [{ id: 7, term: "pão", section: null, name: "pixabay-pao-7.jpg", hit: {} }],
+      }),
+      uploadStock: async () => {
+        throw Object.assign(new Error("Download falhou"), { status: 502 });
+      },
+    });
+
+    await assert.rejects(generateSite("pasta-1", input), /Download falhou/);
+    assert.equal(calls.create, 0);
+    // Nada foi cobrado: o projeto não fica bloqueado.
+    await assert.rejects(generateSite("pasta-1", input), /Download falhou/);
   });
 
   it("geração desligada no .env não sobe nada nem chama o Lovable", async () => {

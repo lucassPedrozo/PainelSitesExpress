@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import type { BuildFile, BuildPackage } from "@/lib/api";
+import { pluralize } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { AttachmentRow } from "./attachment-row";
 import { filterFiles, type SelectionSummary } from "./generation-prompt";
 
@@ -14,7 +16,9 @@ export function AttachmentsSection({
   onToggle,
   onSelectAll,
   onSelectNone,
+  className,
 }: {
+  className?: string;
   pkg: BuildPackage;
   selected: Set<string>;
   summary: SelectionSummary;
@@ -30,7 +34,9 @@ export function AttachmentsSection({
   );
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-col gap-2 p-6">
+    // Em duas colunas a seção rola por dentro, e a lista nunca fica abaixo
+    // de uma altura mínima — o mesmo desenho da aba do banco de imagens.
+    <section className={cn("flex min-h-0 min-w-0 flex-col gap-2 p-6 lg:overflow-y-auto", className)}>
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-medium">
           Arquivos para anexar
@@ -39,16 +45,10 @@ export function AttachmentsSection({
           </span>
         </h3>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onSelectAll}>
+          <Button variant="ghost" size="sm" onClick={onSelectAll}>
             Todos
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onSelectNone}>
+          <Button variant="ghost" size="sm" onClick={onSelectNone}>
             Nenhum
           </Button>
         </div>
@@ -60,11 +60,12 @@ export function AttachmentsSection({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Buscar arquivo ou subpasta..."
-          className="h-8 pl-8 text-sm"
+          aria-label="Buscar arquivo ou subpasta"
+          className="pl-8"
         />
       </div>
 
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-lg border p-1">
+      <div className="min-h-40 flex-1 space-y-1 overflow-y-auto rounded-lg border p-1">
         {visible.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">
             Nenhum arquivo encontrado.
@@ -83,14 +84,11 @@ export function AttachmentsSection({
 
       <p className="text-xs text-muted-foreground">
         {summary.capped &&
-          `Esta coleta tem ${summary.recommended} imagens — marcamos as ${pkg.limits.maxAttachments} primeiras, que é o teto por envio. `}
+          `Esta coleta tem ${pluralize(summary.recommended, "imagem", "imagens")}; vêm marcadas as ${pkg.limits.maxAttachments} primeiras, o teto por envio. `}
         {summary.blocked > 0 &&
-          `${summary.blocked} arquivo(s) passam do limite de tamanho. `}
-        Vídeo, áudio e compactados{" "}
-        <b className="font-medium">podem ser anexados</b>, mas não vêm
-        marcados: o upload é aceito pelo Lovable, e o aproveitamento do conteúdo
-        é que não é garantido. As imagens continuam sendo o material mais
-        confiável.
+          `${pluralize(summary.blocked, "arquivo passa", "arquivos passam")} do limite de tamanho. `}
+        Imagens e compactados vêm marcados; vídeo e áudio podem ir, mas o Lovable
+        não garante aproveitar o conteúdo.
       </p>
     </section>
   );

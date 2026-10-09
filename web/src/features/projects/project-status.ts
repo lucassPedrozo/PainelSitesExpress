@@ -1,4 +1,5 @@
 import type { DevArea, Generation, Project } from "@/lib/api";
+import { pluralize } from "@/lib/format";
 
 /**
  * O estado do projeto numa palavra.
@@ -12,20 +13,30 @@ import type { DevArea, Generation, Project } from "@/lib/api";
 export type ProjectStage =
   | "deploy-failed"
   | "deploying"
+  | "claude-interrupted"
+  | "claude-failed"
+  | "claude-approval"
   | "live"
   | "dev-failed"
   | "delivered-broken"
   | "delivered"
   | "ready"
   | "awaiting-input"
+  | "claude-building"
+  | "claude-briefing"
+  | "claude-queued"
   | "building"
   | "dev-publishing"
   | "link-broken"
   | "connect-github"
   | "generated"
+  | "claude-brief-refused"
+  | "claude-brief-ready"
   | "briefed"
   | "empty"
-  | "collected";
+  | "collected"
+  | "to-github"
+  | "storage";
 
 /**
  * Os estados na ordem do fluxo — a mesma da precedência abaixo. O filtro por
@@ -34,39 +45,59 @@ export type ProjectStage =
 export const stageOrder: ProjectStage[] = [
   "deploy-failed",
   "deploying",
+  "claude-interrupted",
+  "claude-failed",
+  "claude-approval",
   "live",
   "dev-failed",
   "delivered-broken",
   "delivered",
   "ready",
   "awaiting-input",
+  "claude-building",
+  "claude-briefing",
+  "claude-queued",
   "building",
   "dev-publishing",
   "link-broken",
   "connect-github",
   "generated",
+  "claude-brief-refused",
+  "claude-brief-ready",
   "briefed",
   "collected",
   "empty",
+  "to-github",
+  "storage",
 ];
 
 export const stageLabels: Record<ProjectStage, string> = {
   "deploy-failed": "Publicação falhou",
   deploying: "Publicando",
+  "claude-interrupted": "Geração interrompida",
+  "claude-failed": "Geração falhou",
+  "claude-approval": "Direção para aprovar",
   live: "No ar",
   "dev-failed": "Prévia falhou",
   "delivered-broken": "Link entregue caiu",
   delivered: "Entregue",
   ready: "Pronto para enviar",
   "awaiting-input": "Parado no Lovable",
+  "claude-building": "Gerando com o Claude",
+  "claude-briefing": "Gerando briefing",
+  "claude-queued": "Na fila do Claude",
   building: "Gerando no Lovable",
   "dev-publishing": "Publicando prévia",
   "link-broken": "Link não abre",
   "connect-github": "Conectar ao GitHub",
   generated: "Site gerado",
+  "claude-brief-refused": "Briefing recusado",
+  "claude-brief-ready": "Briefing para revisar",
   empty: "Sem material",
   briefed: "Briefing pronto",
   collected: "Material coletado",
+  "to-github": "Enviar ao GitHub",
+  storage: "Arquivos",
 };
 
 export type ProjectStatus = {
@@ -85,6 +116,20 @@ export type ProjectStatus = {
  */
 export const isExternalSite = (site: Generation | undefined): boolean =>
   Boolean(site?.id?.startsWith("ext-"));
+
+/** Site que o Claude Code gerou nesta máquina, pelo motor do painel. */
+export const isClaudeSite = (site: Generation | undefined): boolean => site?.engine === "claude";
+
+/** As etapas do motor Claude, na língua de quem opera. */
+export const claudeStageLabels: Record<string, string> = {
+  direcao: "direção criativa",
+  geracao: "geração",
+  revisao: "revisão",
+  ajuste: "ajuste",
+};
+
+export const claudeStageLabel = (etapa: string | null | undefined) =>
+  etapa ? (claudeStageLabels[etapa] ?? etapa) : null;
 
 /** A geração mais recente é a que vale; as antigas ficam no modal. */
 export const latestGeneration = (project: Project): Generation | undefined =>
@@ -138,6 +183,71 @@ export function projectStatus(project: Project): ProjectStatus {
       detail: "Build e envio por FTP em andamento. O painel confere sozinho e avisa aqui.",
       attention: false,
     };
+  }
+
+  // O motor Claude deixou algo esperando uma pessoa. Vem antes de "No ar",
+  // pelo mesmo motivo da publicação que falhou: o que se pediu não chegou, e
+  // só quem abrisse o projeto descobriria.
+  const claude = project.claude ?? null;
+  const fila = claude?.queue ?? null;
+  if (fila?.estado === "interrompida") {
+    return {
+      stage: "claude-interrupted",
+      label: stageLabels["claude-interrupted"],
+      detail: "O painel foi reiniciado no meio de uma execução do Claude. Retome-a ou descarte-a.",
+      attention: true,
+    };
+  }
+  if (claude && !fila) {
+    if (claude.site?.awaitingApproval) {
+      return {
+        stage: "claude-approval",
+        label: stageLabels["claude-approval"],
+        detail: "A direção criativa está pronta. O site só é gerado depois que alguém a aprovar.",
+        attention: true,
+      };
+    }
+    if (claude.site?.openStage) {
+      return {
+        stage: "claude-failed",
+        label: stageLabels["claude-failed"],
+        detail: `A execução terminou com a etapa de ${claudeStageLabel(claude.site.openStage)} aberta. Continue de onde parou ou encerre a etapa.`,
+        attention: true,
+      };
+    }
+    // O ajuste foi validado, mas o repositório ainda tem a versão de antes:
+    // o que se pediu não chegou ao link do cliente. Acontece quando quem
+    // pediu não pode publicar, ou quando o envio automático falhou.
+    if (
+      isClaudeSite(site) &&
+      site?.repoFullName &&
+      site.claudeValidatedAt &&
+      (!site.claudePushedAt || site.claudeValidatedAt > site.claudePushedAt)
+    ) {
+      return {
+        stage: "to-github",
+        label: stageLabels["to-github"],
+        detail:
+          claude.push?.state === "failed" && claude.push.message
+            ? `O envio ao GitHub falhou: ${claude.push.message}`
+            : "Há uma versão validada que ainda não foi ao GitHub: o link do cliente segue com a anterior.",
+        attention: true,
+      };
+    }
+    // Uma falha só toma o card quando não sobrou nada aproveitável: o
+    // briefing que já estava aceito, ou o site que já existia, continuam valendo.
+    const semBriefing = claude.lastRun?.type === "analisar" && claude.briefing?.state !== "ok";
+    const semSite = claude.lastRun?.type !== "analisar" && !isClaudeSite(site);
+    if (claude.lastRun?.status === "falha" && (semBriefing || semSite)) {
+      return {
+        stage: "claude-failed",
+        label: stageLabels["claude-failed"],
+        detail: semBriefing
+          ? "O Claude não entregou um briefing aceito. Veja o erro e peça de novo."
+          : "A geração do site falhou. Veja o erro antes de pedir de novo.",
+        attention: true,
+      };
+    }
   }
 
   // No ar ganha de tudo: o cliente já vê o site no domínio dele, e o link de
@@ -220,6 +330,36 @@ export function projectStatus(project: Project): ProjectStatus {
     };
   }
 
+  // Um pedido na fila do Claude, ou rodando: o painel acompanha sozinho.
+  if (fila?.estado === "rodando") {
+    return fila.tipo === "analisar"
+      ? {
+          stage: "claude-briefing",
+          label: stageLabels["claude-briefing"],
+          detail: "O Claude está lendo o material e escrevendo o briefing. O painel acompanha e avisa aqui.",
+          attention: false,
+        }
+      : {
+          stage: "claude-building",
+          label: stageLabels["claude-building"],
+          detail:
+            fila.tipo === "ajuste"
+              ? "O Claude está aplicando o ajuste no site. O painel acompanha e avisa aqui."
+              : "O Claude está construindo o site. O painel acompanha e avisa aqui.",
+          attention: false,
+        };
+  }
+  if (fila?.estado === "esperando") {
+    return {
+      stage: "claude-queued",
+      label: stageLabels["claude-queued"],
+      detail: fila.posicao
+        ? `Pedido na fila do Claude: é o ${fila.posicao}º a rodar. Uma execução por vez.`
+        : "Pedido na fila do Claude. Uma execução por vez.",
+      attention: false,
+    };
+  }
+
   if (site?.agentState === "running") {
     return {
       stage: "building",
@@ -264,11 +404,35 @@ export function projectStatus(project: Project): ProjectStatus {
     };
   }
 
+  // O Claude gerou e validou o site, e o código ainda mora só nesta máquina.
+  if (isClaudeSite(site) && !site?.repoFullName) {
+    return {
+      stage: "to-github",
+      label: stageLabels["to-github"],
+      detail:
+        claude?.push?.state === "failed" && claude.push.message
+          ? `O envio ao GitHub falhou: ${claude.push.message}`
+          : "Site gerado pelo Claude e validado. Envie o código ao GitHub para publicar na área de aprovação.",
+      attention: true,
+    };
+  }
+
   if (site?.origin === "linked" && !site.sharePreviewUrl) {
     return {
       stage: "generated",
       label: "Site vinculado",
       detail: "Site feito fora do painel. Publique a prévia na área de aprovação para ter o link do cliente.",
+      attention: true,
+    };
+  }
+
+  // No GitHub, mas fora da área de aprovação: o link do cliente nasce nela,
+  // e não no Lovable — este site nunca esteve lá.
+  if (isClaudeSite(site)) {
+    return {
+      stage: "generated",
+      label: stageLabels["generated"],
+      detail: "O código do site está no GitHub. Publique a prévia na área de aprovação para ter o link do cliente.",
       attention: true,
     };
   }
@@ -282,6 +446,44 @@ export function projectStatus(project: Project): ProjectStatus {
         : "Falta criar o link do cliente no Lovable (Share preview).",
       attention: true,
     };
+  }
+
+  // Sem site ainda, mas com o briefing que o Claude escreveu: recusado pela
+  // conferência, é corrigir; aceito, é revisar e gerar.
+  if (claude?.briefing?.state === "refused") {
+    return {
+      stage: "claude-brief-refused",
+      label: stageLabels["claude-brief-refused"],
+      detail: `A conferência apontou ${pluralize(claude.briefing.errors, "pendência")} no briefing. Corrija para poder gerar o site.`,
+      attention: true,
+    };
+  }
+  if (claude?.briefing?.state === "ok") {
+    return {
+      stage: "claude-brief-ready",
+      label: stageLabels["claude-brief-ready"],
+      detail: "O Claude escreveu o briefing e a conferência aceitou. Revise e gere o site.",
+      attention: true,
+    };
+  }
+
+  // Criado no painel, sem site registrado: não há coleta nem briefing a
+  // esperar. Ou é um site pronto que falta mandar ao GitHub, ou é só um lugar
+  // para guardar material — e esse não cobra passo nenhum.
+  if (project.source === "panel") {
+    return project.purpose === "files"
+      ? {
+          stage: "storage",
+          label: stageLabels.storage,
+          detail: "Projeto de arquivos, criado no painel. Para publicar um site daqui, use “Enviar site ao GitHub” no menu.",
+          attention: false,
+        }
+      : {
+          stage: "to-github",
+          label: stageLabels["to-github"],
+          detail: "Projeto criado no painel. Envie o código do site ao GitHub para publicar a prévia e, depois, o domínio.",
+          attention: true,
+        };
   }
 
   if (project.fileCount === 0 && project.folderCount === 0) {
@@ -315,6 +517,14 @@ export const stageClass: Record<ProjectStage, string> = {
   "deploy-failed": "border-destructive/30 bg-destructive/10 text-destructive",
   deploying:
     "animate-pulse border-info/30 bg-info/10 text-info",
+  "claude-interrupted": "border-warning/30 bg-warning/10 text-warning",
+  "claude-failed": "border-destructive/30 bg-destructive/10 text-destructive",
+  "claude-approval": "border-warning/30 bg-warning/10 text-warning",
+  "claude-building": "animate-pulse border-info/30 bg-info/10 text-info",
+  "claude-briefing": "animate-pulse border-info/30 bg-info/10 text-info",
+  "claude-queued": "border-info/30 bg-info/10 text-info",
+  "claude-brief-refused": "border-warning/30 bg-warning/10 text-warning",
+  "claude-brief-ready": "border-warning/30 bg-warning/10 text-warning",
   live: "border-info/30 bg-info/10 text-info",
   "dev-failed": "border-destructive/30 bg-destructive/10 text-destructive",
   "dev-publishing":
@@ -336,4 +546,6 @@ export const stageClass: Record<ProjectStage, string> = {
   briefed: "border-border bg-muted text-muted-foreground",
   empty: "border-destructive/30 bg-destructive/10 text-destructive",
   collected: "border-border bg-muted text-muted-foreground",
+  "to-github": "border-warning/30 bg-warning/10 text-warning",
+  storage: "border-border bg-muted text-muted-foreground",
 };

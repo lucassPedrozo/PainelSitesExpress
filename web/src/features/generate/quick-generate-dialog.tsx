@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,10 +10,13 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { BuildPackage, Project } from "@/lib/api";
-import { fetchBuildPackage, generateSite } from "@/lib/api";
-import { projectIdentity } from "@/lib/format";
+import { fetchBuildPackage, generateSite, isPanelProject } from "@/lib/api";
+import { ClaudeBatchContent } from "@/features/claude/claude-batch";
+import { useClaudeStatus } from "@/features/claude/use-claude";
+import { pluralize, projectIdentity } from "@/lib/format";
 import { queryKeys } from "@/lib/query";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -32,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { EngineChoice, type GenerationEngine } from "./engine-choice";
 import { quickPlan, type QuickPlan } from "./quick-generate";
 import { LovableReturnDialog } from "./lovable-return-dialog";
 import { useLovableConnection, useWorkspaceChoice } from "./use-lovable";
@@ -72,6 +76,19 @@ export function QuickGenerateDialog({
   onGenerated: () => void;
 }) {
   const [running, setRunning] = useState(false);
+  const claude = useClaudeStatus();
+  const [escolhido, setEscolhido] = useState<GenerationEngine | null>(null);
+  const claudeInstalado = claude.data?.installed === true;
+  /** Sem pasta no Drive, o Lovable não tem de onde montar o envio. */
+  const semDrive = projects?.every(isPanelProject) ?? false;
+  const engine: GenerationEngine = semDrive
+    ? "claude"
+    : (escolhido ?? (claude.data?.defaultEngine === "claude" && claudeInstalado ? "claude" : "lovable"));
+  const engineChoice =
+    claudeInstalado && !semDrive ? (
+      <EngineChoice value={engine} onChange={setEscolhido} disabled={running} />
+    ) : null;
+  const chave = projects?.map((p) => p.id).join(",") ?? "";
   return (
     <Dialog
       open={Boolean(projects)}
@@ -83,16 +100,28 @@ export function QuickGenerateDialog({
         showCloseButton={!running}
         onInteractOutside={(event) => running && event.preventDefault()}
       >
-        {projects && (
-          <QuickGenerateContent
-            key={projects.map((p) => p.id).join(",")}
-            projects={projects}
-            onRunningChange={setRunning}
-            onReview={onReview}
-            onGenerated={onGenerated}
-            onClose={() => onOpenChange(false)}
-          />
-        )}
+        {projects &&
+          (engine === "claude" ? (
+            // O lote do Claude só enfileira: quem atende, um por vez, é o servidor.
+            <ClaudeBatchContent
+              key={`claude:${chave}`}
+              projects={projects}
+              engineChoice={engineChoice}
+              onRunningChange={setRunning}
+              onQueued={onGenerated}
+              onClose={() => onOpenChange(false)}
+            />
+          ) : (
+            <QuickGenerateContent
+              key={chave}
+              projects={projects}
+              engineChoice={engineChoice}
+              onRunningChange={setRunning}
+              onReview={onReview}
+              onGenerated={onGenerated}
+              onClose={() => onOpenChange(false)}
+            />
+          ))}
       </DialogContent>
     </Dialog>
   );
@@ -100,12 +129,15 @@ export function QuickGenerateDialog({
 
 function QuickGenerateContent({
   projects,
+  engineChoice,
   onRunningChange,
   onReview,
   onGenerated,
   onClose,
 }: {
   projects: Project[];
+  /** A escolha do motor, no cabeçalho; `null` quando só o Lovable serve. */
+  engineChoice: ReactNode;
   onRunningChange: (running: boolean) => void;
   onReview: (project: Project) => void;
   onGenerated: () => void;
@@ -232,9 +264,12 @@ function QuickGenerateContent({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>
-          {batch ? `Gerar ${projects.length} sites` : `Gerar site — ${projectIdentity(single).label}`}
-        </DialogTitle>
+        <div className="flex flex-wrap items-center gap-2">
+          <DialogTitle>
+            {batch ? `Gerar ${projects.length} sites` : `Gerar site — ${projectIdentity(single).label}`}
+          </DialogTitle>
+          {engineChoice}
+        </div>
         <DialogDescription>
           Cada site vai com o envio padrão: o briefing do Drive como está, as
           imagens e compactados da pasta e a assinatura Joinvix.{" "}
@@ -301,27 +336,33 @@ function QuickGenerateContent({
       <LovableReturnDialog connection={lovable} />
 
       {!lovable.connected && lovable.status && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm">
-          <Link2 className="size-4 shrink-0 text-warning" />
-          <span className="min-w-40 flex-1">O painel não está conectado ao Lovable.</span>
-          <Button size="sm" variant="outline" onClick={() => void lovable.connect()}>
-            Conectar
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => void lovable.refresh()}>
-            Conferir
-          </Button>
-        </div>
+        <Alert variant="warning">
+          <Link2 />
+          <AlertTitle>O painel não está conectado ao Lovable</AlertTitle>
+          <AlertAction className="flex gap-1">
+            <Button size="sm" variant="outline" onClick={() => void lovable.connect()}>
+              Conectar
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void lovable.refresh()}>
+              Conferir
+            </Button>
+          </AlertAction>
+        </Alert>
       )}
 
       {phase === "confirm" && (
-        <p className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm">
-          Isto gasta crédito do Lovable:{" "}
-          <b className="font-medium">
-            {chosen.length} {chosen.length === 1 ? "criação" : "criações"}
-          </b>{" "}
-          no workspace <b className="font-medium">{workspaceName}</b>.
-          {batch && " O envio leva uns segundos por projeto; a construção continua no Lovable depois."}
-        </p>
+        <Alert variant="warning">
+          <Sparkles />
+          <AlertTitle>
+            Isto gasta crédito do Lovable: {pluralize(chosen.length, "criação", "criações")} no
+            workspace {workspaceName}
+          </AlertTitle>
+          {batch && (
+            <AlertDescription>
+              O envio leva uns segundos por projeto; a construção continua no Lovable depois.
+            </AlertDescription>
+          )}
+        </Alert>
       )}
       {phase === "running" && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -341,7 +382,7 @@ function QuickGenerateContent({
         <div className="flex items-center gap-2">
           {lovable.workspaces.length > 1 && phase === "select" && (
             <Select value={workspaceId} onValueChange={choose}>
-              <SelectTrigger className="h-8 w-52 text-xs">
+              <SelectTrigger className="w-52 text-xs" aria-label="Workspace do Lovable">
                 <SelectValue placeholder="Workspace" />
               </SelectTrigger>
               <SelectContent>
@@ -435,7 +476,7 @@ function QueueRow({
           {row.status === "done" && "Enviado — o Lovable está construindo. O card mostra o andamento."}
           {plan &&
             (row.status === "ready" || row.status === "blocked") &&
-            `${plan.attachments} ${plan.attachments === 1 ? "anexo" : "anexos"} + assinatura · ${plan.promptChars.toLocaleString("pt-BR")} caracteres de briefing`}
+            `${pluralize(plan.attachments, "anexo")} + assinatura · ${pluralize(plan.promptChars, "caractere")} de briefing`}
         </p>
         {plan && row.status === "ready" && plan.warnings.length > 0 && (
           <p className="mt-0.5 flex items-start gap-1 text-xs text-warning">

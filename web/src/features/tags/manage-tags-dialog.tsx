@@ -193,6 +193,7 @@ function TagRow({
       />
       <Input
         value={name}
+        aria-label={`Nome da tag ${tag.name}`}
         onChange={(event) => setName(event.target.value)}
         onBlur={() => void rename()}
         onKeyDown={(event) => {
@@ -215,7 +216,7 @@ function TagRow({
           >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Excluir"}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+          <Button variant="outline" size="sm" onClick={() => setConfirming(false)}>
             Cancelar
           </Button>
         </div>
@@ -223,11 +224,12 @@ function TagRow({
         <Button
           variant="ghost"
           size="icon"
-          className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+          className="shrink-0 text-muted-foreground hover:text-destructive"
           onClick={() => setConfirming(true)}
+          aria-label={`Excluir a tag ${tag.name}`}
           title="Excluir tag"
         >
-          <Trash2 className="size-4" />
+          <Trash2 />
         </Button>
       )}
     </div>
@@ -249,7 +251,8 @@ function ColorPicker({
         <Button
           variant="outline"
           size="icon"
-          className="size-8 shrink-0"
+          className="shrink-0"
+          aria-label={`Cor: ${tagColorLabels[value]} — trocar`}
           title={`Cor: ${tagColorLabels[value]}`}
         >
           <span className={cn("size-3.5 rounded-full", tagDotClass[value])} />
@@ -262,11 +265,13 @@ function ColorPicker({
               key={color}
               type="button"
               title={tagColorLabels[color]}
+              aria-label={tagColorLabels[color]}
+              aria-pressed={color === value}
               onClick={() => {
                 onChange(color);
                 setOpen(false);
               }}
-              className="grid size-7 place-items-center rounded-md transition hover:bg-muted"
+              className="grid size-7 place-items-center rounded-md transition hover:bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             >
               <span
                 className={cn(

@@ -20,7 +20,7 @@ const startupEnv = { ...process.env };
 const current = (key) => (process.env[key] ?? "").trim();
 
 /** Prefixos públicos de tokens: mostrá-los não revela nada. */
-const KNOWN_PREFIXES = ["github_pat_", "sk-ant-"];
+const KNOWN_PREFIXES = ["github_pat_", "sk-ant-", "AIza"];
 
 /**
  * A dica de um segredo gravado — o bastante para reconhecer qual está lá, sem

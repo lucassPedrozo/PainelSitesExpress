@@ -2,6 +2,7 @@ import { Router } from "express";
 import { loadBrief } from "../brief.js";
 import { cached, invalidate } from "../cache.js";
 import { config } from "../config.js";
+import { servicoClaude } from "../engines/claude/service.js";
 import {
   listProjectFolders,
   mapWithConcurrency,
@@ -22,9 +23,14 @@ import {
   listProjectTags,
   setProjectTags,
 } from "../store/tags.js";
-import { driveScoped } from "./drive-scoped.js";
+import { listLocalProjects } from "../store/local-projects.js";
+import { driveScoped, projectScoped } from "./drive-scoped.js";
+import { statsForLocalProject } from "./local-projects.js";
 
-/** Projetos: as pastas de cliente do Drive, com o que o painel sabe delas. */
+/**
+ * Projetos: as pastas de cliente do Drive e os criados no painel, com o que o
+ * painel sabe deles.
+ */
 export const projectsRouter = Router();
 
 /**
@@ -42,6 +48,7 @@ const emptyStats = {
   folderCount: 0,
   size: 0,
   lastActivity: null,
+  lastAdded: null,
   kinds: {},
   brief: null,
 };
@@ -75,7 +82,10 @@ projectsRouter.get("/projects", async (req, res) => {
     invalidate("stats:");
   }
 
-  const folders = await cached("projects", () => listProjectFolders());
+  // Cópia: a lista ganha os projetos do painel logo abaixo, e a do cache é
+  // só do Drive.
+  /** @type {any[]} */
+  const folders = [...(await cached("projects", () => listProjectFolders()))];
   rememberInsideDriveRoot(folders.map((folder) => folder.id));
 
   const projectTags = await listProjectTags();
@@ -92,9 +102,35 @@ projectsRouter.get("/projects", async (req, res) => {
     );
   });
 
+  // Os criados no painel entram na mesma lista, com o mesmo formato: o que
+  // muda é de onde vêm os arquivos (`source`).
+  const locals = await listLocalProjects();
+  const localStats = await Promise.all(locals.map((project) => statsForLocalProject(project.id)));
+  for (const [index, project] of locals.entries()) {
+    folders.push({
+      id: project.id,
+      name: project.name,
+      createdTime: project.createdAt,
+      modifiedTime: localStats[index].lastActivity ?? project.createdAt,
+      webViewLink: "",
+      owners: project.createdBy ? [{ displayName: project.createdBy }] : [],
+      source: "panel",
+      purpose: project.kind ?? "site",
+    });
+    stats.push(localStats[index]);
+  }
+
   const generations = await listGenerations();
   const names = await listProjectNames();
   const publications = await publicationsByDomain();
+  // O que o motor Claude tem de cada projeto. Vem do banco do painel, sem
+  // consultar o motor — e uma falha aqui não derruba a lista.
+  const claude = await servicoClaude()
+    .resumos()
+    .catch((err) => {
+      console.warn("[claude] resumo dos projetos:", err?.message ?? err);
+      return {};
+    });
 
   // O mesmo cliente às vezes preenche o formulário duas vezes (a primeira
   // incompleta). Cada envio vira uma pasta; contar as do mesmo domínio deixa o
@@ -116,6 +152,10 @@ projectsRouter.get("/projects", async (req, res) => {
     const publication = domain ? publications.get(domain) : undefined;
     return {
       id: folder.id,
+      /** `drive`: pasta de coleta. `panel`: criado aqui, com os arquivos em disco. */
+      source: folder.source ?? "drive",
+      /** Só nos do painel: `site` (para publicar) ou `files` (só material). */
+      purpose: folder.purpose ?? null,
       name: folder.name,
       description: folder.description ?? null,
       createdTime: folder.createdTime,
@@ -127,9 +167,12 @@ projectsRouter.get("/projects", async (req, res) => {
       totalSize: s.size,
       kinds: s.kinds,
       lastActivity: s.lastActivity ?? folder.modifiedTime,
+      lastAdded: s.lastAdded ?? null,
       brief: s.brief,
       tagIds: projectTags[folder.id] ?? [],
       generations: generations[folder.id] ?? [],
+      /** O briefing, a fila e o site do projeto no motor Claude; `null` se nunca passou por ele. */
+      claude: claude[folder.id] ?? null,
       // `name` continua sendo o da pasta no Drive; o apelido é do painel.
       alias,
       domain,
@@ -139,8 +182,18 @@ projectsRouter.get("/projects", async (req, res) => {
             domain: publication.domain,
             repoFullName: publication.repoFullName,
             configuredAt: publication.configuredAt ?? null,
+            configuredBy: publication.configuredBy ?? null,
             lastDeployAt: publication.lastDeployAt ?? null,
+            // Quando o site foi ao ar pela primeira vez — o fim do projeto.
+            firstDeployAt:
+              publication.firstDeployAt ?? publication.lastDeployAt ?? null,
             lastAttempt: lastAttemptOf(publication),
+            // Quem disparou cada publicação — a linha do tempo do projeto.
+            deploys: (publication.deploys ?? []).map((deploy) => ({
+              at: deploy.at,
+              by: deploy.by ?? null,
+              dryRun: Boolean(deploy.dryRun),
+            })),
           }
         : null,
     };
@@ -166,7 +219,7 @@ projectsRouter.get("/projects/:id/brief", driveScoped, async (req, res) => {
 
 projectsRouter.put(
   "/projects/:id/tags",
-  driveScoped,
+  projectScoped,
   requirePermission("organizar"),
   async (req, res) => {
     const tagIds = Array.isArray(req.body?.tagIds) ? req.body.tagIds : [];
@@ -181,7 +234,7 @@ projectsRouter.put(
  */
 projectsRouter.put(
   "/projects/:id/name",
-  driveScoped,
+  projectScoped,
   requirePermission("organizar"),
   async (req, res) => {
     res.json({ alias: await setProjectName(req.params.id, req.body?.name) });

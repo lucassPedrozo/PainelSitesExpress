@@ -103,6 +103,12 @@ export type WorkflowRun = {
   event: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * O passo em que a execução falhou, em inglês como está no workflow.
+   * Opcional: a API ainda não o envia — quando enviar, a lista diz onde
+   * parou sem obrigar a abrir o GitHub.
+   */
+  failedStep?: string | null;
 };
 
 export type DispatchResult = {

@@ -169,6 +169,30 @@ describe("store", () => {
       );
     }));
 
+  it("guarda quem gerou o site e quando o agente terminou", () =>
+    silenced(async () => {
+      const store = await freshStore();
+      const gerada = await store.recordGeneration("pasta-1", { id: "lov-1", createdBy: "Ana" });
+      assert.equal(gerada.createdBy, "Ana");
+      assert.equal(gerada.agentDoneAt, null);
+
+      const pronta = await store.setGenerationAgent("pasta-1", "lov-1", { agentState: "done" });
+      assert.ok(pronta.agentDoneAt);
+
+      // Conferir de novo um site já pronto não empurra a data da conclusão.
+      const data = await readDisk();
+      data.generations["pasta-1"][0].agentDoneAt = "2026-09-01T10:00:00.000Z";
+      await fs.writeFile(dataFile, JSON.stringify(data));
+      const relida = await (await freshStore()).setGenerationAgent("pasta-1", "lov-1", {
+        agentState: "done",
+      });
+      assert.equal(relida.agentDoneAt, "2026-09-01T10:00:00.000Z");
+
+      // Geração de antes do registro: sem responsável, e a tela diz isso.
+      const antiga = await store.recordGeneration("pasta-1", { id: "lov-2" });
+      assert.equal(antiga.createdBy, null);
+    }));
+
   it("o link do cliente passa a ser a pasta da área depois de conferida", () =>
     silenced(async () => {
       const store = await freshStore();
@@ -258,6 +282,19 @@ describe("store", () => {
       pub = (await store.listPublications())[0];
       assert.equal(pub.lastDeployAt, "2026-09-23T12:00:05Z");
       assert.equal(store.lastAttemptOf(pub)?.status, "failure");
+
+      // Publicar de novo move o último sucesso; o primeiro fica onde estava.
+      await store.setPublicationRuns("org/site", {
+        lastRun: { at: "2026-09-25T09:00:00Z", status: "success", runUrl: "https://gh/run/3", event: "push" },
+        lastSuccessAt: "2026-09-25T09:00:00Z",
+      });
+      pub = (await store.listPublications())[0];
+      assert.equal(pub.lastDeployAt, "2026-09-25T09:00:00Z");
+      assert.equal(pub.firstDeployAt, "2026-09-23T12:00:05Z");
+      await store.setPublicationRuns("org/site", {
+        lastRun: { at: "2026-09-25T10:00:00Z", status: "failure", runUrl: "https://gh/run/4", event: "push" },
+        lastSuccessAt: null,
+      });
 
       // Simulação não mexe no estado da publicação.
       await store.recordDeploy("org/site", { by: "Ana", dryRun: true, branch: "main" });

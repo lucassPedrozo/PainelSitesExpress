@@ -1,13 +1,20 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, FolderTree, Sparkles, X } from "lucide-react";
-import { fetchDevAreaStatus, type Project } from "@/lib/api";
-import { formatBytes, formatDateTime } from "@/lib/format";
-import type { DatedGroup } from "@/features/projects/date-groups";
+import { toast } from "sonner";
+import { deleteProject, fetchDevAreaStatus, type Project } from "@/lib/api";
+import { projectIdentity } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { groupAnchor, type DatedGroup } from "@/features/projects/date-groups";
 import { GenerateSiteDialog } from "@/features/generate/generate-site-dialog";
+import type { GenerationEngine } from "@/features/generate/engine-choice";
+import { ClaudePushDialog } from "@/features/claude/claude-push-dialog";
 import { QuickGenerateDialog } from "@/features/generate/quick-generate-dialog";
 import { ReplyAgentDialog } from "@/features/generate/reply-agent-dialog";
-import { ProjectFilesDialog } from "@/features/project-files/project-files-dialog";
+import {
+  ProjectFilesDialog,
+  type ProjectTab,
+} from "@/features/project-files/project-files-dialog";
 import { TagFilterBar } from "@/features/tags/tag-filter-bar";
 import type { TagsController } from "@/features/tags/use-tags";
 import {
@@ -23,7 +30,20 @@ import { BulkActionsBar } from "./bulk-actions-bar";
 import { RenameProjectDialog } from "./rename-project-dialog";
 import { LinkSiteDialog } from "./link-site-dialog";
 import { ChangeProjectDialog } from "./change-project-dialog";
+import { NewProjectDialog } from "./new-project-dialog";
+import { PushSiteDialog } from "./push-site-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { StageFilter } from "./stage-filter";
+import { WorkSummary } from "./work-summary";
 import type { ProjectList } from "./use-project-list";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -63,20 +83,24 @@ export function ProjectsView({
   const [selected, setSelected] = useState<Project | null>(null);
   /** O projeto foi aberto por "Criar link": o campo de colar já vem em foco. */
   const [focusShare, setFocusShare] = useState(false);
-  const [generating, setGenerating] = useState<Project | null>(null);
+  /** O que o modal do projeto mostra: os arquivos ou a linha do tempo. */
+  const [projectTab, setProjectTab] = useState<ProjectTab>("files");
+  /** O projeto na tela de geração, e o motor que já vem escolhido (ou o padrão). */
+  const [generating, setGenerating] = useState<{ project: Project; engine: GenerationEngine | null } | null>(null);
   const [renaming, setRenaming] = useState<Project | null>(null);
   const [linking, setLinking] = useState<Project | null>(null);
   const [changing, setChanging] = useState<Project | null>(null);
+  const [creating, setCreating] = useState(false);
+  /** Projeto criado no painel cujo site vai ao GitHub. */
+  const [pushing, setPushing] = useState<Project | null>(null);
+  /** Projeto cujo site, gerado pelo Claude, vai ao GitHub. */
+  const [pushingClaude, setPushingClaude] = useState<Project | null>(null);
+  const [deleting, setDeleting] = useState<Project | null>(null);
   /** Envio padrão: um projeto, ou a fila de um grupo inteiro. */
   const [quick, setQuick] = useState<Project[] | null>(null);
   const [replying, setReplying] = useState<Project | null>(null);
   const [publishing, setPublishing] = useState<Project | null>(null);
   const { patchGeneration } = list;
-
-  const quickGenerate = useCallback((project: Project) => {
-    setSelected(null);
-    setQuick([project]);
-  }, []);
 
   const reply = useCallback((project: Project) => {
     setSelected(null);
@@ -85,11 +109,20 @@ export function ProjectsView({
 
   const openProject = useCallback((project: Project) => {
     setFocusShare(false);
+    setProjectTab("files");
     setSelected(project);
   }, []);
 
   const openForShareLink = useCallback((project: Project) => {
     setFocusShare(true);
+    setProjectTab("files");
+    setSelected(project);
+  }, []);
+
+  /** Do menu do card, ou de dentro do modal já aberto: só a aba muda. */
+  const openTimeline = useCallback((project: Project) => {
+    setFocusShare(false);
+    setProjectTab("timeline");
     setSelected(project);
   }, []);
 
@@ -129,8 +162,33 @@ export function ProjectsView({
   /** Um modal de cada vez: abrir o gerador fecha a lista de arquivos. */
   const startGeneration = useCallback((project: Project) => {
     setSelected(null);
-    setGenerating(project);
+    setGenerating({ project, engine: null });
   }, []);
+
+  /** A mesma tela, já no motor Claude — o primeiro passo dele é o briefing. */
+  const startClaudeGeneration = useCallback((project: Project) => {
+    setSelected(null);
+    setGenerating({ project, engine: "claude" });
+  }, []);
+
+  /** O projeto na aba do Claude: acompanhar, revisar, aprovar, ver o erro. */
+  const openClaude = useCallback((project: Project) => {
+    setFocusShare(false);
+    setProjectTab("claude");
+    setSelected(project);
+  }, []);
+
+  /**
+   * Vários projetos vão para a fila do envio em lote; um só abre a tela de
+   * conferência, como o botão do card.
+   */
+  const generateMany = useCallback(
+    (projects: Project[]) => {
+      if (projects.length === 1) startGeneration(projects[0]);
+      else setQuick(projects);
+    },
+    [startGeneration],
+  );
 
   /** Publica ali mesmo, sem sair da lista. */
   const startPublication = useCallback((project: Project) => {
@@ -138,11 +196,68 @@ export function ProjectsView({
     setPublishing(project);
   }, []);
 
+  const { load } = list;
+
+  /** Recém-criado: relê a lista e abre o que a pessoa veio fazer com ele. */
+  const afterCreate = useCallback(
+    async (projectId: string, kind: "site" | "files") => {
+      setCreating(false);
+      await load();
+      const fresh: Project = {
+        id: projectId,
+        source: "panel",
+        purpose: kind,
+        name: "",
+        alias: null,
+        description: null,
+        createdTime: new Date().toISOString(),
+        modifiedTime: new Date().toISOString(),
+        webViewLink: "",
+        owner: null,
+        fileCount: 0,
+        folderCount: 0,
+        totalSize: 0,
+        kinds: {},
+        lastActivity: new Date().toISOString(),
+        tagIds: [],
+        brief: null,
+        generations: [],
+        publication: null,
+        domain: null,
+        domainCollections: 0,
+      };
+      // Os diálogos procuram o projeto na lista pelo id: o esqueleto só vale
+      // se a releitura ainda não o trouxe.
+      if (kind === "site") setPushing(fresh);
+      else {
+        setFocusShare(false);
+        setProjectTab("files");
+        setSelected(fresh);
+      }
+    },
+    [load],
+  );
+
+  const removeProject = useCallback(
+    async (project: Project) => {
+      setDeleting(null);
+      try {
+        await deleteProject(project.id);
+        toast.success(`Projeto ${projectIdentity(project).label} excluído`);
+      } catch (err) {
+        toast.error("Não foi possível excluir o projeto", {
+          description: err instanceof Error ? err.message : "Tente novamente.",
+        });
+      }
+      await load();
+    },
+    [load],
+  );
+
   /** As ações do card e do modal — as mesmas nos dois, e estáveis. */
   const actions: ProjectActionHandlers = useMemo(
     () => ({
       onGenerate: startGeneration,
-      onQuickGenerate: quickGenerate,
       onReply: reply,
       onPublish: startPublication,
       onRename: setRenaming,
@@ -151,6 +266,7 @@ export function ProjectsView({
       onVerifyLink: verifyLink,
       onPublishToApprovalArea: approvalAreaReady ? publishApproval : undefined,
       onFindDomain: list.setQuery,
+      onShowTimeline: openTimeline,
       onLinkSite: (project: Project) => {
         setSelected(null);
         setLinking(project);
@@ -159,10 +275,24 @@ export function ProjectsView({
         setSelected(null);
         setChanging(project);
       },
+      onPushSite: (project: Project) => {
+        setSelected(null);
+        setPushing(project);
+      },
+      onOpenFiles: openProject,
+      onDeleteProject: (project: Project) => {
+        setSelected(null);
+        setDeleting(project);
+      },
+      onOpenClaude: openClaude,
+      onGenerateWithClaude: startClaudeGeneration,
+      onPushClaudeSite: (project: Project) => {
+        setSelected(null);
+        setPushingClaude(project);
+      },
     }),
     [
       startGeneration,
-      quickGenerate,
       reply,
       startPublication,
       openForShareLink,
@@ -171,6 +301,10 @@ export function ProjectsView({
       approvalAreaReady,
       publishApproval,
       list.setQuery,
+      openTimeline,
+      openProject,
+      openClaude,
+      startClaudeGeneration,
     ],
   );
 
@@ -183,7 +317,7 @@ export function ProjectsView({
       <Button
         size="sm"
         variant="outline"
-        onClick={() => setQuick(group.items)}
+        onClick={() => generateMany(group.items)}
         title="Abre a lista dos projetos deste grupo para conferir e confirmar. Nada é enviado ao Lovable antes da confirmação."
       >
         <Sparkles className="size-3.5" />
@@ -203,38 +337,41 @@ export function ProjectsView({
         .join(list.tagFilter.matchAll ? " e " : " ou ")}`,
   ].filter(Boolean) as string[];
 
-  const limparFiltros = (
-    <Button variant="ghost" size="xs" onClick={list.clearFilters}>
-      <X className="size-3.5" />
-      Limpar filtros
-    </Button>
-  );
+  // A fila agrupa pelo próximo passo — a não ser que o filtro de etapa peça
+  // justamente os que estão no ar; aí a lista volta a ser por data (a mesma
+  // regra de `useProjectList`).
+  const fila = list.view === "queue" && list.stage !== "live";
+
+  /** Do resumo ao grupo: rola até ele e leva o foco, para teclado e leitor. */
+  const jumpToGroup = useCallback((key: string) => {
+    const alvo = document.getElementById(groupAnchor(key));
+    if (!alvo) return;
+    const semMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    alvo.scrollIntoView({ behavior: semMovimento ? "auto" : "smooth", block: "start" });
+    alvo.focus({ preventScroll: true });
+  }, []);
 
   const ProjectCollection = layout === "grid" ? ProjectGrid : ProjectTable;
 
   return (
     <>
-      {/* Uma linha, não um cartão: são números de contexto, não um painel
-          para agir. O quanto está visível também mora aqui — antes o total
-          aparecia duas vezes, aqui e no fim da barra de ferramentas. */}
-      {/* A vista e a ordenação primeiro: decidem o que os filtros abaixo
-          filtram. Antes a barra vinha por último, depois das fileiras que
-          ela mesma alterava. */}
-      <ProjectsToolbar
-        list={list}
-        layout={layout}
-        onLayoutChange={onLayoutChange}
-      />
+      {/* Duas camadas, do controle ao trabalho.
 
-      {/* Os dois filtros num painel só, com os rótulos numa coluna: antes
-          eram fileiras soltas no fundo da página, cada uma com 24px de
-          distância, e liam como seções diferentes. Logo abaixo, colado, o
-          resumo do que o filtro deixou na tela. */}
-      <div className="space-y-3">
-        <section
-          aria-label="Filtros"
-          className="space-y-2.5 rounded-xl bg-card px-4 py-3 shadow-xs ring-1 ring-foreground/10"
-        >
+          A primeira é a "lente": a barra (vista, ordenação, exibição) e, logo
+          abaixo, os dois filtros — sem caixa própria. O painel branco que os
+          envolvia tinha o mesmo peso dos cards e disputava com eles; sobre o
+          fundo da página, com os chips em fio de borda, os filtros leem como
+          controle. A vista vem primeiro porque decide o que os filtros
+          filtram. */}
+      <div className="space-y-4">
+        <ProjectsToolbar
+          list={list}
+          layout={layout}
+          onLayoutChange={onLayoutChange}
+          onNewProject={() => setCreating(true)}
+          onOpenClaude={openClaude}
+        />
+        <section aria-label="Filtros" className="space-y-2">
           <StageFilter
             counts={list.stageCounts}
             value={list.stage}
@@ -249,46 +386,33 @@ export function ProjectsView({
             hiddenTagIds={tags.finishedTagId ? [tags.finishedTagId] : []}
           />
         </section>
-
-      {/* O que está na tela e por quê: quantos, de quantos, e os filtros
-          ligados — com um "Limpar" só para todos. */}
-      {loading ? (
-        <Skeleton className="h-4 w-80" />
-      ) : (
-        <div className="flex min-h-6 flex-wrap items-center gap-x-1.5 gap-y-1 px-1 text-xs text-muted-foreground">
-          <span>
-            <b className="font-semibold text-foreground tabular-nums">{visible.length}</b>{" "}
-            {visible.length === 1 ? "projeto" : "projetos"}
-            {list.view === "queue" && " com algo a fazer"}
-            {list.view === "finished" && " finalizados"}
-          </span>
-          {filtrosAtivos.length > 0 && (
-            <>
-              <span aria-hidden>·</span>
-              <span>filtrando por {filtrosAtivos.join(", ")}</span>
-              {limparFiltros}
-            </>
-          )}
-          {list.view === "queue" && list.doneCount > 0 && (
-            <>
-              <span aria-hidden>·</span>
-              <button
-                type="button"
-                className="underline-offset-2 hover:text-foreground hover:underline"
-                onClick={() => list.setView("all")}
-                title="Os que estão no ar não têm nada a fazer e ficam fora da fila. A vista “Todos” mostra também eles."
-              >
-                {list.doneCount} no ar, fora da fila
-              </button>
-            </>
-          )}
-          <span className="ml-auto hidden sm:inline">
-            {projects.length} no Drive · {summary.recent} {summary.recent === 1 ? "coleta" : "coletas"} nos
-            últimos 30 dias · {summary.files.toLocaleString("pt-BR")} arquivos · {formatBytes(summary.size)}
-          </span>
-        </div>
-      )}
       </div>
+
+      {/* A segunda camada é o trabalho: um fio separa a lente do resumo, e o
+          resumo diz quantos projetos há na tela e quantos esperam cada passo
+          — os números que a tela existe para mostrar, em tamanho de título,
+          cada um levando ao seu grupo. Os grupos vêm colados a ele. */}
+      <div className="space-y-4 border-t pt-4">
+      {loading ? (
+        <Skeleton className="h-7 w-96 max-w-full" />
+      ) : (
+        <WorkSummary
+          view={list.view}
+          visibleCount={visible.length}
+          queue={fila ? groups : null}
+          doneCount={list.doneCount}
+          onShowAll={() => list.setView("all")}
+          onJump={jumpToGroup}
+          filters={filtrosAtivos}
+          onClearFilters={list.clearFilters}
+          inventory={{
+            total: projects.length,
+            recent: summary.recent,
+            files: summary.files,
+            size: summary.size,
+          }}
+        />
+      )}
 
       {error ? (
         <EmptyState
@@ -313,7 +437,7 @@ export function ProjectsView({
         <EmptyState
           icon={<FolderTree />}
           title="Nada a fazer agora"
-          description={`${list.doneCount === 1 ? "O projeto deste filtro está" : `Os ${list.doneCount} projetos deste filtro estão`} no ar.`}
+          description={`${list.doneCount === 1 ? "O projeto deste filtro está" : `Os ${list.doneCount} projetos deste filtro estão`} sem pendência — no ar, ou só guardando arquivos.`}
           action={
             <Button variant="outline" onClick={() => list.setView("all")}>
               Ver na vista “Todos”
@@ -346,18 +470,19 @@ export function ProjectsView({
           onOpen={openProject}
           {...actions}
           onTagsChange={list.applyTags}
-          renderGroupAction={list.view === "queue" ? groupAction : undefined}
+          renderGroupAction={fila ? groupAction : undefined}
           selectedIds={list.selectedIds}
           onToggleSelect={list.toggleSelected}
         />
       )}
+      </div>
 
       <BulkActionsBar
         list={list}
         tags={tags}
         visible={visible}
         approvalAreaReady={approvalAreaReady}
-        onGenerate={(selecionados) => setQuick(selecionados)}
+        onGenerate={generateMany}
       />
 
       {fetchedAt && !loading && (
@@ -380,6 +505,8 @@ export function ProjectsView({
             : null
         }
         tags={tags}
+        tab={projectTab}
+        onTabChange={setProjectTab}
         focusShareInput={focusShare}
         onOpenChange={(open) => !open && setSelected(null)}
         actions={actions}
@@ -388,9 +515,17 @@ export function ProjectsView({
       />
 
       <GenerateSiteDialog
-        project={generating}
+        project={generating?.project ?? null}
+        engine={generating?.engine ?? null}
         onOpenChange={(open) => !open && setGenerating(null)}
         onGenerated={() => void list.load(true)}
+        // O pedido entrou na fila do Claude: o projeto abre na aba dele, onde
+        // o log corre e, depois, o briefing aparece para revisar.
+        onRequested={(project) => {
+          setGenerating(null);
+          void list.load();
+          openClaude(project);
+        }}
       />
 
       <QuickGenerateDialog
@@ -437,6 +572,45 @@ export function ProjectsView({
         onOpenChange={(open) => !open && setChanging(null)}
         onChanged={() => list.load()}
       />
+
+      <NewProjectDialog open={creating} onOpenChange={setCreating} onCreated={afterCreate} />
+
+      <PushSiteDialog
+        project={pushing ? (projects.find((p) => p.id === pushing.id) ?? pushing) : null}
+        approvalAreaReady={approvalAreaReady}
+        onOpenChange={(open) => !open && setPushing(null)}
+        onPushed={() => list.load()}
+      />
+
+      <ClaudePushDialog
+        project={pushingClaude ? (projects.find((p) => p.id === pushingClaude.id) ?? pushingClaude) : null}
+        onOpenChange={(open) => !open && setPushingClaude(null)}
+      />
+
+      <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Excluir {deleting ? projectIdentity(deleting).label : "o projeto"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              O projeto sai do painel junto com os arquivos guardados nele, as tags e o registro do site. Não dá
+              para desfazer. O repositório no GitHub e o site já publicado continuam como estão.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (deleting) void removeProject(deleting);
+              }}
+            >
+              Excluir projeto
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <RenameProjectDialog
         project={renaming}

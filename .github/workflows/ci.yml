@@ -44,6 +44,10 @@ jobs:
           npm ci --prefix web
 
       # Sem .env: a API não lê o arquivo dentro do `node --test`, e nenhum
-      # teste fala com Drive, GitHub ou Lovable.
+      # teste fala com Drive, GitHub, Lovable ou com o Claude de verdade.
+      #
+      # O pacote do motor Claude (joinvixable/) vive num repositório privado e
+      # não é baixado aqui: os passos dele são pulados com aviso, os testes
+      # que precisam dele também, e os das rotas rodam com um motor de mentira.
       - name: Verificar
         run: npm run check

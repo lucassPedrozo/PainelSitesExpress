@@ -1,24 +1,34 @@
 import { useState, type ReactNode } from "react";
 import {
+  Activity,
+  Bot,
+  CheckCheck,
   ClipboardCopy,
   ExternalLink,
+  FilePen,
   FolderOpen,
   Eye,
   Globe,
+  History,
   Link2,
   Replace,
   Loader2,
   MessageSquareReply,
   MoreHorizontal,
   Pencil,
+  PencilLine,
   RefreshCw,
   Rocket,
+  RotateCcw,
   Send,
   Sparkles,
+  Trash2,
   TriangleAlert,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
-import type { Project } from "@/lib/api";
+import { isPanelProject, type Project } from "@/lib/api";
+import { isClaudeSite } from "@/features/projects/project-status";
 import { usePermissions } from "@/lib/permissions";
 import { copyBrief } from "@/features/projects/copy-brief";
 import {
@@ -37,10 +47,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export type ProjectActionHandlers = {
-  /** O diálogo completo, com prompt e anexos editáveis. */
+  /**
+   * A tela de geração: prompt, anexos do Drive e imagens de banco para
+   * conferir antes de gastar crédito.
+   */
   onGenerate: (project: Project) => void;
-  /** O envio padrão, com uma confirmação — só para quem tem briefing. */
-  onQuickGenerate: (project: Project) => void;
   onReply: (project: Project) => void;
   onPublish: (project: Project) => void;
   onRename: (project: Project) => void;
@@ -59,6 +70,23 @@ export type ProjectActionHandlers = {
   onChangeProject?: (project: Project) => void;
   /** Mostra só as coletas deste domínio — o card usa quando há mais de uma. */
   onFindDomain?: (domain: string) => void;
+  /** Abre o projeto na linha do tempo: o que aconteceu, quando e por quem. */
+  onShowTimeline?: (project: Project) => void;
+  /** Projeto criado no painel: manda o código do site ao GitHub. */
+  onPushSite?: (project: Project) => void;
+  /** Projeto criado no painel: abre os arquivos dele. */
+  onOpenFiles?: (project: Project) => void;
+  /** Projeto criado no painel: exclui, depois de confirmar. */
+  onDeleteProject?: (project: Project) => void;
+  /**
+   * Abre o projeto na aba do Claude: acompanhar a execução, revisar o
+   * briefing, aprovar a direção, ver o erro, pedir um ajuste.
+   */
+  onOpenClaude?: (project: Project) => void;
+  /** Abre a tela de geração já no motor Claude. */
+  onGenerateWithClaude?: (project: Project) => void;
+  /** Manda ao GitHub o site que o Claude gerou e validou. */
+  onPushClaudeSite?: (project: Project) => void;
 };
 
 const semPermissao = "Esta chave de acesso não tem permissão para isto";
@@ -75,6 +103,18 @@ const icons: Record<string, LucideIcon> = {
   "Ver erro": TriangleAlert,
   "Abrir site": Globe,
   "Abrir no Drive": FolderOpen,
+  "Enviar ao GitHub": Upload,
+  "Abrir arquivos": FolderOpen,
+};
+
+/** Os passos que abrem a aba do Claude: o mesmo rótulo do card, com o ícone do que se vai fazer lá. */
+const claudeIcons: Record<string, LucideIcon> = {
+  Acompanhar: Activity,
+  "Revisar e gerar": Sparkles,
+  "Corrigir briefing": FilePen,
+  "Aprovar direção": CheckCheck,
+  "Ver erro": TriangleAlert,
+  "Retomar ou descartar": RotateCcw,
 };
 
 /**
@@ -108,7 +148,6 @@ function HintWhenDisabled({
 export function ProjectActions({
   project,
   onGenerate,
-  onQuickGenerate,
   onReply,
   onPublish,
   onRename,
@@ -118,13 +157,30 @@ export function ProjectActions({
   onPublishToApprovalArea,
   onLinkSite,
   onChangeProject,
-}: { project: Project } & ProjectActionHandlers) {
+  onShowTimeline,
+  onPushSite,
+  onOpenFiles,
+  onDeleteProject,
+  onOpenClaude,
+  onGenerateWithClaude,
+  onPushClaudeSite,
+  stepInView = false,
+}: {
+  project: Project;
+  /**
+   * O destino do próximo passo já está na tela (a aba do Claude aberta, com os
+   * botões dela): o botão daqui não teria o que fazer, e some. O menu fica.
+   */
+  stepInView?: boolean;
+} & ProjectActionHandlers) {
   const { can } = usePermissions();
   const [busy, setBusy] = useState(false);
   const step = nextStep(project);
   const editor = lovableEditorUrl(project);
   const hasSite = project.generations.length > 0;
   const site = project.generations.at(-1);
+  /** Criado no painel: sem pasta no Drive, sem geração pelo Lovable. */
+  const fromPanel = isPanelProject(project);
   const inApprovalArea = Boolean(site?.devArea?.repoFullName && site.devArea.state !== "retired");
 
   const permission = stepPermission[step.kind];
@@ -142,9 +198,10 @@ export function ProjectActions({
   const act = (current: NextStep) => {
     switch (current.kind) {
       case "generate":
-        // Sem briefing não há envio padrão: o diálogo completo pede a
-        // descrição do site.
-        return project.brief ? onQuickGenerate(project) : onGenerate(project);
+        // Sempre a tela de conferência: o envio direto (só uma confirmação)
+        // pulava a revisão do prompt e dos anexos, e era por ela que se
+        // escolhiam as fotos. O envio em lote continua na barra de seleção.
+        return onGenerate(project);
       case "reply":
         return onReply(project);
       case "publish":
@@ -161,12 +218,21 @@ export function ProjectActions({
         // projeto aberto e o campo de colar em foco.
         if (current.href) window.open(current.href, "_blank", "noopener,noreferrer");
         return onCreateLink(project);
+      case "push-site":
+        return onPushSite?.(project);
+      case "files":
+        return onOpenFiles?.(project);
+      case "claude":
+        return onOpenClaude?.(project);
+      case "push-claude":
+        return onPushClaudeSite?.(project);
       case "link":
         if (current.href) window.open(current.href, "_blank", "noopener,noreferrer");
     }
   };
 
-  const Icon = icons[step.label] ?? ExternalLink;
+  const Icon =
+    step.kind === "claude" ? (claudeIcons[step.label] ?? Bot) : (icons[step.label] ?? ExternalLink);
   const unavailable =
     (step.kind === "link" && !step.href) || (step.kind === "approval" && !onPublishToApprovalArea);
 
@@ -175,41 +241,62 @@ export function ProjectActions({
       className="flex min-w-0 items-center gap-1"
       onClick={(event) => event.stopPropagation()}
     >
-      <HintWhenDisabled
-        reason={
-          !allowed
-            ? semPermissao
-            : unavailable
-              ? step.kind === "approval"
-                ? "A área de aprovação não está configurada. Preencha-a em Configurações → Área de aprovação."
-                : "A execução ainda não apareceu no GitHub — o painel confere sozinho."
-              : undefined
-        }
-      >
-        <Button
-          size="sm"
-          variant={step.kind === "link" ? "outline" : "default"}
-          disabled={!allowed || busy || unavailable}
-          onClick={() => act(step)}
+      {!stepInView && (
+        <HintWhenDisabled
+          reason={
+            !allowed
+              ? semPermissao
+              : unavailable
+                ? step.kind === "approval"
+                  ? "A área de aprovação não está configurada. Preencha-a em Configurações → Área de aprovação."
+                  : "A execução ainda não apareceu no GitHub — o painel confere sozinho."
+                : undefined
+          }
         >
-          {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Icon className="size-3.5" />}
-          {step.label}
-        </Button>
-      </HintWhenDisabled>
+          <Button
+            size="sm"
+            variant={
+              step.kind === "link" || step.kind === "files" || (step.kind === "claude" && step.label === "Acompanhar")
+                ? "outline"
+                : "default"
+            }
+            disabled={!allowed || busy || unavailable}
+            onClick={() => act(step)}
+          >
+            {busy ? <Loader2 className="animate-spin" /> : <Icon />}
+            {step.label}
+          </Button>
+        </HintWhenDisabled>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            size="icon"
-            className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+            size="icon-sm"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
             aria-label={`Mais ações de ${project.alias ?? project.name}`}
+            title="Mais ações"
           >
-            <MoreHorizontal className="size-3.5" />
+            <MoreHorizontal />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          {step.kind !== "generate" && (
+          {fromPanel && onPushSite && step.kind !== "push-site" && (
+            <DropdownMenuItem
+              onSelect={() => onPushSite(project)}
+              disabled={!can("publicar")}
+              title={
+                can("publicar")
+                  ? "Manda o código do site, guardado nos arquivos do projeto, para o repositório no GitHub."
+                  : semPermissao
+              }
+            >
+              <Upload />
+              {hasSite ? "Atualizar o site no GitHub" : "Enviar site ao GitHub"}
+            </DropdownMenuItem>
+          )}
+          {step.kind !== "generate" && !fromPanel && (
             <DropdownMenuItem
               onSelect={() => onGenerate(project)}
               disabled={!can("gerar")}
@@ -217,6 +304,37 @@ export function ProjectActions({
             >
               <Sparkles />
               {hasSite ? "Gerar outro site" : "Gerar"}
+            </DropdownMenuItem>
+          )}
+          {/* Sem pasta no Drive o Lovable não tem de onde montar o envio; o
+              Claude lê os arquivos enviados ao painel. */}
+          {fromPanel && onGenerateWithClaude && (
+            <DropdownMenuItem
+              onSelect={() => onGenerateWithClaude(project)}
+              disabled={!can("gerar")}
+              title={
+                can("gerar")
+                  ? "O Claude lê os arquivos do projeto, escreve o briefing e, depois de revisado, gera o site."
+                  : semPermissao
+              }
+            >
+              <Bot />
+              Gerar site com o Claude
+            </DropdownMenuItem>
+          )}
+          {isClaudeSite(site) && onOpenClaude && step.kind !== "claude" && (
+            <DropdownMenuItem
+              onSelect={() => onOpenClaude(project)}
+              title="Abre o site no motor Claude: pedir ajuste, validar, ver as telas e o histórico."
+            >
+              <PencilLine />
+              Ajustar com o Claude
+            </DropdownMenuItem>
+          )}
+          {(project.claude || fromPanel) && onOpenClaude && !isClaudeSite(site) && step.kind !== "claude" && (
+            <DropdownMenuItem onSelect={() => onOpenClaude(project)}>
+              <Bot />
+              Abrir no Claude
             </DropdownMenuItem>
           )}
           {hasSite && step.kind !== "publish" && (
@@ -286,6 +404,12 @@ export function ProjectActions({
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
+          {onShowTimeline && (
+            <DropdownMenuItem onSelect={() => onShowTimeline(project)}>
+              <History />
+              Linha do tempo
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onSelect={() => onRename(project)}
             disabled={!can("organizar")}
@@ -294,12 +418,25 @@ export function ProjectActions({
             <Pencil />
             Renomear no painel
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <a href={project.webViewLink} target="_blank" rel="noreferrer">
-              <FolderOpen />
-              Abrir no Drive
-            </a>
-          </DropdownMenuItem>
+          {!fromPanel && (
+            <DropdownMenuItem asChild>
+              <a href={project.webViewLink} target="_blank" rel="noreferrer">
+                <FolderOpen />
+                Abrir no Drive
+              </a>
+            </DropdownMenuItem>
+          )}
+          {fromPanel && onDeleteProject && (
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => onDeleteProject(project)}
+              disabled={!can("organizar")}
+              title={can("organizar") ? undefined : semPermissao}
+            >
+              <Trash2 />
+              Excluir projeto
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

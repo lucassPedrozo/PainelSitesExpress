@@ -32,6 +32,7 @@ import { usePermissions } from "@/lib/permissions";
 import { SHARE_PREVIEW_INPUT_ID } from "./share-input-id";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatDateTime } from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,29 +55,20 @@ import { cn } from "@/lib/utils";
  * Com a área de desenvolvimento configurada, o link é a pasta do site lá
  * (`https://sitexpress.../zezinho/`), publicada sozinha a cada push, e o campo
  * do Share preview sai de cena — fica só para os sites de antes dela.
+ *
+ * A ordem de leitura é fixa: (1) o que é e em que estado está; (2) as etapas
+ * da área de aprovação, se o site está nela; (3) o endereço e a ação
+ * principal; (4) os detalhes; (5) as ações secundárias. Antes tudo isso
+ * dividia a mesma hierarquia e nada dizia o que fazer primeiro.
  */
 
 const ESTADOS: Record<
   PreviewState,
-  { rotulo: string; classe: string; Icone: typeof CheckCircle2 }
+  { rotulo: string; variant: "success" | "destructive" | "warning"; Icone: typeof CheckCircle2 }
 > = {
-  alive: {
-    rotulo: "Aberto ao cliente",
-    classe:
-      "border-success/30 bg-success/10 text-success",
-    Icone: CheckCircle2,
-  },
-  dead: {
-    rotulo: "Não abre",
-    classe: "border-destructive/30 bg-destructive/10 text-destructive",
-    Icone: XCircle,
-  },
-  unknown: {
-    rotulo: "Não verificado",
-    classe:
-      "border-warning/30 bg-warning/10 text-warning",
-    Icone: HelpCircle,
-  },
+  alive: { rotulo: "Aberto ao cliente", variant: "success", Icone: CheckCircle2 },
+  dead: { rotulo: "Não abre", variant: "destructive", Icone: XCircle },
+  unknown: { rotulo: "Não verificado", variant: "warning", Icone: HelpCircle },
 };
 
 type Props = {
@@ -138,6 +130,10 @@ export function ClientLink({
   // Na primeira publicação a pasta ainda não foi conferida: o endereço já
   // aparece, mas o envio só libera quando ela abre.
   const endereco = clienteUrl ?? area?.url ?? null;
+  // Site vinculado de fora do Lovable: não existe Share preview a colar — o
+  // link do cliente é a pasta na área de aprovação.
+  const externo = isExternalSite(generation);
+  const podePublicar = can("publicar");
 
   const falhar = (erro: unknown, titulo: string) =>
     toast.error(titulo, {
@@ -250,36 +246,26 @@ export function ClientLink({
     }
   };
 
-  // Site vinculado de fora do Lovable: não existe Share preview a colar — o
-  // link do cliente é a pasta na área de aprovação.
-  const externo = isExternalSite(generation);
+  /** O formulário do Share preview aparece aberto ou atrás de "Trocar o preview". */
+  const formularioRecolhido =
+    !area &&
+    !externo &&
+    generation.previewState === "alive" &&
+    Boolean(generation.sharePreviewUrl) &&
+    !trocando &&
+    !focusInput;
+  const mostraFormulario = !area && !externo && !formularioRecolhido;
 
   return (
     <div className={cn("space-y-3", className)}>
+      {/* ---- 1. O que é, em que estado está, e a conferência ------------- */}
       <div className="flex flex-wrap items-center gap-2">
         <Link2 className="size-4 shrink-0 text-muted-foreground" />
         <p className="text-sm font-medium">Link do cliente</p>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs",
-            estado.classe,
-          )}
-        >
-          <Icone className="size-3" />
+        <Badge variant={estado.variant}>
+          <Icone />
           {estado.rotulo}
-        </span>
-        {/* Captura que o Lovable tira quando o agente termina. Abre em outra
-            aba: a política de segurança do painel só carrega imagens dele. */}
-        {generation.screenshotUrl && (
-          <a
-            href={generation.screenshotUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          >
-            Ver captura
-          </a>
-        )}
+        </Badge>
         {(generation.sharePreviewUrl || area?.repoFullName) && (
           <Button
             type="button"
@@ -288,71 +274,79 @@ export function ClientLink({
             className="ml-auto"
             disabled={verificando}
             onClick={verificar}
+            title="Sonda o link agora — é ela que decide se ele pode ir ao cliente"
           >
-            <RefreshCw className={cn("size-3.5", verificando && "animate-spin")} />
+            <RefreshCw className={cn(verificando && "animate-spin")} />
             Verificar agora
           </Button>
         )}
       </div>
-      {/* A assinatura é conferida quando o agente termina; faltando, o painel
-          pede uma vez ao agente e, se ainda faltar, o build da publicação
-          insere no fim da página. */}
-      {generation.signatureFound === false && (
-        <p className="text-xs text-warning">
-          {generation.signatureFixSent
-            ? "Assinatura Joinvix ainda não está no código, mesmo depois do pedido ao agente. A publicação insere no fim da página; confira o rodapé no Lovable."
-            : "Assinatura Joinvix não encontrada no código. A publicação insere no fim da página."}
-        </p>
-      )}
 
-      {generation.previewDetail && (
-        <p className="text-xs text-muted-foreground">
-          {generation.previewDetail}
-          {generation.previewCheckedAt && (
-            <> · verificado em {formatDateTime(generation.previewCheckedAt)}</>
-          )}
-        </p>
-      )}
-
+      {/* ---- 2. As etapas da área de aprovação --------------------------- */}
       {area && (
         <DevAreaStepsView
           area={area}
           previewState={generation.previewState}
           editorUrl={editorUrl}
-          canPublish={can("publicar")}
+          canPublish={podePublicar}
           publishing={publicando}
           onPublish={() => void publicarNaArea()}
         />
       )}
 
+      {/* ---- 3. O endereço e a ação principal ---------------------------- */}
       {endereco ? (
-        <div className="flex items-center gap-1.5 rounded-lg bg-muted/60 px-3 py-2">
-          <code className="min-w-0 flex-1 truncate text-xs">
-            {endereco}
-          </code>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={copiar}
-            aria-label="Copiar link do cliente"
-            title="Copiar link do cliente"
-          >
-            <Copy className="size-3.5" />
-          </Button>
-          <Button asChild variant="ghost" size="icon-sm">
-            <a
-              href={endereco}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Abrir link do cliente"
-              title="Abrir link do cliente"
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1 rounded-lg bg-muted/60 px-3 py-1.5">
+            <code className="min-w-0 flex-1 truncate text-xs">{endereco}</code>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={copiar}
+              aria-label="Copiar link do cliente"
+              title="Copiar link do cliente"
             >
-              <ExternalLink className="size-3.5" />
-            </a>
-          </Button>
+              <Copy />
+            </Button>
+            <Button asChild variant="ghost" size="icon-sm">
+              <a
+                href={endereco}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Abrir link do cliente"
+                title="Abrir link do cliente"
+              >
+                <ExternalLink />
+              </a>
+            </Button>
+          </div>
+          {generation.deliveredAt ? null : (
+            clienteUrl && (
+              <Button
+                type="button"
+                size="sm"
+                disabled={entregando || generation.previewState !== "alive"}
+                title={
+                  generation.previewState === "alive"
+                    ? "Copia a mensagem com o link para colar no WhatsApp e registra a entrega"
+                    : "Só dá para enviar um link que abre."
+                }
+                onClick={() => void enviar()}
+              >
+                {entregando ? <Loader2 className="animate-spin" /> : <Send />}
+                Enviar ao cliente
+              </Button>
+            )
+          )}
         </div>
-      ) : area ? null : (
+      ) : area ? null : externo ? (
+        <p className="text-xs text-muted-foreground">
+          {generation.engine === "claude" && !generation.repoFullName
+            ? "Nenhum link do cliente ainda. Ele nasce na área de aprovação, depois que o código do site vai ao GitHub."
+            : "Nenhum link do cliente ainda. Ele nasce quando a prévia é publicada na área de aprovação."}
+        </p>
+      ) : (
         <p className="text-xs text-muted-foreground">
           Nenhum link do cliente ainda. Cole abaixo o link do{" "}
           <b className="font-medium">Share preview</b> e o painel cria o
@@ -360,7 +354,7 @@ export function ClientLink({
         </p>
       )}
 
-      {generation.deliveredAt ? (
+      {generation.deliveredAt && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-success/25 bg-success/8 px-3 py-2 text-xs text-success">
           <Send className="size-3.5 shrink-0" />
           <span>
@@ -375,68 +369,91 @@ export function ClientLink({
             disabled={entregando}
             onClick={desfazerEntrega}
           >
-            <Undo2 className="size-3.5" />
+            <Undo2 />
             Desfazer
           </Button>
         </div>
-      ) : (
-        clienteUrl && (
-          <Button
-            type="button"
-            size="sm"
-            disabled={entregando || generation.previewState !== "alive"}
-            title={
-              generation.previewState === "alive"
-                ? "Copia a mensagem com o link para colar no WhatsApp e registra a entrega"
-                : "Só dá para enviar um link que abre."
-            }
-            onClick={() => void enviar()}
-          >
-            {entregando ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Send className="size-3.5" />
-            )}
-            Enviar ao cliente
-          </Button>
-        )
       )}
 
+      {/* ---- 4. Os detalhes ------------------------------------------------ */}
+      {(generation.previewDetail || generation.signatureFound === false || generation.screenshotUrl) && (
+        <div className="space-y-1 text-xs text-muted-foreground">
+          {generation.previewDetail && (
+            <p>
+              {generation.previewDetail}
+              {generation.previewCheckedAt && (
+                <> · verificado em {formatDateTime(generation.previewCheckedAt)}</>
+              )}
+            </p>
+          )}
+          {/* A assinatura é conferida quando o agente termina; faltando, o
+              painel pede uma vez ao agente e, se ainda faltar, o build da
+              publicação insere no fim da página. */}
+          {generation.signatureFound === false && (
+            <p className="text-warning">
+              {generation.signatureFixSent
+                ? "Assinatura Joinvix ainda não está no código, mesmo depois do pedido ao agente. A publicação insere no fim da página; confira o rodapé no Lovable."
+                : "Assinatura Joinvix não encontrada no código. A publicação insere no fim da página."}
+            </p>
+          )}
+          {/* Captura que o Lovable tira quando o agente termina. Abre em
+              outra aba: a política de segurança do painel só carrega imagens
+              dele. */}
+          {generation.screenshotUrl && (
+            <a
+              href={generation.screenshotUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
+            >
+              <ExternalLink className="size-3" />
+              Ver a captura do site
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* ---- 5. Ações secundárias ------------------------------------------ */}
       {!area && areaDev.data?.configured && (
-        <div className="space-y-2 rounded-lg border border-dashed px-3 py-2.5">
-          <p className="text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-3 py-2.5">
+          <p className="min-w-48 flex-1 text-xs text-muted-foreground">
             {generation.shortUrl || generation.sharePreviewUrl
-              ? "Este site já tem link de visualização. Publicar na área de aprovação troca o link do cliente pela pasta do site, assim que ela for conferida."
+              ? "Publicar na área de aprovação troca o link do cliente pela pasta do site, assim que ela for conferida."
               : generation.origin === "linked"
                 ? "Site vinculado de fora do painel: publique a prévia para ter o link do cliente."
-                : "O painel publica sozinho na área de aprovação assim que o projeto é conectado ao GitHub no Lovable."}
+                : generation.engine === "claude"
+                  ? generation.repoFullName
+                    ? "Site gerado pelo Claude, já no GitHub: publique a prévia para ter o link do cliente."
+                    : "Site gerado pelo Claude: envie o código ao GitHub, e a prévia é publicada em seguida."
+                  : "O painel publica sozinho na área de aprovação assim que o projeto é conectado ao GitHub no Lovable."}
           </p>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            disabled={publicando || !can("publicar")}
-            title={can("publicar") ? undefined : "Sua chave não tem a permissão de publicar."}
+            disabled={publicando || !podePublicar}
+            title={podePublicar ? undefined : "Sua chave não tem a permissão de publicar."}
             onClick={() => void publicarNaArea()}
           >
-            {publicando ? <Loader2 className="size-3.5 animate-spin" /> : <Rocket className="size-3.5" />}
+            {publicando ? <Loader2 className="animate-spin" /> : <Rocket />}
             Publicar na área de aprovação
           </Button>
         </div>
       )}
 
-      {area || externo ? null : generation.previewState === "alive" &&
-      generation.sharePreviewUrl &&
-      !trocando &&
-      !focusInput ? (
-        <button
+      {formularioRecolhido && (
+        <Button
           type="button"
-          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          variant="link"
+          size="xs"
+          className="px-0 text-muted-foreground"
           onClick={() => setTrocando(true)}
         >
           Trocar o preview (o endereço curto não muda)
-        </button>
-      ) : (
+        </Button>
+      )}
+
+      {mostraFormulario && (
         <form onSubmit={salvar} className="space-y-1.5">
           <Label htmlFor={SHARE_PREVIEW_INPUT_ID} className="text-xs">
             {generation.sharePreviewUrl
@@ -454,11 +471,7 @@ export function ClientLink({
               onChange={(event) => setRascunho(event.target.value)}
             />
             <Button type="submit" disabled={!rascunho.trim() || salvando}>
-              {salvando ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Link2 className="size-4" />
-              )}
+              {salvando ? <Loader2 className="animate-spin" /> : <Link2 />}
               {generation.sharePreviewUrl ? "Reapontar" : "Encurtar"}
             </Button>
           </div>

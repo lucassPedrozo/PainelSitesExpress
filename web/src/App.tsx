@@ -28,6 +28,13 @@ const DeployView = lazy(() =>
   })),
 );
 
+/** O dashboard também: só quem o abre baixa a linha do tempo e as tabelas. */
+const DashboardView = lazy(() =>
+  import("@/features/dashboard/dashboard-view").then((m) => ({
+    default: m.DashboardView,
+  })),
+);
+
 /** A tela de configuração também carrega sob demanda. */
 const SettingsView = lazy(() =>
   import("@/features/settings/settings-view").then((m) => ({
@@ -62,6 +69,24 @@ export default function App() {
     setSection("deploy");
   }, []);
 
+  /** Do dashboard à seção de projetos, já com o projeto na tela. */
+  const showInProjects = useCallback(
+    (project: Project) => {
+      list.clearFilters();
+      list.setQuery(project.alias ?? project.name);
+      const finished = tags.finishedTagId;
+      list.setView(finished && project.tagIds.includes(finished) ? "finished" : "all");
+      setSection("projects");
+    },
+    [list, tags.finishedTagId],
+  );
+
+  const openQueue = useCallback(() => {
+    list.clearFilters();
+    list.setView("queue");
+    setSection("projects");
+  }, [list]);
+
   const busy = list.loading || list.refreshing;
 
   // A tela de configuração aparece para quem tem a permissão `configurar` —
@@ -71,6 +96,12 @@ export default function App() {
 
   return (
     <div className="min-h-svh bg-background">
+      <a
+        href="#conteudo"
+        className="sr-only rounded-md bg-card px-3 py-2 text-sm font-medium shadow-md focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50"
+      >
+        Pular para o conteúdo
+      </a>
       <AppHeader
         section={section}
         onSectionChange={(next) => {
@@ -79,35 +110,56 @@ export default function App() {
         }}
         canConfigure={canConfigure}
       >
-        {section === "projects" && (
+        {(section === "projects" || section === "dashboard") && (
           <>
-            <div className="relative ml-auto w-full max-w-sm min-w-32">
+            {section === "projects" && (
+            <div className="relative w-full min-w-32 md:max-w-sm">
               <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={list.query}
                 onChange={(event) => list.setQuery(event.target.value)}
                 placeholder="Buscar projeto ou domínio..."
+                aria-label="Buscar projeto ou domínio"
                 className="pl-8"
               />
             </div>
+            )}
 
             <Button
               variant="outline"
               className="shrink-0"
               disabled={busy}
               onClick={() => list.load(true)}
+              aria-label="Atualizar"
+              title="Atualizar a lista de projetos"
             >
               <RefreshCw className={cn("size-4", busy && "animate-spin")} />
-              <span className="hidden sm:inline">Atualizar</span>
+              <span className="hidden lg:inline">Atualizar</span>
             </Button>
           </>
         )}
       </AppHeader>
 
-      <main className="mx-auto max-w-[1400px] space-y-6 px-6 py-6">
+      <main id="conteudo" tabIndex={-1} className="mx-auto max-w-[1400px] space-y-6 px-6 py-6 outline-none">
         {section === "settings" && canConfigure ? (
           <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
             <SettingsView focusSection={settingsFocus} />
+          </Suspense>
+        ) : section === "dashboard" ? (
+          <Suspense
+            fallback={
+              <div className="space-y-6">
+                <Skeleton className="h-20 rounded-xl" />
+                <Skeleton className="h-96 rounded-xl" />
+              </div>
+            }
+          >
+            <DashboardView
+              list={list}
+              finishedTagId={tags.finishedTagId}
+              onShowInProjects={showInProjects}
+              onOpenQueue={openQueue}
+            />
           </Suspense>
         ) : section === "deploy" ? (
           <Suspense

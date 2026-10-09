@@ -1,4 +1,23 @@
 import type { SettingField, SettingSection } from "@/lib/api/settings";
+import { formatBytes } from "@/lib/format";
+
+/** A grade das linhas da tela: rótulo numa coluna fixa, controle no resto. */
+export const FIELD_GRID = "grid gap-x-8 gap-y-2 px-6 py-4 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]";
+
+/** "60000" num campo em milissegundos → "1 min"; em bytes → "64 MB". */
+export function humanUnit(key: string, raw: string): string | null {
+  const n = Number(raw);
+  if (!raw.trim() || !Number.isFinite(n) || n < 0) return null;
+  if (key.endsWith("_MS")) {
+    if (n === 0) return "desligado";
+    if (n % 3_600_000 === 0) return `${n / 3_600_000} h`;
+    if (n % 60_000 === 0) return `${n / 60_000} min`;
+    if (n % 1000 === 0) return `${n / 1000} s`;
+    return null;
+  }
+  if (key.endsWith("_BYTES")) return formatBytes(n);
+  return null;
+}
 
 /**
  * O rascunho da tela de configuração e o pedido de gravação que sai dele.

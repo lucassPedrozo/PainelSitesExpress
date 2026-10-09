@@ -246,6 +246,24 @@ test('não mexe em projeto que já escolheu como sai estático, nem em projeto s
   }
 })
 
+test('liga a variável com que o projeto sai estático (eixo-express)', { skip: !hasBash }, () => {
+  const config = lovableTanstackConfig
+    .replace('export default', 'const isStaticSpa = process.env["STATIC_SPA"] === "true";\n\nexport default')
+    .replace('  tanstackStart: {', '  ...(isStaticSpa ? { nitro: false as const, vite: { base: "./" } } : {}),\n  tanstackStart: {')
+    .replace('  },\n});', '    ...(isStaticSpa ? { spa: { enabled: true } } : {}),\n  },\n});')
+  const root = createProject({ 'vite.config.ts': config })
+  try {
+    const envFile = resolve(root, 'github-env.txt')
+    writeFileSync(envFile, '')
+    const result = run('ensure-static-build.sh', root, { GITHUB_ENV: envFile })
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    assert.equal(read(root, 'vite.config.ts'), config)
+    assert.equal(read(root, 'github-env.txt'), 'STATIC_SPA=true\n')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('cria o bloco tanstackStart quando o config não tem', { skip: !hasBash }, () => {
   const root = createProject({
     'vite.config.ts': 'import { defineConfig } from "@lovable.dev/vite-tanstack-config";\nexport default defineConfig({});\n',

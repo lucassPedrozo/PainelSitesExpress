@@ -90,13 +90,17 @@
     --accent-foreground: oklch(0.28 0.04 252);
     /* Escurecido: com 0.577 o texto branco sobre o botao destrutivo ficava
        abaixo de 4.5:1. */
-    --destructive: oklch(0.545 0.208 27.325);
-    --success: oklch(0.52 0.13 160);
+    --destructive: oklch(0.52 0.208 27.325);
+    /* 0.52 dava 4.4:1 no selo de etapa (texto de 11px sobre o próprio tom a
+       10%); o mesmo valia para o vermelho no botão destrutivo. */
+    --success: oklch(0.48 0.13 160);
     --warning: oklch(0.56 0.13 65);
     --info: oklch(0.52 0.14 245);
     --border: oklch(0.898 0.009 252);
     --input: oklch(0.885 0.011 252);
-    --ring: oklch(0.55 0.132 250);
+    /* O anel de foco do teclado, no azul-marinho da marca. O azul vivo de
+       antes lia como o contorno padrão do navegador, não como parte do painel. */
+    --ring: oklch(0.45 0.07 252);
     --chart-1: oklch(0.55 0.14 252);
     --chart-2: oklch(0.68 0.115 215);
     --chart-3: oklch(0.62 0.125 165);
@@ -132,13 +136,13 @@
     --muted-foreground: oklch(0.72 0.015 252);
     --accent: oklch(0.3 0.022 255);
     --accent-foreground: oklch(0.97 0.005 250);
-    --destructive: oklch(0.7 0.18 22);
+    --destructive: oklch(0.75 0.17 22);
     --success: oklch(0.74 0.14 160);
     --warning: oklch(0.8 0.13 75);
     --info: oklch(0.74 0.12 240);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.65 0.12 250);
+    --ring: oklch(0.8 0.05 250);
     --chart-1: oklch(0.7 0.13 252);
     --chart-2: oklch(0.72 0.11 215);
     --chart-3: oklch(0.7 0.12 165);
@@ -157,6 +161,24 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Barras de rolagem no tom do painel (listas, diálogos, a tabela na tela
+       estreita): o cinza padrão do sistema destoava nos dois temas. */
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent) transparent;
+    }
+  /* Em tela de toque (ponteiro principal grosso), botões, campos e seletores
+     sobem para 44px. No mouse o painel continua denso. */
+  @media (pointer: coarse) {
+    [data-slot="button"],
+    [data-slot="input"],
+    [data-slot="select-trigger"] {
+      min-height: 2.75rem;
+    }
+    [data-slot="button"][data-size^="icon"] {
+      min-width: 2.75rem;
+    }
+  }
+  ::selection {
+    background-color: color-mix(in oklch, var(--ring) 30%, transparent);
     }
   body {
     @apply bg-background text-foreground;

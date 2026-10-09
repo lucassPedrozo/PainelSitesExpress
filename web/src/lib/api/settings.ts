@@ -35,7 +35,7 @@ export type SettingSection = {
 };
 
 export type EngineStatus = {
-  id: "lovable" | "own";
+  id: "lovable" | "claude" | "own";
   label: string;
   description: string;
   available: boolean;
@@ -69,7 +69,53 @@ export type AiKeyCheck =
   | { ok: true; models: string[]; model: string; modelAvailable: boolean }
   | { ok: false; reason: string };
 
+export type GeminiKeyCheck =
+  | {
+      ok: true;
+      /** Tudo que a chave alcança e gera texto. */
+      models: string[];
+      /** Dos modelos que o painel tenta, os que a chave alcança. */
+      available: string[];
+      /** Os Flash de texto do catálogo, do mais novo ao mais antigo. */
+      flash: string[];
+      preferredModel: string | null;
+      preferredAvailable: boolean | null;
+    }
+  | { ok: false; reason: string };
+
+/**
+ * O motor Claude nesta máquina, para a seção dele: o que o painel encontrou e
+ * o que uma geração dispararia. `custom` diz que o valor vem das Configurações,
+ * e não do padrão do motor.
+ */
+export type ClaudeDiagnostics = {
+  installed: boolean;
+  /** Por que o motor não está disponível, ou o que ele respondeu no lugar do estado. */
+  reason: string | null;
+  generation: { enabled: boolean; reason: string | null };
+  claude: { found: boolean; version: string | null; custom: boolean } | null;
+  /** Do navegador, só o nome do programa. */
+  browser: { found: boolean; name: string | null; custom: boolean } | null;
+  model: { effective: string; expected: string; custom: boolean } | null;
+  /** A geração para e espera a aprovação da direção criativa? */
+  humanApproval: { enabled: boolean; custom: boolean } | null;
+  /** O comando de uma geração, já sem os caminhos desta máquina. */
+  command: string | null;
+};
+
+/** A resposta de "Testar Claude". */
+export type ClaudeLoginTest = {
+  ok: boolean;
+  message: string;
+  model: string | null;
+  apiKeySource: string | null;
+  /** Estimativa do Claude Code; o consumo de verdade sai da assinatura. */
+  estimatedCostUsd: number | null;
+};
+
 const TIMEOUT_MS = 30_000;
+/** O teste do Claude espera a resposta de um `claude -p` de verdade. */
+const CLAUDE_TEST_TIMEOUT_MS = 150_000;
 
 export const fetchSettings = () =>
   request<SettingsResponse>("/api/settings", { timeoutMs: TIMEOUT_MS });
@@ -110,6 +156,30 @@ export const checkGithubAccess = (input: { token?: string; organization?: string
 /** Confere a chave do modelo de IA listando os modelos — sem custo. */
 export const checkAiKey = (input: { provider?: string; apiKey?: string; model?: string }) =>
   request<AiKeyCheck>("/api/settings/check/ai", {
+    method: "POST",
+    body: JSON.stringify(input),
+    timeoutMs: TIMEOUT_MS,
+  });
+
+/** O estado do motor Claude nesta máquina. Não dispara o Claude Code. */
+export const fetchClaudeDiagnostics = () =>
+  request<ClaudeDiagnostics>("/api/settings/claude", { timeoutMs: TIMEOUT_MS });
+
+/**
+ * "Testar Claude": uma pergunta mínima ao Claude Code, pelo login da
+ * assinatura. É o único teste desta tela que gasta — só é chamado depois de a
+ * pessoa confirmar, e o servidor o recusa com a trava desligada.
+ */
+export const testClaudeLogin = () =>
+  request<ClaudeLoginTest>("/api/settings/check/claude", {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+    timeoutMs: CLAUDE_TEST_TIMEOUT_MS,
+  });
+
+/** Confere a chave do Gemini listando os modelos — sem gerar nada, sem custo. */
+export const checkGeminiKey = (input: { apiKey?: string; model?: string }) =>
+  request<GeminiKeyCheck>("/api/settings/check/gemini", {
     method: "POST",
     body: JSON.stringify(input),
     timeoutMs: TIMEOUT_MS,

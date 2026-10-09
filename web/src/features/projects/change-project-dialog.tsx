@@ -172,7 +172,7 @@ function ChangeProjectForm({
       </div>
 
       <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onCancel} disabled={enviando}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={enviando}>
           Cancelar
         </Button>
         <Button type="submit" disabled={!lovable.trim() || enviando}>

@@ -1,6 +1,9 @@
+import path from "node:path";
+import { config } from "../config.js";
 import { isLocalNetworkAddress } from "../security/network.js";
 import { hostPattern } from "../deploy/input.js";
 import { AI_PROVIDERS } from "../ai/providers.js";
+import { FREE_TIER_MODELS, isFlashModel } from "../gemini/client.js";
 
 /**
  * Todas as chaves do `.env` que a tela de configuração edita, com o que a tela
@@ -8,8 +11,8 @@ import { AI_PROVIDERS } from "../ai/providers.js";
  * novo só vale depois de reiniciar o painel.
  *
  * `restart: true` são as que `config.js` lê uma vez, na subida (`config`); as
- * demais são relidas a cada uso (`runtimeConfig`, `devAreaConfig`, `aiConfig`)
- * e valem na hora.
+ * demais são relidas a cada uso (`runtimeConfig`, `devAreaConfig`, `aiConfig`,
+ * `claudeConfig`) e valem na hora.
  *
  * Segredos nunca voltam para o navegador: a tela recebe só se estão definidos
  * e uma dica (`github_pat_…a1b2`) para reconhecer qual está gravado.
@@ -30,6 +33,43 @@ import { AI_PROVIDERS } from "../ai/providers.js";
 const DRIVE_ID = /^[A-Za-z0-9_-]{10,200}$/;
 const GITHUB_ORG = /^[a-z0-9](?:[a-z0-9-]{0,38})$/i;
 const SAFE_DIR = /^[a-z0-9._/-]{0,255}$/i;
+
+const dentroDe = (raiz, alvo) => {
+  const relativo = path.relative(path.resolve(raiz), path.resolve(alvo));
+  return relativo === "" || (!relativo.startsWith("..") && !path.isAbsolute(relativo));
+};
+
+/**
+ * Um programa que o painel vai lançar nesta máquina. A tela só aceita o
+ * programa esperado (pelo nome do arquivo) e fora das pastas em que o painel
+ * grava o que recebe: sem isto, quem configura o painel poderia apontar para
+ * um arquivo enviado como material de um cliente e fazê-lo rodar aqui.
+ *
+ * @param {RegExp} nomes os nomes de arquivo aceitos
+ * @param {string} quais como dizer isso à pessoa
+ * @param {{ soNome?: boolean }} [opcoes] `soNome`: aceita o nome sem pasta, achado pelo PATH
+ */
+const programaConhecido = (nomes, quais, { soNome = false } = {}) => (valor) => {
+  if (valor.length > 500) return "Caminho longo demais.";
+  if (/["'<>|*?]/.test(valor)) return "Informe só o caminho do programa, sem aspas nem argumentos.";
+  // Uma pasta compartilhada na rede é de quem a compartilha, não desta máquina.
+  if (/^[\\/]{2}/.test(valor)) return "Use um programa instalado nesta máquina, não um caminho de rede.";
+  const nome = valor.split(/[\\/]/).pop() ?? "";
+  if (!nomes.test(nome)) return `Informe o caminho de ${quais}.`;
+  if (nome === valor) return soNome ? null : `Informe o caminho completo de ${quais}.`;
+  if (!path.isAbsolute(valor)) return "Use o caminho completo, a partir da raiz do disco.";
+  if (dentroDe(config.projectRoot, valor) || dentroDe(config.dataDir, valor)) {
+    return "O programa não pode ficar dentro das pastas do painel.";
+  }
+  return null;
+};
+
+/** O Claude Code. Um script (`.mjs`, o claude falso dos testes) só entra pelo ambiente, nunca pela tela. */
+const CLAUDE_CODE = /^claude(\.exe)?$/i;
+/** Os navegadores que o motor sabe usar nas capturas (Chrome, Edge e Chromium). */
+const NAVEGADOR = /^(chrome|msedge|chromium|chromium-browser|google-chrome(-stable)?|microsoft-edge(-stable)?|Google Chrome|Microsoft Edge|Chromium)(\.exe)?$/i;
+/** Id ou apelido de modelo do Claude Code: `claude-opus-5-5`, `opus`, `sonnet[1m]`. */
+const MODELO_CLAUDE = /^[a-z0-9][a-z0-9._:[\]-]{0,79}$/i;
 
 const urlHttps = (value) => {
   try {
@@ -78,20 +118,22 @@ export const SETTINGS_SCHEMA = [
   {
     id: "generation",
     title: "Geração de sites",
-    description: "Qual motor cria os sites e os limites do envio. Hoje só o Lovable gera; o motor próprio está em preparação.",
+    description:
+      "Os motores que criam os sites e os limites do envio ao Lovable. Cada geração escolhe o motor na própria tela; aqui fica qual vem marcado.",
     fields: [
       {
         key: "GENERATION_ENGINE",
-        label: "Motor de geração",
+        label: "Motor que vem marcado",
         type: "select",
         options: [
           { value: "lovable", label: "Lovable" },
+          { value: "claude", label: "Claude" },
           { value: "own", label: "Lovable próprio (em preparação)", disabled: true },
         ],
-        help: "O motor próprio usa o modelo de IA configurado abaixo. Ele fica disponível quando a geração dele for liberada.",
+        help: "Só a escolha inicial da tela de geração: quem gera pode trocar o motor a cada site. Vazio, vem o Lovable.",
         // Enquanto o motor próprio não gera, gravar "own" deixaria o painel
         // dizendo uma coisa e fazendo outra.
-        validate: (v) => (v === "" || v === "lovable" ? null : "O motor próprio ainda não está disponível."),
+        validate: (v) => (v === "own" ? "O motor próprio ainda não está disponível." : null),
       },
       {
         key: "LOVABLE_ENABLE_GENERATION",
@@ -117,6 +159,96 @@ export const SETTINGS_SCHEMA = [
         min: 1024,
         max: 1024 * 1024 * 1024,
         placeholder: "67108864",
+      },
+      {
+        key: "PIXABAY_API_KEY",
+        label: "Chave da API do Pixabay",
+        type: "secret",
+        help: "Libera a busca de imagens de banco na tela de geração. Sai de pixabay.com/api/docs (logado), no topo da página. Uso comercial livre, sem atribuição.",
+        validate: (v) => (/^[A-Za-z0-9-]{10,100}$/.test(v) ? null : "A chave do Pixabay tem só letras, números e hífen."),
+      },
+    ],
+  },
+  {
+    id: "claude",
+    title: "Motor Claude",
+    description:
+      "O Claude Code desta máquina escreve o briefing e o site, pelo login da assinatura. O painel prepara a pasta de trabalho, acompanha a execução e envia o site validado ao GitHub.",
+    fields: [
+      {
+        key: "CLAUDE_ENABLE_GENERATION",
+        label: "Liberar o uso do Claude",
+        type: "boolean",
+        help: "Desligado, o painel monta e confere o pedido e mostra o comando, mas nunca dispara o Claude Code. Ligado, cada briefing, site, ajuste e teste consome a assinatura do Claude Code.",
+      },
+      {
+        key: "CLAUDE_HUMAN_APPROVAL",
+        label: "Aprovação da direção criativa",
+        type: "select",
+        options: [
+          { value: "", label: "Padrão do motor" },
+          { value: "1", label: "Parar e esperar a aprovação de uma pessoa" },
+          { value: "0", label: "Seguir sem parar" },
+        ],
+        help: "Com a parada, o site só é escrito depois que alguém aprova a direção criativa no projeto.",
+      },
+      {
+        key: "CLAUDE_MODEL",
+        label: "Modelo",
+        type: "text",
+        placeholder: "o que o motor espera",
+        help: "Vazio usa o modelo que o motor espera, mostrado no estado acima. Outro modelo muda o resultado e o consumo da assinatura.",
+        validate: (v) => (MODELO_CLAUDE.test(v) ? null : "Use só o id ou o apelido do modelo (ex.: claude-opus-5-5, sonnet)."),
+      },
+      {
+        key: "CLAUDE_BIN",
+        label: "Programa do Claude Code",
+        type: "text",
+        placeholder: "claude",
+        help: "Vazio usa o claude do PATH. Preencha com o caminho completo se o painel não o encontrar.",
+        validate: programaConhecido(CLAUDE_CODE, "claude ou claude.exe", { soNome: true }),
+      },
+      {
+        key: "CLAUDE_BROWSER_PATH",
+        label: "Navegador das capturas",
+        type: "text",
+        placeholder: "automático",
+        help: "O Chrome, Edge ou Chromium que fotografa e filma o site. Vazio usa o que estiver instalado no lugar de costume.",
+        validate: programaConhecido(NAVEGADOR, "um Chrome, Edge ou Chromium"),
+      },
+    ],
+  },
+  {
+    id: "assistant",
+    title: "Assistente (Gemini)",
+    description:
+      "Sugestões na tela de geração: resumo do briefing, o que falta, complementos para as observações e termos para o banco de imagens. Usa o nível gratuito do Gemini, só quando alguém pede.",
+    fields: [
+      {
+        key: "GEMINI_API_KEY",
+        label: "Chave da API do Gemini",
+        type: "secret",
+        help: "Sai de aistudio.google.com → Get API key, numa conta gratuita. O painel só usa modelos Flash, só quando alguém clica em Analisar, e guarda cada resposta por 24 h — para a chave continuar no nível gratuito. Vazia, o botão some.",
+        // O formato muda com o tempo (as chaves "AIza…" de 39 caracteres
+        // deram lugar a tokens maiores, com ponto): só se exige um token sem
+        // espaço. O botão Testar é que diz se ela funciona.
+        validate: (v) =>
+          /^[A-Za-z0-9._~-]{20,200}$/.test(v)
+            ? null
+            : "A chave tem só letras, números, ponto, hífen e sublinhado (20 a 200 caracteres).",
+      },
+      {
+        key: "GEMINI_MODEL",
+        label: "Modelo preferido",
+        type: "text",
+        placeholder: "automático",
+        help: `Vazio: usa ${FREE_TIER_MODELS.join(" e, se faltar cota, ")}; se nenhum responder, o painel procura outro modelo Flash de texto no catálogo da chave. Só modelos Flash são aceitos.`,
+        validate: (v) =>
+          !/^[a-z0-9.-]{1,60}$/i.test(v)
+            ? "Use só o id do modelo (ex.: gemini-2.5-flash)."
+            : isFlashModel(v)
+              ? null
+              : "Para a chave continuar no nível gratuito, só modelos Flash são aceitos.",
       },
     ],
   },

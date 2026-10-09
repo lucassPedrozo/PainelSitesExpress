@@ -81,6 +81,8 @@ export async function recordDeploy(repoFullName, { by, dryRun, branch, workflowF
  * `lastRun`: a execução mais recente. `lastSuccessAt`: a mais recente que
  * terminou bem — é ela que diz desde quando o site está no ar. `null` não
  * apaga o que se sabia: o sucesso pode ter ficado fora da janela consultada.
+ * `firstDeployAt` guarda o primeiro sucesso: é a data em que o projeto ficou
+ * pronto, a que o dashboard usa para medir o tempo até a finalização.
  *
  * @param {string} repoFullName
  * @param {{ lastRun?: { at: string, status: string, runUrl: string | null, event?: string | null } | null, lastSuccessAt?: string | null }} state
@@ -91,7 +93,13 @@ export async function setPublicationRuns(repoFullName, { lastRun, lastSuccessAt 
   if (!atual) return null;
 
   if (lastRun) atual.lastRun = lastRun;
-  if (lastSuccessAt) atual.lastDeployAt = lastSuccessAt;
+  if (lastSuccessAt) {
+    // A primeira vez que o site foi ao ar não se move: cada edição no Lovable
+    // publica de novo e empurra `lastDeployAt`. Nos dados de antes deste
+    // campo, o que se sabe de mais antigo é o último sucesso já gravado.
+    atual.firstDeployAt ??= atual.lastDeployAt ?? lastSuccessAt;
+    atual.lastDeployAt = lastSuccessAt;
+  }
 
   await flush();
   return atual;

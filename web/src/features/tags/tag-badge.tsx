@@ -30,7 +30,7 @@ export function TagBadge({
             event.stopPropagation();
             onRemove();
           }}
-          className="-mr-0.5 rounded-sm opacity-70 transition hover:opacity-100"
+          className="relative -mr-0.5 rounded-sm opacity-70 transition outline-none after:absolute after:-inset-2 hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/60"
         >
           <X className="size-3" />
         </button>

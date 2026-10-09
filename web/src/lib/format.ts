@@ -1,6 +1,15 @@
 import { findDomain, parseCollectionName } from "@shared/domain.js";
 import type { FileKind } from "@/lib/api";
 
+/**
+ * "1 anexo", "3 anexos", "1.240 arquivos". Sem o plural explícito, acrescenta
+ * "s" — serve para a maioria das palavras do painel; as irregulares (sessão,
+ * ação) passam o plural.
+ */
+export function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count.toLocaleString("pt-BR")} ${count === 1 ? singular : plural}`;
+}
+
 export function formatBytes(bytes: number | null | undefined) {
   if (!bytes) return "—";
   const units = ["B", "KB", "MB", "GB", "TB"];

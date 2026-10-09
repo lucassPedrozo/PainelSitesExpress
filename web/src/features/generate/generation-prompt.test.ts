@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BuildFile, BuildPackage } from "@/lib/api";
 import {
+  appendObservation,
   composePrompt,
   filterFiles,
   initialSelection,
@@ -48,6 +49,15 @@ describe("composePrompt", () => {
 
   it("sem briefing no Drive, as observações são o prompt", () => {
     expect(composePrompt("", "Site de uma padaria")).toBe("Site de uma padaria");
+  });
+});
+
+describe("appendObservation", () => {
+  it("acrescenta a sugestão como parágrafo e não repete o que já está", () => {
+    expect(appendObservation("", " Use azul. ")).toBe("Use azul.");
+    expect(appendObservation("Tom formal.\n", "Use azul.")).toBe("Tom formal.\n\nUse azul.");
+    expect(appendObservation("Tom formal.\n\nUse azul.", "Use azul.")).toBe("Tom formal.\n\nUse azul.");
+    expect(appendObservation("x", "   ")).toBe("x");
   });
 });
 

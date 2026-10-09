@@ -1,6 +1,7 @@
 import { AlertTriangle, Eye, FileCode2, Loader2, Trash2 } from "lucide-react";
 import type { DeleteWorkflowResult, WorkflowFile } from "@/lib/api/deploy";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, pluralize } from "@/lib/format";
+import { EmptyNotice } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,7 @@ export function WorkflowCard({
           )}
         </div>
         <CardDescription>
-          {`${files.length} arquivo(s) · ${formatBytes(totalSize)} em .github/workflows`}
+          {`${pluralize(files.length, "arquivo")} · ${formatBytes(totalSize)} em .github/workflows`}
         </CardDescription>
       </CardHeader>
 
@@ -86,25 +87,24 @@ export function WorkflowCard({
                     size="icon-sm"
                     onClick={() => onPreview(file)}
                     aria-label={`Visualizar ${file.name}`}
+                    title="Ver o conteúdo"
                   >
-                    <Eye className="size-4" />
+                    <Eye />
                   </Button>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-              <FileCode2 className="size-7 text-muted-foreground" />
-              <p className="text-sm font-medium">Nenhum workflow encontrado</p>
-              <p className="text-xs text-muted-foreground">
-                Os dois workflows padrão serão criados ao salvar a configuração.
-              </p>
-            </div>
+            <EmptyNotice
+              icon={<FileCode2 />}
+              title="Nenhum workflow no repositório"
+              description="Os dois workflows do painel são criados ao salvar a configuração."
+            />
           )}
         </div>
 
         {outdatedWorkflows.length > 0 && (
-          <Alert>
+          <Alert variant="warning">
             <AlertTriangle />
             <AlertTitle>Workflow desatualizado</AlertTitle>
             <AlertDescription>
@@ -121,8 +121,8 @@ export function WorkflowCard({
           <Alert variant={deleteResult.failed.length ? "destructive" : "default"}>
             <Trash2 />
             <AlertTitle>
-              {deleteResult.removed.length} removido(s),{" "}
-              {deleteResult.failed.length} falha(s)
+              {pluralize(deleteResult.removed.length, "removido")},{" "}
+              {pluralize(deleteResult.failed.length, "falha")}
             </AlertTitle>
             <AlertDescription>
               {deleteResult.failed.length
@@ -145,11 +145,7 @@ export function WorkflowCard({
           onClick={onClear}
           disabled={!files.length || isChecking || busy}
         >
-          {isClearing ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Trash2 className="size-4" />
-          )}
+          {isClearing ? <Loader2 className="animate-spin" /> : <Trash2 />}
           Limpar workflows
         </Button>
       </CardFooter>

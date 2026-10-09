@@ -81,9 +81,18 @@ function RenameForm({
       <DialogHeader>
         <DialogTitle>Renomear projeto</DialogTitle>
         <DialogDescription>
-          O nome vale apenas no painel. A pasta no Drive continua se chamando{" "}
-          <b className="break-all">{project.name}</b> — o painel só tem
-          permissão de leitura lá.
+          {project.source === "panel" ? (
+            <>
+              O projeto foi criado como <b className="break-all">{project.name}</b>. O nome dado aqui passa a valer
+              no título, na busca e no atalho de publicação.
+            </>
+          ) : (
+            <>
+              O nome vale apenas no painel. A pasta no Drive continua se chamando{" "}
+              <b className="break-all">{project.name}</b> — o painel só tem
+              permissão de leitura lá.
+            </>
+          )}
         </DialogDescription>
       </DialogHeader>
 
@@ -105,27 +114,19 @@ function RenameForm({
         <p id="project-name-hint" className="text-xs text-muted-foreground">
           {trimmed
             ? "Um nome que pareça um domínio também é aproveitado no atalho de publicação."
-            : "Deixe em branco para voltar ao nome da pasta do Drive."}
+            : project.source === "panel"
+              ? "Deixe em branco para voltar ao nome original."
+              : "Deixe em branco para voltar ao nome da pasta do Drive."}
         </p>
       </form>
 
       <DialogFooter>
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          onClick={() => onOpenChange(false)}
-        >
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
           Cancelar
         </Button>
-        <Button
-          type="submit"
-          form="rename-project-form"
-          size="lg"
-          disabled={saving || unchanged}
-        >
-          {saving && <Loader2 className="size-4 animate-spin" />}
-          {trimmed ? "Salvar nome" : "Usar o nome da pasta"}
+        <Button type="submit" form="rename-project-form" disabled={saving || unchanged}>
+          {saving && <Loader2 className="animate-spin" />}
+          {trimmed ? "Salvar nome" : project.source === "panel" ? "Usar o nome original" : "Usar o nome da pasta"}
         </Button>
       </DialogFooter>
     </>

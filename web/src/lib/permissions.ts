@@ -9,7 +9,7 @@ export const PERMISSION_LABELS: Record<
   { title: string; hint: string }
 > = {
   organizar: { title: "Organizar", hint: "Aplicar tags e renomear projetos" },
-  gerar: { title: "Gerar", hint: "Criar e alterar sites no Lovable" },
+  gerar: { title: "Gerar", hint: "Criar e alterar sites no Lovable e pelo Claude" },
   publicar: { title: "Publicar", hint: "Publicar sites por FTP" },
   configurar: {
     title: "Configurar o painel",

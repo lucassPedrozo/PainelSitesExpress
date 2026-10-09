@@ -183,6 +183,35 @@ export const devAreaConfig = () => {
   };
 };
 
+/**
+ * O motor Claude: o pacote `joinvixable/` produzindo o site com o Claude Code
+ * desta máquina, pelo login da assinatura.
+ *
+ * Lido a cada chamada, como a área de aprovação: a tela de configuração
+ * regrava o `.env` com o painel de pé, e os testes definem o que precisam.
+ */
+export const claudeConfig = () => {
+  const aprovacao = (process.env.CLAUDE_HUMAN_APPROVAL ?? "").trim();
+  return {
+    // Trava do gasto: enquanto for falso, o painel confere o pedido e mostra
+    // o comando, mas nunca lança o `claude -p` — que consome a assinatura.
+    enableGeneration: process.env.CLAUDE_ENABLE_GENERATION === "1",
+    /** Executável do Claude Code. Vazio: o `claude` do PATH. */
+    bin: (process.env.CLAUDE_BIN ?? "").trim(),
+    /** Vazio: o modelo que o motor espera (`joinvixable/config/models.json`). */
+    model: (process.env.CLAUDE_MODEL ?? "").trim(),
+    /** Chrome ou Edge das capturas. Vazio: o que o motor achar instalado. */
+    browserPath: (process.env.CLAUDE_BROWSER_PATH ?? "").trim(),
+    /**
+     * A direção criativa espera a aprovação de uma pessoa antes de o site ser
+     * gerado? `null`: o padrão do motor (`joinvixable/config/limits.json`).
+     */
+    humanApproval: aprovacao === "1" ? true : aprovacao === "0" ? false : null,
+    /** O pacote do motor: um repositório privado clonado nesta pasta. */
+    engineDir: path.join(projectRoot, "joinvixable"),
+  };
+};
+
 export const isDevAreaConfigured = () => {
   const area = devAreaConfig();
   return Boolean(

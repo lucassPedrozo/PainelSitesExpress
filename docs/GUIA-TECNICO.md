@@ -1,15 +1,18 @@
 # Guia técnico · Painel Sites Express
 
 Painel do fluxo inteiro de um Site Express: da coleta de material no Google Drive à
-geração do site no Lovable e à publicação por FTP via GitHub Actions. Cada pasta de
+geração do site — no Lovable ou pelo Claude Code desta máquina (ver "Motor Claude") —
+e à publicação por FTP via GitHub Actions. Cada pasta de
 primeiro nível dentro da pasta raiz do Drive é tratada como um **projeto** (a coleta
-de material de um cliente).
+de material de um cliente). Projetos também podem ser criados no próprio painel, sem
+pasta no Drive — para guardar arquivos ou para publicar um site já desenvolvido (ver
+"Projetos criados no painel").
 
 O painel tem duas seções, alternadas no cabeçalho:
 
 | Seção        | O que faz                                                      |
 | ------------ | -------------------------------------------------------------- |
-| **Projetos** | Coletas do Drive, tags, briefing e geração do site no Lovable   |
+| **Projetos** | Coletas do Drive, tags, briefing e geração do site (Lovable ou Claude) |
 | **Deploy**   | Secrets, workflows e publicação dos repositórios da organização |
 
 O botão **Publicar** no card (e no modal) de um projeto que já gerou site leva direto
@@ -145,6 +148,14 @@ O arquivo `.env` na raiz define:
 | `LOVABLE_ENABLE_GENERATION` | `1` libera as chamadas que gastam crédito (padrão `0`)       |
 | `LOVABLE_MAX_ATTACHMENTS` | Teto de anexos por envio (padrão 20)                            |
 | `LOVABLE_MAX_ATTACHMENT_BYTES` | Teto por anexo (padrão 64 MB)                              |
+| `GENERATION_ENGINE`       | O motor que vem marcado na tela de geração: `lovable` (padrão) ou `claude` |
+| `CLAUDE_ENABLE_GENERATION` | `1` libera o uso do Claude Code, que consome a assinatura (padrão `0`) |
+| `CLAUDE_HUMAN_APPROVAL`   | Aprovação da direção criativa: vazio usa o padrão do motor, `1` para e espera, `0` segue |
+| `CLAUDE_MODEL`            | Opcional: modelo do Claude Code; vazio usa o que o motor espera    |
+| `CLAUDE_BIN` / `CLAUDE_BROWSER_PATH` | Opcionais: caminho do `claude` e do navegador das capturas, se o painel não os achar |
+| `PIXABAY_API_KEY`         | Chave do Pixabay para o banco de imagens na geração (vazia, a aba fica desligada) |
+| `GEMINI_API_KEY`          | Chave gratuita do Gemini (AI Studio) para o assistente da geração (vazia, o botão some) |
+| `GEMINI_MODEL`            | Opcional: modelo Flash preferido; vazio usa `gemini-flash-lite-latest` e `gemini-flash-latest` |
 | `GITHUB_TOKEN`            | Token fine-grained usado pela publicação                        |
 | `GITHUB_ORG`              | Organização do GitHub cujos repositórios aparecem no Deploy      |
 | `DEFAULT_FTP_HOST`        | Opcional: pré-preenche o servidor FTP em repositórios novos      |
@@ -166,9 +177,11 @@ A pasta raiz precisa estar compartilhada com o e-mail da service account
 > A chave `g-suite-*.json` está no `.gitignore` — nunca versione esse arquivo.
 
 Nenhuma chave precisa ser editada à mão: a seção **Configurações** do cabeçalho
-reúne todas, por assunto (Drive, geração, modelo de IA, GitHub, área de aprovação,
-encurtador, rede). Cada seção grava sozinha no `.env` (modo `600`), preservando
-comentários e ordem. As regras:
+reúne todas, por assunto (Drive, geração, motor Claude, assistente Gemini, modelo de
+IA, GitHub, área de aprovação, encurtador, rede). Cada seção é um cartão com os campos numa
+coluna — o nome e a variável à esquerda, o controle e a ajuda à direita —, o estado
+da integração no título ("Configurado", "Incompleto", "Não configurado") e grava
+sozinha no `.env` (modo `600`), preservando comentários e ordem. As regras:
 
 - **Só para quem tem a permissão "Configurar o painel".** A regra é a mesma no
   localhost e na rede local: quem decide é a chave de acesso, não o endereço. Sem a
@@ -176,8 +189,9 @@ comentários e ordem. As regras:
   disco.
 - **Segredos nunca voltam para o navegador.** A tela recebe só se estão definidos e uma
   dica para reconhecê-los: prefixo e final nos tokens de formato conhecido
-  (`github_pat_…SglD`), no máximo os dois últimos caracteres nas senhas (`••••yS`).
-  Campo de segredo vazio mantém o gravado; **Apagar** remove.
+  (`github_pat_…SglD`, `AIza…stuv`), no máximo os dois últimos caracteres nas senhas
+  (`••••yS`). Um segredo gravado mostra "Definida" com os botões **Trocar** (abre a
+  caixa do valor novo) e **Apagar**; a caixa vazia mantém o gravado.
 - **Ou tudo entra, ou nada muda.** O pedido é validado inteiro antes de gravar: tipo,
   formato (token `github_pat_`, chave `sk-ant-`, `https://`), limites, e as regras que
   cruzam campos — abrir o painel para a rede (`SERVER_HOST`) exige a chave do
@@ -186,9 +200,16 @@ comentários e ordem. As regras:
 - **O que só vale ao reiniciar é dito.** Chaves lidas na subida (`PORT`, `SERVER_HOST`,
   Drive, limites do Lovable, encurtador, intervalos de varredura) aparecem com "ao
   reiniciar"; depois de gravadas, um aviso lista as que esperam o reinício. As demais
-  (GitHub, área de aprovação, IA, chave do painel) valem na hora.
+  (GitHub, área de aprovação, motor Claude, IA, Gemini, Pixabay, chave do painel) valem
+  na hora.
+  Campos em milissegundos e bytes mostram a leitura humana ao lado ("60000 = 1 min").
 - **Testes sem efeito colateral.** *Testar o acesso ao GitHub* só lê; *Testar a chave*
-  do modelo de IA lista os modelos, sem gerar nada e sem custo.
+  do modelo de IA e a do Gemini listam os modelos, sem gerar nada e sem custo. A única
+  exceção é *Testar Claude*, que dispara o Claude Code de verdade: pede confirmação,
+  exige a trava ligada e nunca roda sozinho (ver "Motor Claude").
+- **Programa que o painel lança só entra se for o esperado.** O caminho do `claude` e o
+  do navegador das capturas aceitam apenas o executável de nome conhecido, instalado
+  nesta máquina e fora das pastas do painel.
 - Trocar a chave do administrador encerra as sessões abertas com a antiga — inclusive
   a de quem trocou, que entra de novo com a nova.
 
@@ -433,6 +454,43 @@ para as conexões de entrada no painel.
 - **Pré-visualização do arquivo** dentro do painel (imagem, PDF, vídeo, áudio, texto e
   documentos nativos do Google, exportados para PDF sob demanda), com navegação por
   setas ou teclado, download e link para o Drive.
+- **Conteúdo dos `.zip`**: no modal de arquivos, o compactado abre como uma pasta — as
+  subpastas dele, a grade com miniaturas, a busca, a ordenação e a mesma
+  pré-visualização (imagem, PDF e texto; o resto baixa). Uma faixa no topo diz de
+  qual zip é a lista e oferece **Baixar o .zip**. O painel não baixa o arquivo
+  inteiro: o índice do zip fica nos últimos bytes, e cada item diz onde os seus bytes
+  começam, então a API lê do Drive por faixa só o fim do arquivo para listar e o
+  trecho do item para abri-lo, descomprimindo conforme envia
+  (`server/src/archive/zip-reader.js`, sem dependência nova). Nos zips das coletas
+  reais, o índice saiu numa leitura só, em 1 a 2 s. Nomes gravados pelo Windows sem
+  a marca de UTF-8 são lidos em CP850, e o lixo do sistema (`__MACOSX/`,
+  `.DS_Store`, `Thumbs.db`) fica de fora. O que não abre diz por quê: ZIP64 (mais de
+  4 GB ou 65.535 arquivos), item com senha, compressão que não seja *store* ou
+  *deflate*, e zip dentro de zip. Vídeo e áudio de dentro do zip só baixam: o player
+  precisa saltar no arquivo, e um fluxo descomprimido na hora não atende a salto. A
+  miniatura de um item é a própria imagem (o Drive não gera miniatura do que está
+  dentro do zip), por isso só as de até 4 MB a ganham. RAR e 7z continuam só com
+  download.
+- **Linha do tempo do projeto**: a aba ao lado de *Arquivos* no modal (ou **Linha do
+  tempo** no menu **…** do card) conta, em ordem, o que aconteceu, quando e por quem:
+  material recebido (a criação da pasta no Drive), briefing recebido, material
+  complementado (arquivo que entrou mais de uma hora depois), site gerado ou
+  vinculado, construção concluída no Lovable, troca de projeto, área de aprovação
+  configurada, prévia no ar ou falha, link enviado ao cliente, publicação no domínio
+  configurada, cada disparo e simulação, site no ar e a última falha. Cada passo
+  mostra a hora, o autor e quanto tempo depois do anterior aconteceu — é o que mostra
+  onde o projeto ficou parado. No topo: quando foi recebido, **quem gerou o site** e
+  quanto levou do recebimento à geração, da geração ao envio ao cliente e do
+  recebimento à última publicação. A linha sai de datas que o painel já guardava,
+  então vale para os projetos antigos; o que faltava passou a ser gravado: quem
+  clicou em **Gerar** (`createdBy`, o nome da chave de acesso), quando o agente
+  terminou (`agentDoneAt`, só na passagem para "pronto", para as conferências
+  seguintes não empurrarem a data), quando o briefing e o último arquivo entraram na
+  pasta (`createdTime` deles — o `modifiedTime` de um upload é a data do arquivo no
+  computador do cliente) e quem disparou cada publicação. Os sites gerados antes
+  disso aparecem com **responsável não registrado**, e não com um palpite. Sem chaves
+  de acesso configuradas também não há a quem atribuir. *No ar* é a data do último
+  envio bem-sucedido, não a da primeira vez: cada edição no Lovable publica de novo.
 - **Tags** por projeto, com cor e nome livres: aplicadas pelo card ou pelo modal, e
   criadas na hora digitando um nome novo no seletor. “Gerenciar tags” abre o CRUD
   completo (criar, renomear, trocar a cor, excluir com confirmação). Servem para as
@@ -516,6 +574,8 @@ para as conexões de entrada no painel.
 | `GET /api/folders/:id/files`  | Conteúdo de uma pasta (`?refresh=1` ignora o cache)           |
 | `GET /api/files/:id/thumbnail`| Miniatura do arquivo (`?size=400`, entre 32 e 1600)           |
 | `GET /api/files/:id/raw`      | Conteúdo do arquivo (`?download=1` força download)            |
+| `GET /api/files/:id/archive`  | O que há dentro de um `.zip` (`?refresh=1` relê o Drive)       |
+| `GET /api/files/:id/archive/:index` | Um item de dentro do `.zip`, descomprimido (`?download=1`) |
 | `GET /api/projects/:id/brief` | Texto do arquivo *Informações do Site* (404 se não houver)     |
 | `GET /api/tags`               | Tags com a contagem de projetos de cada uma                   |
 | `POST /api/tags`              | Cria uma tag (`{ name, color }`)                              |
@@ -523,6 +583,12 @@ para as conexões de entrada no painel.
 | `DELETE /api/tags/:id`        | Exclui a tag e a remove de todos os projetos                  |
 | `PUT /api/projects/:id/tags`  | Define as tags de um projeto (`{ tagIds }`)                    |
 | `PUT /api/projects/:id/name`  | Apelida o projeto no painel (`{ name }`; vazio volta ao Drive) |
+| `POST /api/projects`          | Cria um projeto no painel (`{ name, kind: "site" \| "files" }`) |
+| `DELETE /api/projects/:id`    | Exclui um projeto criado no painel, com os arquivos dele       |
+| `PUT /api/projects/:id/files?path=` | Guarda um arquivo no projeto (corpo cru)                 |
+| `DELETE /api/projects/:id/files?path=` | Apaga um arquivo ou uma pasta do projeto              |
+| `GET /api/projects/:id/site-sources` | Onde há um site nos arquivos do projeto, e o repositório |
+| `POST /api/projects/:id/repository` | Cria (ou atualiza) o repositório com o site — permissão `publicar` |
 | `GET /api/lovable/status`     | Se o painel está conectado ao Lovable e se a geração está liberada |
 | `POST /api/lovable/connect`   | Registra o painel e devolve a URL de consentimento              |
 | `GET /api/lovable/callback`   | Retorno do OAuth — troca o code pelos tokens                    |
@@ -533,6 +599,9 @@ para as conexões de entrada no painel.
 | `POST /api/projects/:id/generate/preview` | Ensaio: valida o envio sem tocar no Lovable         |
 | `POST /api/projects/:id/generate` | Cria o site no Lovable — **consome crédito**                |
 | `POST /api/session`           | Troca a chave de acesso pelo cookie de sessão                   |
+
+As rotas do motor Claude (`/api/claude/…` e `/api/projects/:id/claude/…`) estão na
+seção "Motor Claude".
 
 Rotas da publicação, todas sob `/api/deploy`:
 
@@ -582,13 +651,17 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │       │   ├── access.js         # porteiro, sessão, identidade e chaves de acesso
 │       │   ├── projects.js       # projetos, briefing, tags e apelido do projeto
 │       │   ├── tags.js           # CRUD das tags
+│       │   ├── local-projects.js # projetos criados no painel: arquivos e envio ao GitHub
 │       │   ├── files.js          # pastas, miniaturas e conteúdo (com Range)
 │       │   ├── files-helpers.js  # regras puras das rotas de arquivo
 │       │   └── drive-scoped.js   # :id válido e dentro da pasta raiz
+│       ├── archive/   # leitura de .zip por faixa de bytes e o tipo dos itens
+│       ├── local/     # arquivos em disco dos projetos do painel e a origem do site
 │       ├── store/     # banco do painel (painel.json)
 │       │   ├── db.js           # leitura, migração, recuperação e gravação
 │       │   ├── tags.js         # tags e as tags de cada projeto
 │       │   ├── project-names.js # apelido do projeto
+│       │   ├── local-projects.js # projetos criados no painel
 │       │   ├── generations.js  # sites gerados e o link do cliente
 │       │   ├── publications.js # histórico de publicação
 │       │   └── access-users.js # chaves de acesso (em hash)
@@ -608,6 +681,22 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │       │   ├── generate.js         # dispara a criação (o único gasto de crédito)
 │       │   ├── generation-guard.js # trava contra gasto duplicado de crédito
 │       │   └── routes.js           # rotas de conexão e geração
+│       ├── engines/
+│       │   ├── index.js            # os motores e o estado de cada um
+│       │   └── claude/             # o motor Claude (ver "Motor Claude")
+│       │       ├── command.js      # a linha de comando do claude -p
+│       │       ├── environment.js  # o ambiente dos processos filhos, por lista de permissão
+│       │       ├── executor.js     # dispara, lê o stream, decide como terminou
+│       │       ├── guardian.js     # encerra o claude se o painel morrer
+│       │       ├── queue.js        # uma execução por vez; pausada depois de um reinício
+│       │       ├── stream.js       # linhas legíveis e o filtro do que vai à tela
+│       │       ├── workspace.js    # a pasta de trabalho, na pasta de dados
+│       │       ├── motor.js        # a conversa com o pacote do motor
+│       │       ├── material.js     # o material do projeto na pasta de trabalho
+│       │       ├── publish.js      # o site a caminho do GitHub
+│       │       ├── service.js      # travas, fila, resumo do card e envio
+│       │       ├── routes.js       # rotas /api/claude e /api/projects/:id/claude
+│       │       └── fixtures/       # o claude falso e o motor de mentira dos testes
 │       ├── preview/
 │       │   ├── share-link.js # classificação do link "Share preview"
 │       │   └── service.js    # link do cliente e varredura periódica
@@ -619,6 +708,7 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │           │   ├── client.js        # autenticação, erros, novas tentativas, paginação
 │           │   ├── contents.js      # arquivos em .github/workflows
 │           │   ├── repositories.js  # repositórios e execuções do Actions
+│           │   ├── git-data.js      # criação de repositório e commit de um site inteiro
 │           │   └── access-check.js  # diagnóstico do token
 │           ├── publication.js       # secrets (sealed box) e escrita dos workflows
 │           ├── workflow-render.js   # substituição dos placeholders do YAML
@@ -629,7 +719,9 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │           ├── guards.js            # permissão, cota e organização
 │           ├── operations.js        # disparo, remoção e versão dos workflows
 │           └── routes.js            # rotas /api/deploy
-├── shared/            # usado pelos dois lados (lista de permissões)
+├── joinvixable/       # o pacote do motor Claude — repositório privado, fora do git daqui
+├── scripts/           # varredura de segredos e o atalho para os comandos do motor
+├── shared/            # usado pelos dois lados (permissões, formatos de credencial)
 └── web/               # Aplicação Vite + React + shadcn/ui
     ├── public/        # favicon.png e apple-touch-icon.png (a marca Joinvix)
     └── src/
@@ -645,7 +737,9 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
         │   ├── projects/       # lista, cartão, ações, estado e link do projeto
         │   ├── tags/           # tags: filtro, seletor, cores e gestão
         │   ├── project-files/  # diálogo de arquivos da coleta e link do cliente
-        │   ├── generate/       # diálogo de geração no Lovable
+        │   ├── generate/       # diálogo de geração, com a escolha do motor
+        │   ├── claude/         # o motor Claude: briefing, site, fila, lote e envio
+        │   ├── settings/       # tela de configuração, com o estado do motor Claude
         │   └── deploy/         # tela de publicação
         └── lib/
             ├── api/   # cliente da API: http.ts (comum) e um módulo por assunto;
@@ -703,17 +797,20 @@ de cliente em silêncio é pior que voltar um dia no tempo.
 ## Testes
 
 ```bash
-npm test          # backend (node --test) + interface (vitest)
+npm test          # backend (node --test) + interface (vitest) + pacote do motor
 npm run test:server
 npm run test:web
-npm run typecheck # tipos da API (checkJs) e da interface
+npm run test:motor # só o pacote do motor (pulado com aviso onde ele não está)
+npm run typecheck # tipos da API (checkJs), da interface e do pacote do motor
 npm run check     # lint + tipos + testes + build
 ```
 
 O mesmo `npm run check` roda no GitHub Actions a cada push e pull request
 ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)). Nada nos testes fala com
-Drive, GitHub ou Lovable, e o `.env` da máquina é ignorado dentro do `node --test` —
-eles valem igual aqui e no CI.
+Drive, GitHub, Lovable ou com o Claude de verdade (o executor é exercitado com um
+`claude` falso), e o `.env` da máquina é ignorado dentro do `node --test` — eles
+valem igual aqui e no CI. O pacote do motor não está no repositório público: no CI
+os testes que dependem dele são pulados, e os das rotas rodam com um motor de mentira.
 
 **Backend (220):** a API de verdade numa porta local (entrada, sessão, bloqueio por
 IP, permissões por chave, política de rede e respostas de erro), o banco do painel
@@ -921,13 +1018,54 @@ renovação não quebrar no meio da troca.
 > saídas são o fluxo de `client_id_metadata_document` (o servidor do Lovable anuncia
 > suporte) ou pedir allowlist do redirect ao suporte deles.
 
-## Motores de geração (Lovable e "Lovable próprio")
+## Assistente (Gemini)
 
-O painel está preparado para produzir sites por dois motores: o **Lovable** (o de hoje)
-e o **Lovable próprio** — um modelo de IA, pela chave configurada, escrevendo o site
-num projeto-modelo da organização. O segundo está **arquitetado e não ligado**: nenhuma
-rota o chama, `GENERATION_ENGINE` só aceita `lovable`, e escolher, guardar ou testar a
-chave de IA não muda nada no que funciona.
+A tela de geração tem o botão **Analisar com Gemini**, que lê o briefing como está
+na caixa (editável), as observações já escritas e os nomes dos arquivos da pasta, e
+devolve quatro coisas: um resumo do negócio, o que o briefing não traz e um site
+institucional precisa, instruções prontas para as **Observações adicionais** e buscas
+para o banco de imagens (uma por seção do site). Tudo é sugestão: um texto só entra
+no envio quando a pessoa clica em **Inserir**, e as buscas só rodam ao clicar em
+**Buscar estas fotos** — que preenche a aba Banco de imagens e busca no Pixabay na
+hora. O prompt enviado ao Lovable não muda por conta do assistente; a faixa "O que vai
+no envio" (heurística, de graça) continua existindo ao lado.
+
+A chave (`GEMINI_API_KEY`) é do nível gratuito do Google AI Studio e o painel foi
+feito para ela continuar assim (`server/src/gemini/`):
+
+- **Só modelos Flash.** `GEMINI_MODEL` recusa qualquer id sem "flash". O padrão é o
+  apelido `gemini-flash-lite-latest` (responde em segundos; a análise medida saiu em
+  2,4 s) e, se faltar cota, `gemini-flash-latest`, com o pensamento no nível mais
+  baixo — o Flash completo "pensa" por padrão e levava mais de 20 s num pedido mínimo.
+  Os apelidos são mantidos pelo Google apontando para o Flash atual; os ids com versão
+  envelhecem (`gemini-2.5-flash` deixou de aceitar usuários novos em 2026). Se nem os
+  apelidos responderem (404), o painel lista o catálogo da chave (gratuito) e tenta
+  outro Flash de texto, do mais novo ao mais antigo. Cota esgotada (429), sobrecarga
+  (503) e demora passam a vez ao próximo modelo.
+- **Nada roda sozinho.** Cada chamada nasce de um clique; a mesma entrada (briefing,
+  observações, arquivos) volta do cache por 24 h; a rota aceita no máximo 8 análises
+  por minuto no painel inteiro — a cota é da chave, não de quem usa.
+- **A chave fica no servidor**, vai num cabeçalho (nunca na URL) e nunca aparece em
+  mensagem de erro; o navegador recebe só se o assistente está configurado e os
+  modelos que o painel tenta. A tela de Configurações testa a chave listando os
+  modelos, sem gerar nada.
+- Rotas: `GET /api/assistant/status`, `POST /api/projects/:id/assistant/briefing`
+  (permissão `gerar`; corpo `briefing`, `observations`, `projectName`, `fileNames`) e
+  `POST /api/settings/check/gemini` (permissão `configurar`).
+
+## Motores de geração (Lovable, Claude e "Lovable próprio")
+
+O painel produz sites por dois motores, escolhidos **a cada geração**, na própria tela:
+o **Lovable** e o **Claude** — o Claude Code desta máquina, pelo login da assinatura
+(seção seguinte). `GENERATION_ENGINE` só diz qual vem marcado; a escolha aparece
+quando os dois servem para o projeto (projeto criado no painel não tem geração pelo
+Lovable, e o Claude some onde o pacote do motor não está instalado). O estado de cada
+motor aparece em Configurações → Geração de sites.
+
+Há um terceiro, o **Lovable próprio** — um modelo de IA, pela chave de API configurada,
+escrevendo o site num projeto-modelo da organização. Ele está **arquitetado e não
+ligado**: nenhuma rota o chama, `GENERATION_ENGINE` não aceita `own`, e escolher,
+guardar ou testar a chave de IA não muda nada no que funciona.
 
 O que já existe (`server/src/engines/`, `server/src/ai/`):
 
@@ -950,6 +1088,312 @@ ajuste com os arquivos atuais, um commit e uma nova publicação.
 Falta para ligar: o repositório-modelo, a criação do repositório e o commit pela API
 do GitHub, o registro da geração com `engine: "own"` e a rota. O laço foi testado com
 um cliente falso; a primeira geração real vai gastar crédito do provedor.
+
+## Motor Claude
+
+O segundo motor do painel é o **Claude Code desta máquina**, em modo não interativo
+(`claude -p`), pelo login da assinatura — sem chave de API. Ele lê o material do
+projeto, escreve o briefing e, depois de alguém revisar, escreve o site. O painel
+prepara a pasta de trabalho, digita o pedido, acompanha a execução, guarda o que
+aconteceu e manda o site validado ao GitHub, de onde ele segue pelo caminho de
+sempre: área de aprovação, link do cliente e domínio.
+
+Antes havia uma ferramenta à parte (o Joinvixable), com página, porta e fila próprias.
+Ela deixou de existir como servidor: o que era dela virou o **pacote do motor** e o
+que era da página virou telas do painel.
+
+### O pacote do motor (`joinvixable/`)
+
+Prompts, biblioteca de seções, template, ferramentas e pipeline moram no pacote
+`joinvixable/`, na raiz do painel. Ele é conhecimento interno e **não é versionado
+neste repositório**: vive num repositório privado, clonado nessa pasta (que está no
+`.gitignore` e na varredura de segredos). `npm run setup` instala as dependências dele
+quando a pasta existe; `npm test` e `npm run typecheck` rodam os testes e os tipos
+dele pelo `scripts/motor.mjs`, que pula o passo com aviso onde o pacote não está.
+
+Sem o pacote — num clone público, no CI sem a chave de leitura — o painel sobe e
+funciona normalmente: o motor aparece como *Não instalado* em Configurações, a escolha
+"Claude" some das telas de geração e os testes que precisam dele são pulados. Os
+testes das rotas usam um motor de mentira e rodam em qualquer lugar.
+
+O servidor do painel é JavaScript e o motor é TypeScript rodado por `tsx`, então nada
+do motor é importado: cada pergunta é um processo filho (`engines/claude/motor.js`).
+As consultas respondem em JSON na última linha da saída (`scripts/consulta.ts`), e os
+comandos de sempre — validar, telas, filme — respondem pelo código de saída e pelo
+texto. Nada nesse arquivo dispara o Claude.
+
+### O fluxo, pelo card do projeto
+
+| Passo | O que acontece | Gasta a assinatura? |
+| --- | --- | --- |
+| **Gerar briefing** | A tela de geração, com o motor Claude marcado, mostra o texto das informações do site, as observações e os arquivos do projeto. *Conferir pedido* é o ensaio: mostra o que seria copiado, a frase e o comando. *Gerar briefing* copia o material marcado para a pasta de trabalho e põe o pedido na fila | Só o *Gerar briefing* |
+| **Revisar e gerar** | O briefing aparece no projeto, com o que a conferência do motor aceitou, avisou ou recusou. Dá para corrigir pelos campos ou pelo JSON e gravar, sem gastar. *Conferir* mostra o pedido; *Gerar site* enfileira | Só o *Gerar site* |
+| **Acompanhar** | O card mostra a etapa e o tempo; a aba **Claude** do projeto, o log ao vivo, com *Cancelar execução*. A **Fila do Claude**, na barra da lista, mostra o que roda, o que espera e o que um reinício interrompeu | Não |
+| **Aprovar a direção** | Com a aprovação ligada, a geração para em *aguardando aprovação*: a direção criativa e as fotos de banco propostas aparecem no projeto, e *Aprovar e gerar o site* segue | Sim, ao seguir |
+| **Receber o site** | Site validado: etapas, telas e filme, *Validar*, *Fotografar telas* e *Filmar abertura* (rodam nesta máquina, sem o Claude) e a linha do GitHub | Não |
+| **Ajustar** | *Pedir ajuste* retoma a sessão do site. Validado, o commit novo sai (sozinho, para quem pode publicar) e a área de aprovação publica de novo | Sim |
+
+Gerar em lote é pôr vários pedidos na mesma fila: quem ainda não tem briefing pede o
+briefing, quem já tem um briefing aceito pede o site, e cada projeto que não pode
+entrar aparece com o motivo.
+
+Os selos e os grupos da vista "Fazer agora" que o motor acrescenta: *Geração
+interrompida*, *Geração falhou*, *Direção para aprovar*, *Gerando com o Claude*,
+*Gerando briefing*, *Na fila do Claude*, *Briefing recusado* e *Briefing para revisar*.
+Site gerado e ainda fora do GitHub cai em *Enviar ao GitHub*.
+
+O estado da fila é relido a cada 4 s enquanto algo roda e a cada 30 s em repouso — é
+assim que uma aba fica sabendo do pedido feito em outra. O log ao vivo é uma consulta
+com cursor, repetida a cada 2 s; não há conexão aberta.
+
+### Nada que custa acontece por acaso
+
+As rotas que disparam o `claude -p` respondem, nesta ordem, como as do Lovable:
+
+| Resposta | Quando |
+| --- | --- |
+| `403` | A chave de acesso não tem a permissão `gerar` |
+| `428` | Faltou `confirm: true` no corpo |
+| `409` | O projeto já tem um pedido rodando, esperando ou interrompido; há um teste do Claude em andamento; ou o motor recusou (briefing com pendência, etapa aberta, cliente que já tem site) |
+| `400` | O pedido não passa na conferência (arquivo de outro projeto, vídeo marcado) |
+| `423` | A trava está desligada |
+
+A trava é `CLAUDE_ENABLE_GENERATION` — desligada por padrão, separada da do Lovable e
+relida a cada pedido (vale na hora, sem reiniciar). Com ela desligada o ensaio
+funciona inteiro: plano, frase e comando, sem copiar nem enfileirar nada. Na tela,
+toda ação que gasta passa por uma confirmação que diz que o Claude Code vai ser
+disparado e que consome a assinatura, e o botão repete isso.
+
+Depois de um reinício do painel a fila volta **pausada** e o que rodava aparece como
+*interrompido*: reabrir o painel nunca gasta sozinho. Retomar pede a mesma
+confirmação e a mesma trava.
+
+### O executor (`server/src/engines/claude/`)
+
+| Peça | O que faz |
+| --- | --- |
+| `command.js` | A linha de comando do `claude -p`, a partir do contrato do motor (`joinvixable/config/headless.json`) e das regras de leitura que só o painel conhece |
+| `environment.js` | O ambiente dos processos filhos, por lista de permissão |
+| `executor.js` | Dispara o claude, digita o pedido pelo stdin, lê o stream, decide como terminou e registra |
+| `guardian.js` | Um processo pequeno entre o painel e o claude: se o painel morre sem aviso, encerra o claude com a árvore inteira |
+| `queue.js` | A fila: uma execução por vez, pausada depois de um reinício |
+| `stream.js` | As linhas legíveis do `stream-json` e o filtro do que vai à tela |
+| `workspace.js` | A pasta de trabalho, dentro da pasta de dados |
+| `motor.js` | A conversa com o pacote do motor, por processos filhos |
+| `material.js` | O material do projeto (Drive ou painel) copiado para a pasta de trabalho |
+| `publish.js` | Os arquivos do site que vão ao GitHub e o que bloqueia o envio |
+| `service.js` | Junta tudo: travas, fila, resumo do card, envio ao GitHub |
+| `routes.js` | As rotas |
+
+As garantias do executor, cada uma com teste:
+
+- **Login da assinatura, nunca chave de API.** As variáveis de chave não entram no
+  ambiente do claude, e a execução é interrompida se o próprio claude disser, no
+  `system/init`, que achou uma (`apiKeySource`).
+- **Lista fechada.** Ferramentas `Bash`, `Read`, `Edit`, `Write`, `Glob` e `Grep`; no
+  Bash, só os `npm run -s cliente | new-project | step | tool | report` do runbook.
+  Modo `dontAsk` com `--permission-prompts none`: o que não está na lista é recusado.
+  Sem servidores MCP (`--strict-mcp-config`), sem comandos de barra
+  (`--disable-slash-commands`). Sem rede — a exceção é o `WebFetch` dos domínios
+  citados nas observações do briefing, e só deles. O que o claude disser ter aberto
+  fora disso (um servidor MCP do perfil, uma ferramenta a mais, outro modo de
+  permissão) encerra a execução.
+- **O runbook chega por arquivo.** O painel gera o runbook das fontes do motor a cada
+  execução e o entrega em `--append-system-prompt-file`. As configurações vêm só da
+  fonte `user` (`--setting-sources user`) mais o arquivo do painel (`--settings`).
+- **O pedido vai pelo stdin**, com uma das cinco frases do runbook (gerar o briefing,
+  gerar o site do cliente, gerar do briefing, ajustar, continuar).
+- **Uma execução por vez** nesta máquina, com trava em disco e fila.
+- **Sucesso é código de saída 0 e a validação do motor passando.** *Aguardando
+  aprovação* é um estado próprio, nem sucesso nem falha. Etapa que ficou aberta é
+  falha, com *Continuar de onde parou* e *Encerrar etapa*.
+- **Ajuste e continuação retomam a sessão** do site (`--resume`) e recuam para uma
+  sessão nova quando ela sumiu.
+- **Cancelamento em dois tempos** (interrompe; se não sair, encerra), com a árvore de
+  processos inteira — no Windows, `taskkill /T /F`.
+- **Cada execução fica registrada**: sessão, duração, estado, mensagem e o stream
+  bruto em disco.
+- **Custo em três rótulos**, nunca somados: `REAL` (API), `SIMULADO` (reconstruído das
+  chamadas) e `ESTIMATIVA DO CLAUDE CODE` (o `total_cost_usd` que o CLI informa; o
+  consumo de verdade sai da assinatura).
+
+### O que o agente não vê
+
+O processo do painel carrega o token do GitHub, as senhas de FTP e os tokens do
+Lovable e do BetterLinks. Três barreiras separam isso do agente:
+
+1. **O ambiente é uma lista de permissão.** Só passa o que o sistema, o Claude Code e
+   as ferramentas do motor precisam. A única chave que chega ao agente é a do Pixabay,
+   porque a busca de fotos de banco roda como filha dele.
+2. **Regras de leitura.** O agente roda de `<dados>/joinvixable/trabalho/` e não lê
+   fora dela. Por cima disso, o painel nega o `.env`, a chave da service account e
+   tudo o que há na pasta de dados fora da pasta de trabalho (`painel.json`, sessões,
+   tokens do Lovable, backups), para as ferramentas de arquivo e para o shell.
+3. **O filtro da tela.** O stream bruto fica em disco, inteiro. À tela vão só as
+   linhas legíveis, com as pastas desta máquina trocadas por rótulos (`<pasta do
+   motor>`, `<painel>`, `~`) e os segredos do painel apagados. O mesmo filtro passa
+   pelas mensagens de recusa, pela revisão do briefing e pelo estado do site que o
+   motor devolve.
+
+### A saída do modelo não é confiável
+
+- **O `dist` nunca é servido na origem do painel.** As telas e o filme são imagens
+  (só raster, conferidas pelo caminho real); o site abre na área de aprovação.
+- **A configuração do repositório vem do template**, não do projeto: `package.json`,
+  lockfile, `vite.config`, `tsconfig`, `tailwind.config`, `postcss.config` e
+  `index.html`. Do projeto vão `src/`, `public/`, `content.json` e `imagens.json`.
+  Briefing, direção criativa, sessão das etapas e `dist` ficam nesta máquina.
+- **Dois bloqueios antes do envio**: pacote importado que o template não declara, e
+  qualquer arquivo que carregue uma credencial deste painel ou um formato de
+  credencial conhecido (o motivo cita a variável, nunca o valor).
+- **Arquivo travado alterado reprova a validação**, e site que não valida não é
+  enviado.
+- **A pasta de trabalho de cada projeto tem o nome que o painel escolhe**
+  (`<domínio>-<4 hex>`), nunca um nome vindo do material.
+
+### Do site validado ao GitHub
+
+Site validado entra na lista de sites do projeto (com `engine: "claude"`). Se quem
+pediu tem a permissão `publicar` e o GitHub está configurado, o painel cria o
+repositório na organização e envia sozinho; senão o card para em **Enviar ao GitHub**
+e o botão abre o plano do envio — o que vai, o que não vai e o que acontece depois.
+Com a área de aprovação configurada, o envio instala o workflow dela, e cada commit
+publica a prévia. Envio automático que falha não derruba a execução: o card guarda o
+motivo e o site continua esperando.
+
+### Assinatura Joinvix, em três camadas
+
+1. **No kit do site.** O template traz o componente travado
+   `src/componentes/AssinaturaJoinvix.tsx` e as duas logos em `public/joinvix/`; os
+   três rodapés da biblioteca já o usam como último elemento do `<footer>`.
+2. **Na validação do motor.** Site que não usa o componente é recusado, e o build é
+   conferido pelo mesmo sinal que a publicação procura.
+3. **No build de publicação.** O script `ensure-joinvix-signature.sh` dos workflows
+   continua valendo para qualquer site, de qualquer motor.
+
+### Onde o estado fica
+
+```
+<dados>/joinvixable/
+  trabalho/                 a raiz que o agente enxerga
+    clientes/<pasta>/       material copiado do projeto e o briefing
+    projects/<slug>/        o site: código, dist e a sessão das etapas
+  execucoes/<id>.jsonl      o stream bruto de cada execução
+  runbook.md                o runbook, gerado a cada execução
+  configuracoes-do-agente.json
+```
+
+`<dados>` é a pasta de dados do painel (`server/data`, ou `PANEL_DATA_DIR`). No
+`painel.json`, a chave `claude` guarda os projetos que passaram pelo motor, a fila e as
+últimas 300 execuções, com as gravações atômicas do resto do banco.
+
+### O que vem da ferramenta antiga
+
+O motor não repete o estilo dos dois últimos sites, e sabe quais foram pelo histórico de
+layouts (`trabalho/.history/layouts.jsonl`). A pasta de trabalho nasce vazia, então o
+histórico do Joinvixable antigo é trazido uma vez:
+
+```bash
+npm run motor:historico -- "<pasta do Joinvixable antigo>"
+```
+
+O comando só copia: a pasta de origem não é alterada, o que o painel já tem continua
+lá (o que vem de fora é mais antigo e entra na frente), rodar de novo não duplica
+nada, e a saída mostra só a contagem.
+
+**Um site feito na ferramenta antiga** entra pelo painel: **Novo projeto → Site para
+publicar**, com a pasta inteira do site enviada (a que tem `.session/session.json` e
+`content.json`, não só o build). A aba **Claude** do projeto reconhece a pasta e
+oferece **Trazer para o motor Claude**, que copia o site para a pasta de trabalho do
+motor — sem `node_modules`, `dist` nem `.env`, com o nome de pasta que o painel
+escolhe — e o registra como site do motor. Trazer não dispara o Claude. Daí em diante
+ele é um site do motor como os gerados aqui: **Enviar ao GitHub** leva a configuração
+do template (o `package.json` de um site antigo não declara dependência, e por isso
+não constrói no GitHub) e deixa de fora briefing, direção criativa e sessão; **Pedir
+ajuste** funciona, e cada ajuste validado vira um commit que republica a prévia. Se o
+projeto já tinha esse site registrado com repositório e área de aprovação, é o mesmo
+registro que continua — o repositório e o link do cliente não mudam.
+
+O envio comum de projeto do painel ("Enviar site ao GitHub") recusa uma pasta dessas
+e aponta para a aba Claude. Sites cujo código só existe no GitHub ou no Lovable não
+entram por aqui: o motor trabalha sobre o formato de projeto dele.
+
+| Rota | Descrição |
+| --- | --- |
+| `GET /api/projects/:id/claude/adopt` | As pastas do projeto em que há um site do motor |
+| `POST /api/projects/:id/claude/adopt` | Traz o site para o motor — permissão `gerar`, não gasta |
+
+### Configurações e "Testar Claude"
+
+A seção **Motor Claude** de Configurações reúne a trava, a aprovação da direção
+criativa (padrão do motor, parar ou seguir), o modelo, o programa do Claude Code e o
+navegador das capturas. Todas valem na hora. O programa e o navegador só aceitam o
+executável esperado (`claude`, Chrome, Edge ou Chromium), instalado nesta máquina e
+fora das pastas do painel — sem isso, quem configura o painel poderia apontar para um
+arquivo enviado como material e fazê-lo rodar aqui.
+
+A primeira linha da seção é o **estado nesta máquina**: pacote instalado, versão do
+Claude Code (`claude --version`), navegador encontrado, modelo em uso e o comando de
+uma geração. Nada disso dispara o Claude Code.
+
+**Testar Claude** é a exceção entre os testes da tela: faz uma pergunta mínima ao
+Claude Code de verdade, para conferir o login da assinatura, e consome um pouco dela.
+Só roda no clique, depois da confirmação, com a trava ligada e sem nada em andamento
+— e responde 403, 428, 409 e 423 como as rotas que geram.
+
+### Rotas do motor Claude
+
+| Rota | Descrição |
+| --- | --- |
+| `GET /api/claude/status` | Motor instalado, trava, fila e o motor que vem marcado |
+| `GET /api/claude/events?cursor=` | O log ao vivo, a partir do cursor |
+| `POST /api/claude/queue/cancel` | Cancela a execução em andamento |
+| `POST /api/claude/queue/resume` | Retoma a fila pausada — **gasta**, exige `confirm: true` |
+| `POST /api/claude/queue/interrupted/:itemId/resume` | Retoma uma execução interrompida — **gasta** |
+| `DELETE /api/claude/queue/interrupted/:itemId` | Descarta uma interrompida |
+| `DELETE /api/claude/queue/:itemId` | Tira da fila um pedido que ainda espera |
+| `GET /api/projects/:id/claude` | Briefing, revisão, site e execuções do projeto |
+| `GET /api/projects/:id/claude/material` | O material do projeto, classificado |
+| `GET /api/projects/:id/claude/metrics` | Custo e qualidade do site, por rótulo |
+| `GET /api/projects/:id/claude/runs/:runId/log` | O log legível de uma execução |
+| `GET /api/projects/:id/claude/images/:tipo?path=` | Telas, filme, foto do material ou miniatura |
+| `POST /api/projects/:id/claude/briefing/preview` | Ensaio do briefing — não gasta |
+| `POST /api/projects/:id/claude/briefing` | Pede o briefing — **gasta** |
+| `PUT /api/projects/:id/claude/briefing` | Grava o briefing corrigido |
+| `PUT /api/projects/:id/claude/options` | Grava as opções do site |
+| `POST /api/projects/:id/claude/generate/preview` | Ensaio do site — não gasta |
+| `POST /api/projects/:id/claude/generate` | Pede o site — **gasta** |
+| `POST /api/projects/:id/claude/adjust` | Pede um ajuste — **gasta**. Em `anexos`, as imagens que seguem com ele |
+| `PUT /api/projects/:id/claude/adjust/attachments` | Sobe uma imagem do próximo ajuste (corpo cru; PNG, JPG, WebP ou GIF, até 8 MB, seis por pedido). Fica em `.session/anexos/` do site, fora do que vai ao GitHub |
+| `DELETE /api/projects/:id/claude/adjust/attachments` | Tira uma imagem do rascunho |
+| `POST /api/projects/:id/claude/continue` | Continua de onde parou — **gasta** |
+| `POST /api/projects/:id/claude/approve` | Aprova a direção e segue — **gasta** |
+| `POST /api/projects/:id/claude/abort` | Encerra a etapa aberta |
+| `POST /api/projects/:id/claude/stock-photos/refuse` | Tira uma foto de banco da direção |
+| `GET /api/projects/:id/claude/repository` | O plano do envio ao GitHub |
+| `POST /api/projects/:id/claude/repository` | Envia ao GitHub — permissão `publicar` |
+| `POST /api/projects/:id/claude/validate` | Build e validação nesta máquina |
+| `POST /api/projects/:id/claude/captures/:tipo` | Fotografa as telas ou filma a abertura |
+| `GET /api/settings/claude` | O estado do motor nesta máquina — permissão `configurar` |
+| `POST /api/settings/check/claude` | "Testar Claude" — **gasta**, permissão `configurar` |
+
+As que mudam alguma coisa pedem a permissão `gerar`.
+
+### Como é testado
+
+Nenhum teste chama o Claude de verdade. `CLAUDE_BIN` aponta para um claude falso
+(`engines/claude/fixtures/claude-falso.mjs`), que emite eventos `stream-json` de
+exemplo em vários cenários: sucesso, login que falhou, chave de API no lugar da
+assinatura, servidor MCP ou ferramenta fora do contrato, execução lenta, processo que
+não sai no primeiro sinal, sessão que sumiu. As rotas rodam na API de verdade —
+política de rede, sessão, permissões — com um motor de mentira; os testes que usam o
+pacote de verdade (o contrato de permissões, o runbook, o site do template passando
+pelos scripts da área de aprovação) são pulados onde ele não está.
+
+As telas foram vistas no navegador com esse mesmo claude falso, numa instância
+isolada do painel (dados temporários, sem o `.env` da máquina): cada estado do card,
+a fila, o lote, o envio e a seção de Configurações, nos dois temas e em largura de
+celular.
 
 ## Site feito fora do painel ("Vincular site existente")
 
@@ -989,6 +1433,81 @@ estático (HTML, CSS e JS prontos, sem `package.json`, com `index.html` na raiz)
 é pulado, a raiz do repositório é publicada e, na prévia, os caminhos absolutos
 (`/css/…`, `href="/"`, `url(/img/…)`) ganham a pasta na frente — só no runner, sem
 commit. Caminhos montados por JavaScript em tempo de execução não são alcançados.
+
+## Projetos criados no painel (sem Drive e sem repositório)
+
+Nem todo site nasce de uma coleta. Um site desenvolvido inteiro com o Claude não tem
+pasta no Drive nem repositório no GitHub, e material às vezes chega por fora do
+formulário. **Novo projeto**, na barra da seção Projetos, cria o projeto no próprio
+painel, de um de dois tipos:
+
+- **Site para publicar** — entra na fila "Fazer agora", no grupo *Enviar o site ao
+  GitHub*, com o selo e o botão **Enviar ao GitHub**;
+- **Só arquivos** — um lugar para guardar material. Selo *Arquivos*, fora da fila (não
+  há passo a cobrar). O item **Enviar site ao GitHub** continua no menu **…**, se um
+  dia houver um site ali.
+
+O projeto usa tudo o que as coletas usam — tags, apelido, linha do tempo, vínculo de
+site, prévia, envio ao cliente, publicação —, porque essas tabelas são por id de
+projeto. O que ele não tem é a geração pelo Lovable (ela monta o envio a partir da
+pasta do Drive; as rotas respondem 409) e o "Abrir no Drive". No menu aparece
+**Excluir projeto**, que as coletas não têm, e **Gerar site com o Claude**: o motor
+Claude lê os arquivos enviados ao painel, do mesmo jeito que lê a pasta do Drive.
+
+### Onde os arquivos ficam
+
+Em disco, em `server/data/projetos/<id>/` — a mesma pasta de dados do banco, já fora
+do git. O Drive continua somente leitura. O modal do projeto é o mesmo das coletas
+(grade, busca, pré-visualização, `.zip` abrindo como pasta), com **Enviar arquivos**,
+**Enviar uma pasta** (com as subpastas; `node_modules` e `.git` nem sobem) e a lixeira
+em cada item. As rotas de pasta e de arquivo têm os mesmos endereços das do Drive: o
+router dos projetos locais vem antes e atende o id que reconhece
+(`painel-<16 hex>` para o projeto, `<projeto>~<caminho em base64url>` para um item); o
+resto segue para o Drive. Todo caminho vindo do navegador é conferido antes de tocar o
+disco (sem `..`, sem nome que o Windows recuse, sempre dentro da pasta do projeto), e o
+conteúdo sai com as mesmas travas do Drive: HTML e SVG como texto puro, CSP fechada.
+O teto é de 500 MB por arquivo.
+
+> Os arquivos não entram no backup diário do `painel.json`. Inclua
+> `server/data/projetos/` na rotina de backup da máquina.
+
+### Enviar o site ao GitHub
+
+O diálogo tem duas partes:
+
+1. **Código do site.** O painel procura sozinho, nos arquivos do projeto, onde há um
+   site: pastas (até dois níveis) e `.zip` com `package.json` ou `index.html` na raiz —
+   a pasta que só embrulha o projeto dentro do zip é desconsiderada. **Enviar a pasta
+   do site** escolhe a pasta no computador e a grava em `site/` (substituindo a versão
+   anterior); **Enviar um .zip** guarda o compactado. Cada origem mostra quantos
+   arquivos vão, o tamanho e se tem build.
+2. **Repositório.** O nome sugerido sai do nome do projeto (`cliente.com.br` →
+   `cliente-com-br`); o repositório nasce privado, na organização configurada.
+
+Não vão ao repositório, e o diálogo diz quantos de cada: `node_modules`, `.git`,
+`.github` (os workflows recebem a senha do FTP — quem os grava é o painel), saídas de
+build quando há `package.json` (`dist`, `.next`, `.output`…), arquivos `.env` (podem
+ter chaves; as variáveis de build são informadas ao publicar) e lixo do sistema. Os
+tetos: 50 MB por arquivo, 3.000 arquivos, 500 MB no total.
+
+O envio usa a API de dados do git (`deploy/github/git-data.js`): um blob por arquivo,
+uma árvore e **um commit**. A API de conteúdo faria um commit por arquivo, e cada um
+dispararia o workflow de push. Num repositório que já existe, só sobe o que mudou (o
+SHA do blob é calculado aqui e comparado com o da árvore atual), o que está em
+`.github/workflows/` é mantido, e sem mudança nenhuma não há commit.
+
+Depois do envio o site fica registrado como um site vinculado de fora do Lovable
+(`ext-…`, com o repositório confirmado), e segue o caminho de todos: **Publicar
+prévia** (ou já no envio, com a caixa marcada), **Enviar ao cliente** e **Publicar**
+no domínio. Enviar de novo — **Atualizar o site no GitHub**, no menu — grava uma
+versão nova no mesmo repositório, e o que já publica (prévia ou domínio) publica de
+novo sozinho, pelo push.
+
+> **O token precisa de mais uma permissão.** Criar repositório exige *Administration:
+> Read and write* e acesso a **All repositories** da organização — com "Only select
+> repositories", o repositório recém-criado ficaria fora do alcance do próprio token.
+> Sem isso o GitHub responde 403 e o diálogo diz o que falta. Quem preferir não dar
+> essa permissão cria o repositório vazio no GitHub e usa **Vincular site existente**.
 
 ## Área de desenvolvimento (link de aprovação)
 
@@ -1177,6 +1696,7 @@ acesso aos repositórios da organização:
 | Workflows | Leitura e escrita | obrigatória para escrever em `.github/workflows/` |
 | Secrets   | Leitura e escrita | `FTP_*`, `DEPLOY_DOMAIN`, `BUILD_ENV_FILE`     |
 | Actions   | Leitura e escrita | botão *Publicar agora* e histórico de execuções |
+| Administration | Leitura e escrita | criar o repositório de um projeto do painel (opcional; exige acesso a *All repositories*) |
 
 O botão **Testar acesso**, na tela de configuração, valida o token contra o GitHub e
 informa a data de expiração antes do primeiro deploy. Ele só faz leituras: as
@@ -1304,6 +1824,33 @@ teste garantindo que os dois arquivos carreguem o marcador.
 > quais vieram daqui — leia antes de confirmar.
 
 ## Próximos passos previstos
+
+**Motor Claude: a primeira execução real pelo painel.** Tudo o que está descrito na
+seção "Motor Claude" foi provado com o `claude` falso. Uma execução com o Claude Code
+de verdade ainda precisa confirmar quatro coisas que o falso não prova: que o login da
+assinatura é o que o CLI usa, que as permissões do contrato bastam para o agente
+trabalhar e barram o resto (inclusive com o perfil pessoal de quem roda, que entra
+pela fonte `user`), que o site sai com a assinatura Joinvix e que ele chega à área de
+aprovação.
+
+As duas primeiras têm uma ferramenta própria, a **execução-isca**:
+
+```bash
+npm run motor:isca                 # mostra o comando exato, a pasta e o pedido — não dispara nada
+npm run motor:isca -- --executar   # dispara o claude -p de verdade (consome a assinatura)
+```
+
+Ela monta o mesmo comando de um ajuste, numa pasta de dados temporária com
+arquivos-isca (um `.env`, um banco na pasta de dados, um arquivo fora da pasta de
+trabalho), e pede ao agente que cite o runbook e tente o que não pode: ler as iscas,
+rodar `git`, `cat` e `ls`, criar um arquivo solto, buscar uma página. O resultado
+sai conferência por conferência — `ok`, `FALHOU` ou `sem prova`, quando o agente
+nem tentou — e vale refazer depois de atualizar o Claude Code ou de mexer nas
+configurações pessoais dele (`~/.claude`). Se uma regra pessoal alargar a lista
+fechada, a saída é tirar a fonte `user` do contrato (`fontes_de_configuracao`, em
+`joinvixable/config/headless.json`) e conferir de novo.
+
+**Lovable.**
 
 O upload de anexos já foi validado contra o servidor real (tools gratuitas). O que
 falta é a primeira criação de fato — só ela confirma quais formatos o Lovable aceita

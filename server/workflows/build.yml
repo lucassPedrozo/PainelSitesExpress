@@ -1,5 +1,5 @@
 # Gerado pelo painel Joinvix Deploy. Alteracoes manuais serao sobrescritas.
-# joinvix-deploy-template: 9
+# joinvix-deploy-template: 12
 # Actions fixadas por commit (a tag ao lado e so referencia): uma tag pode ser
 # movida para outro codigo, e estes passos recebem a senha do FTP.
 name: Build

@@ -13,8 +13,14 @@ g-suite-*.json
 *service-account*.json
 
 # Estado local do painel: tags, gerações, chaves (hash), sessões (hash) e
-# tokens do Lovable
+# tokens do Lovable. Os dados do motor Claude (clientes, sites, fila e o
+# stream de cada execução) ficam em server/data/joinvixable/.
 server/data/
+
+# O pacote do motor de geração com o Claude (Joinvixable). Prompts, seções e
+# template são conhecimento interno da JoinVix: o pacote vive num repositório
+# privado próprio, clonado nesta pasta, e nunca entra neste repositório.
+/joinvixable/
 
 # Logs de execução local
 *.log

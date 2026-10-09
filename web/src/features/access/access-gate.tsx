@@ -37,7 +37,7 @@ export function AccessGate({ message, onSubmit }: AccessGateProps) {
             height={218}
             className="mx-auto size-11"
           />
-          <CardTitle className="mt-2">Painel Gerenciador</CardTitle>
+          <CardTitle className="mt-2">Painel Sites Express</CardTitle>
           <p className="text-sm text-muted-foreground">
             Use a sua chave de acesso. Ela não fica guardada no navegador: o
             painel a troca por uma sessão e a descarta.
@@ -73,7 +73,7 @@ export function AccessGate({ message, onSubmit }: AccessGateProps) {
             <Button
               type="submit"
               size="lg"
-              className="w-full"
+              className="mt-1 w-full"
               disabled={!token.trim() || isSubmitting}
             >
               {isSubmitting && <Loader2 className="size-4 animate-spin" />}

@@ -72,7 +72,62 @@ export type GenerationPlan = {
   }[];
   totalBytes: number;
   unknownSizes: number;
+  /** O zip que leva as fotos de banco, quando há alguma. */
+  stockZip: string | null;
+  /** Fotos de banco conferidas no Pixabay, com o caminho dentro do zip. */
+  stockImages: {
+    id: number;
+    path: string;
+    term: string;
+    section: string | null;
+    user: string;
+    pageUrl: string | null;
+  }[];
 };
+
+/* ---- Imagens de banco (Pixabay) -------------------------------------- */
+
+export type StockImagesStatus = {
+  configured: boolean;
+  limits: {
+    maxTerms: number;
+    maxQuantity: number;
+    defaultQuantity: number;
+    maxTermChars: number;
+    maxSectionChars: number;
+    maxImages: number;
+  };
+};
+
+/**
+ * Uma foto candidata. A miniatura vem por `stockThumbnailUrl`; a versão em
+ * alta só o servidor baixa, na geração.
+ */
+export type StockCandidate = {
+  id: number;
+  width: number | null;
+  height: number | null;
+  tags: string;
+  user: string;
+  pageUrl: string | null;
+};
+
+export type StockTerm = { term: string; quantity: number; section: string | null };
+
+export type StockSearchResult = StockTerm & { images: StockCandidate[] };
+
+/** O que a geração recebe de cada foto escolhida: id e grupo. */
+export type StockSelection = { id: number; term: string; section: string | null };
+
+/** Miniatura pelo painel, como as do Drive — o Pixabay fica fora da CSP. */
+export const stockThumbnailUrl = (imageId: number) => `/api/images/${imageId}/thumbnail`;
+
+export const fetchStockImagesStatus = () =>
+  get<StockImagesStatus>("/api/images/status");
+
+/** Busca no Pixabay pelo servidor — a chave não sai de lá. Não gasta crédito. */
+export const searchStockImages = (terms: StockTerm[]) =>
+  send<{ results: StockSearchResult[] }>("POST", "/api/images/search", { terms });
 
 export type GenerationResult = {
   /** Formato definido pelo Lovable — lido de forma tolerante na interface. */
@@ -118,7 +173,7 @@ export const fetchBuildPackage = (projectId: string, refresh = false) =>
 /** Ensaio — não chama o Lovable e não consome crédito. */
 export const previewGeneration = (
   projectId: string,
-  body: { prompt: string; fileIds: string[] },
+  body: { prompt: string; fileIds: string[]; stockImages?: StockSelection[] },
 ) =>
   send<{ dryRun: true; plan: GenerationPlan }>(
     "POST",
@@ -132,6 +187,7 @@ export const generateSite = (
   body: {
     prompt: string;
     fileIds: string[];
+    stockImages?: StockSelection[];
     workspaceId: string;
     workspaceName: string;
   },

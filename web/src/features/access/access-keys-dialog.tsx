@@ -13,8 +13,18 @@ import {
 import { PERMISSION_LABELS } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
 import { copyToClipboard } from "@/lib/clipboard";
-import { formatDateTime, relativeTime } from "@/lib/format";
+import { formatDateTime, pluralize, relativeTime } from "@/lib/format";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -26,6 +36,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyNotice } from "@/components/page-header";
 
 /**
  * Uma fileira de permissões — a mesma no formulário de criação e em cada chave
@@ -195,12 +207,16 @@ function AccessKeysManager({ open }: { open: boolean }) {
     }
   };
 
+  /** Chave à espera de confirmação para ser revogada. */
+  const [revoking, setRevoking] = useState<AccessUser | null>(null);
+
   const revoke = async (user: AccessUser) => {
+    setRevoking(null);
     try {
       const { sessionsClosed } = await revokeAccessKey(user.id);
       toast.success(`Chave de ${user.name} revogada`, {
         description: sessionsClosed
-          ? `${sessionsClosed} sessão(ões) encerrada(s) agora.`
+          ? `${pluralize(sessionsClosed, "sessão encerrada", "sessões encerradas")} agora.`
           : "Nenhuma sessão estava aberta.",
       });
       await refresh();
@@ -232,7 +248,7 @@ function AccessKeysManager({ open }: { open: boolean }) {
       </DialogHeader>
 
       {fresh && (
-        <Alert>
+        <Alert variant="success">
           <KeyRound />
           <AlertTitle>Chave de {fresh.name}</AlertTitle>
           <AlertDescription className="space-y-2">
@@ -269,11 +285,7 @@ function AccessKeysManager({ open }: { open: boolean }) {
             onChange={(event) => setName(event.target.value)}
           />
           <Button type="submit" disabled={!name.trim() || creating}>
-            {creating ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Plus className="size-4" />
-            )}
+            {creating ? <Loader2 className="animate-spin" /> : <Plus />}
             Criar
           </Button>
         </div>
@@ -288,25 +300,29 @@ function AccessKeysManager({ open }: { open: boolean }) {
 
       <div className="overflow-hidden rounded-lg border">
         {isPending ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            Carregando…
-          </p>
+          <div className="space-y-2 p-3">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
         ) : error ? (
           /* Na própria lista, e não num toast: o erro é sobre o que deveria
              estar ali, e o toast some antes de alguém agir. */
-          <div className="space-y-2 px-4 py-6 text-center text-sm">
-            <p className="text-muted-foreground">
-              Não foi possível listar as chaves. {(error as Error).message}
-            </p>
-            <Button type="button" variant="outline" size="sm" onClick={refresh}>
-              Tentar novamente
-            </Button>
-          </div>
+          <EmptyNotice
+            icon={<KeyRound />}
+            title="Não foi possível listar as chaves"
+            description={(error as Error).message}
+            action={
+              <Button type="button" variant="outline" size="sm" onClick={refresh}>
+                Tentar novamente
+              </Button>
+            }
+          />
         ) : users.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            Nenhuma chave criada. Enquanto isso, vale a chave do{" "}
-            <code>.env</code> — a do administrador.
-          </p>
+          <EmptyNotice
+            icon={<KeyRound />}
+            title="Nenhuma chave criada"
+            description="Enquanto isso, vale a chave do .env — a do administrador."
+          />
         ) : (
           <ul className="divide-y">
             {users.map((user) => (
@@ -331,11 +347,11 @@ function AccessKeysManager({ open }: { open: boolean }) {
                     type="button"
                     variant="destructive"
                     size="icon-sm"
-                    onClick={() => revoke(user)}
+                    onClick={() => setRevoking(user)}
                     aria-label={`Revogar a chave de ${user.name}`}
                     title={`Revogar a chave de ${user.name}`}
                   >
-                    <Trash2 className="size-3.5" />
+                    <Trash2 />
                   </Button>
                 </div>
                 <PermissionToggles
@@ -349,6 +365,31 @@ function AccessKeysManager({ open }: { open: boolean }) {
           </ul>
         )}
       </div>
+
+      {/* Revogar é irreversível e derruba as sessões da pessoa na hora: um
+          clique a mais, com o nome dela, antes de acontecer. */}
+      <AlertDialog open={Boolean(revoking)} onOpenChange={(open) => !open && setRevoking(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revogar a chave de {revoking?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A chave deixa de valer e as sessões abertas dela são encerradas agora. Para
+              a pessoa voltar a entrar, será preciso criar outra chave.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (revoking) void revoke(revoking);
+              }}
+            >
+              Revogar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

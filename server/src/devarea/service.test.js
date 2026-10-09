@@ -5,6 +5,7 @@ import {
   devAreaStateOf,
   devAreaTarget,
   findRepoForGeneration,
+  findRepoRefreshingName,
   joinsAutomatically,
   latestDevRun,
   pickDevAreaSlug,
@@ -72,6 +73,41 @@ describe("findRepoForGeneration", () => {
   it("sem repositório com o nome, não adivinha", () => {
     assert.equal(findRepoForGeneration({ lovableName: "Nada a ver" }, repos), null);
     assert.equal(findRepoForGeneration({ lovableName: null }, repos), null);
+  });
+});
+
+describe("findRepoRefreshingName", () => {
+  const repos = [{ full_name: "Org/casa-aurora", name: "casa-aurora" }];
+  const provisorio = {
+    id: "d22182ce-63f4-4440-9a32-4ff721d2614f",
+    lovableName: "Instrução Construa o site descrito abaixo",
+  };
+
+  it("relê o nome no Lovable quando o projeto foi renomeado", async () => {
+    const gravados = [];
+    const repo = await findRepoRefreshingName("p1", provisorio, repos, {
+      nameOf: async () => "Casa Aurora",
+      save: async (...args) => gravados.push(args),
+    });
+    assert.equal(repo?.full_name, "Org/casa-aurora");
+    assert.deepEqual(gravados, [["p1", provisorio.id, { lovableName: "Casa Aurora" }]]);
+  });
+
+  it("não consulta o Lovable quando já acha, nem para site de fora", async () => {
+    const nameOf = async () => assert.fail("não devia consultar");
+    const save = async () => assert.fail("não devia gravar");
+    const achado = await findRepoRefreshingName("p1", { ...provisorio, lovableName: "Casa Aurora" }, repos, { nameOf, save });
+    assert.equal(achado?.full_name, "Org/casa-aurora");
+    assert.equal(await findRepoRefreshingName("p1", { id: "ext-abc", lovableName: "X" }, repos, { nameOf, save }), null);
+    assert.equal(await findRepoRefreshingName("p1", { ...provisorio, repoFullName: "Org/outro" }, repos, { nameOf, save }), null);
+  });
+
+  it("nome igual no Lovable: segue esperando, sem gravar", async () => {
+    const repo = await findRepoRefreshingName("p1", provisorio, repos, {
+      nameOf: async () => provisorio.lovableName,
+      save: async () => assert.fail("não devia gravar"),
+    });
+    assert.equal(repo, null);
   });
 });
 

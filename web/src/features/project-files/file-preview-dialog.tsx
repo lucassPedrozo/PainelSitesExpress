@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import type { DriveFile } from "@/lib/api";
-import { rawUrl } from "@/lib/api";
+import { fileContentUrl } from "@/lib/api";
 import { formatBytes, formatDateTime, kindLabels } from "@/lib/format";
 import { FileIcon } from "@/components/file-icon";
 import { Badge } from "@/components/ui/badge";
@@ -84,8 +84,12 @@ function PreviewFrame({
           <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Badge variant="secondary">{kindLabels[file.kind]}</Badge>
             <span>{formatBytes(file.size)}</span>
-            <span aria-hidden>·</span>
-            <span>Modificado em {formatDateTime(file.modifiedTime)}</span>
+            {file.modifiedTime && (
+              <>
+                <span aria-hidden>·</span>
+                <span>Modificado em {formatDateTime(file.modifiedTime)}</span>
+              </>
+            )}
             {file.width && file.height ? (
               <>
                 <span aria-hidden>·</span>
@@ -97,16 +101,21 @@ function PreviewFrame({
           </DialogDescription>
         </div>
         <div className="flex items-center gap-1">
-          <Button asChild variant="ghost" size="icon" title="Baixar">
-            <a href={rawUrl(file.id, true)} download>
-              <Download className="size-4" />
-            </a>
-          </Button>
-          <Button asChild variant="ghost" size="icon" title="Abrir no Drive">
-            <a href={file.webViewLink} target="_blank" rel="noreferrer">
-              <ExternalLink className="size-4" />
-            </a>
-          </Button>
+          {!file.archive?.blocked && (
+            <Button asChild variant="ghost" size="icon" aria-label="Baixar" title="Baixar">
+              <a href={fileContentUrl(file, true)} download>
+                <Download className="size-4" />
+              </a>
+            </Button>
+          )}
+          {/* Item de dentro de um zip não tem página própria no Drive. */}
+          {file.webViewLink && (
+            <Button asChild variant="ghost" size="icon" aria-label="Abrir no Drive" title="Abrir no Drive">
+              <a href={file.webViewLink} target="_blank" rel="noreferrer">
+                <ExternalLink className="size-4" />
+              </a>
+            </Button>
+          )}
         </div>
       </DialogHeader>
 
@@ -144,7 +153,7 @@ function PreviewBody({
   file: DriveFile;
   onLoaded: () => void;
 }) {
-  const src = rawUrl(file.id);
+  const src = fileContentUrl(file);
 
   if (file.previewKind === "image") {
     return (
@@ -195,20 +204,27 @@ function PreviewBody({
   return (
     <div className="flex flex-col items-center gap-3 text-center">
       <FileIcon kind={file.kind} className="size-10" />
-      <p className="text-sm text-muted-foreground">
-        Pré-visualização não disponível para este formato.
+      <p className="max-w-sm text-sm text-muted-foreground">
+        {file.archive?.blocked ??
+          (file.kind === "archive"
+            ? "O painel só abre o conteúdo de arquivos .zip. Baixe este para ver o que há nele."
+            : "Pré-visualização não disponível para este formato.")}
       </p>
       <div className="flex gap-2">
-        <Button asChild variant="outline" size="sm">
-          <a href={rawUrl(file.id, true)} download>
-            <Download className="size-4" /> Baixar
-          </a>
-        </Button>
-        <Button asChild size="sm">
-          <a href={file.webViewLink} target="_blank" rel="noreferrer">
-            <ExternalLink className="size-4" /> Abrir no Drive
-          </a>
-        </Button>
+        {!file.archive?.blocked && (
+          <Button asChild variant="outline" size="sm">
+            <a href={fileContentUrl(file, true)} download>
+              <Download className="size-4" /> Baixar
+            </a>
+          </Button>
+        )}
+        {file.webViewLink && (
+          <Button asChild size="sm">
+            <a href={file.webViewLink} target="_blank" rel="noreferrer">
+              <ExternalLink className="size-4" /> Abrir no Drive
+            </a>
+          </Button>
+        )}
       </div>
     </div>
   );

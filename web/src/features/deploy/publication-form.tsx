@@ -40,6 +40,8 @@ type PublicationFormProps = {
    */
   submitLabel?: string;
   showStep?: boolean;
+  /** Ao alterar uma configuração já gravada, dá para voltar sem salvar. */
+  onCancel?: () => void;
 };
 
 /** Divide o formulário em blocos com significado, em vez de oito campos seguidos. */
@@ -62,6 +64,7 @@ export function PublicationForm({
   onChange,
   submitLabel = "Salvar configuração",
   showStep = true,
+  onCancel,
 }: PublicationFormProps) {
   const [showPassword, setShowPassword] = useState(false);
 
@@ -76,8 +79,8 @@ export function PublicationForm({
           <CardTitle>Configurar publicação</CardTitle>
         </div>
         <CardDescription>
-          Os dados vão para a API local e viram GitHub Actions secrets. A senha
-          não é salva no navegador.
+          Destino e acesso FTP gravados como secrets no repositório do site. A
+          senha não fica no navegador.
         </CardDescription>
       </CardHeader>
 
@@ -231,14 +234,15 @@ export function PublicationForm({
           card ao lado, e o operador preenchia à esquerda procurando o "salvar"
           à direita. */}
       <CardFooter className="gap-3">
-        <Button type="submit" size="lg" disabled={disabled || isSaving}>
-          {isSaving ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Save className="size-4" />
-          )}
+        <Button type="submit" disabled={disabled || isSaving}>
+          {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
           {isSaving ? "Gravando..." : submitLabel}
         </Button>
+        {onCancel && (
+          <Button type="button" variant="outline" disabled={isSaving} onClick={onCancel}>
+            Cancelar
+          </Button>
+        )}
         <p className="text-xs text-muted-foreground">
           Grava os secrets e os workflows no repositório.
         </p>

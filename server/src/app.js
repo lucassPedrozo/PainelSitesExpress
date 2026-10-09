@@ -3,11 +3,14 @@ import path from "node:path";
 import express from "express";
 import { config } from "./config.js";
 import { deployRouter } from "./deploy/routes.js";
+import { claudeRouter } from "./engines/claude/routes.js";
 import { settingsRouter } from "./settings/routes.js";
+import { assistantRouter } from "./gemini/routes.js";
 import { errorHandler } from "./http.js";
 import { lovableRouter } from "./lovable/routes.js";
 import { accessRouter } from "./routes/access.js";
 import { filesRouter } from "./routes/files.js";
+import { localProjectsRouter } from "./routes/local-projects.js";
 import { projectsRouter } from "./routes/projects.js";
 import { tagsRouter } from "./routes/tags.js";
 import { createAuthentication } from "./security/authenticate.js";
@@ -54,11 +57,18 @@ export function createApp({ authentication } = {}) {
   app.use(createAuthentication(authentication));
 
   app.use("/api", accessRouter);
+  /* Projetos criados no painel. Antes das rotas do Drive: os endereços de
+     pasta e arquivo são os mesmos, e o id local é atendido aqui. */
+  app.use("/api", localProjectsRouter);
   app.use("/api", projectsRouter);
   app.use("/api", tagsRouter);
   app.use("/api", filesRouter);
   /* Conexão com o Lovable e geração do site a partir do briefing. */
   app.use("/api", lovableRouter);
+  /* O motor Claude: briefing, geração, acompanhamento e fila. */
+  app.use("/api", claudeRouter);
+  /* O assistente (Gemini) da tela de geração: sugestões, nunca o envio. */
+  app.use("/api", assistantRouter);
   /* Publicação dos repositórios via GitHub Actions + FTP. */
   app.use("/api/deploy", deployRouter);
   /* A tela de configuração do .env — só nesta máquina, só administrador. */

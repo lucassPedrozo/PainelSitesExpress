@@ -46,6 +46,9 @@ export function dateGroupOf(date: Date, reference: number): DateGroup {
 
 export type DatedGroup<T> = DateGroup & { items: T[] };
 
+/** O `id` da seção de um grupo na lista — é para onde o resumo do topo rola. */
+export const groupAnchor = (key: string) => `grupo-${key}`;
+
 /**
  * Junta os itens já ordenados em faixas contíguas. Depende da ordenação: só
  * faz sentido sobre uma lista ordenada pela mesma data que alimenta o

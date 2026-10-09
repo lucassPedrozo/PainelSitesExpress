@@ -8,7 +8,7 @@ export { ACCESS_PERMISSIONS };
 
 export const PERMISSION_LABELS = {
   organizar: "organizar projetos (tags e nomes)",
-  gerar: "gerar sites no Lovable",
+  gerar: "gerar sites",
   publicar: "publicar sites",
   configurar: "configurar o painel",
   administrar: "administrar chaves de acesso",

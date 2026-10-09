@@ -15,6 +15,15 @@ export type Generation = {
   promptChars: number;
   createdAt: string;
   /**
+   * Quem clicou em "Gerar" — o nome da chave de acesso. `null` nas gerações
+   * de antes de o painel guardar isso, e sem chaves de acesso configuradas.
+   */
+  createdBy?: string | null;
+  /** Quando o agente terminou de construir (a última vez). */
+  agentDoneAt?: string | null;
+  /** Quando o site passou a apontar para outro projeto do Lovable. */
+  projectChangedAt?: string | null;
+  /**
    * Link do botão "Share preview" do Lovable — o único que abre sem login.
    * `previewUrl` acima é o preview interno e devolve 401 para o cliente.
    */
@@ -55,6 +64,17 @@ export type Generation = {
   origin?: "panel" | "linked";
   linkedAt?: string | null;
   linkedBy?: string | null;
+  /**
+   * O motor que fez o site. Ausente nos do Lovable e nos vinculados; `claude`
+   * nos que o Claude Code gerou nesta máquina.
+   */
+  engine?: "claude";
+  /** Só nos do Claude: a pasta do site na pasta de trabalho do motor. */
+  claudeSlug?: string | null;
+  /** Só nos do Claude: quando a última versão foi validada. */
+  claudeValidatedAt?: string | null;
+  /** Só nos do Claude: a versão que já foi ao GitHub. */
+  claudePushedAt?: string | null;
   /** Repositório confirmado para este site, na primeira publicação. */
   repoFullName: string | null;
   /** A publicação na área de desenvolvimento; `null` fora dela. */
@@ -81,6 +101,8 @@ export type DevArea = {
   repoFullName: string | null;
   branch: string | null;
   configuredAt: string | null;
+  /** Quem pediu a publicação; `null` quando o painel publicou sozinho. */
+  configuredBy?: string | null;
   lastRun: {
     at: string;
     status: "pending" | "success" | "failure" | "unknown";

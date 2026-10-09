@@ -1,6 +1,7 @@
 import { FileCode2 } from "lucide-react";
 import type { RepoOption, WorkflowFile } from "@/lib/api/deploy";
 import type { PreviewContent } from "./deploy-types";
+import { pluralize } from "@/lib/format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,8 +70,8 @@ export function ClearWorkflowsDialog({
 
         <AlertDialogFooter>
           <AlertDialogCancel>Cancelar</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>
-            Sim, remover {files.length} arquivo(s)
+          <AlertDialogAction variant="destructive" onClick={onConfirm}>
+            Sim, remover {pluralize(files.length, "arquivo")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

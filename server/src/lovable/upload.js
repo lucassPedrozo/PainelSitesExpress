@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { config } from "../config.js";
 import { streamFile } from "../drive.js";
 import { httpError } from "../http.js";
+import { pixabay } from "../images/pixabay.js";
 import { callTool } from "./mcp.js";
 import { formatBytes, uploadShape } from "./package.js";
 
@@ -98,5 +99,23 @@ export function uploadSignature(file) {
     uploadName: file.name,
     contentType: file.contentType,
     readBytes: () => fs.readFile(file.path),
+  });
+}
+
+/**
+ * Sobe as fotos de banco escolhidas na tela de geração num anexo só,
+ * `imagens-pixabay.zip`: o Lovable limita os anexos por arquivo, e o zip
+ * conta como um. As fotos são baixadas do Pixabay só agora e não passam
+ * pelo disco.
+ *
+ * @param {Parameters<typeof pixabay.buildZip>[0]} images o que `pixabay.resolve` devolveu
+ */
+export async function uploadStockZip(images) {
+  const zip = await pixabay.buildZip(images);
+  return putToLovable({
+    label: zip.name,
+    uploadName: zip.name,
+    contentType: zip.contentType,
+    readBytes: async () => zip.bytes,
   });
 }

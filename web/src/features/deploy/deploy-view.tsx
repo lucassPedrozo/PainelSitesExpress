@@ -18,6 +18,7 @@ import {
   SetupRequiredAlert,
 } from "./deploy-placeholders";
 import { PublicationForm } from "./publication-form";
+import { PublicationSummary } from "./publication-summary";
 import { PublishCard } from "./publish-card";
 import type { PublishTarget } from "./publish-target";
 import { RepositoryBar } from "./repository-bar";
@@ -57,6 +58,8 @@ type DeployViewProps = {
  */
 export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployViewProps) {
   const [selectedRepoId, setSelectedRepoId] = useState("");
+  /** Repositório já configurado: o formulário só aparece quando pedido. */
+  const [editing, setEditing] = useState(false);
   const [dryRun, setDryRun] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -87,17 +90,22 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
     [publicacoes.items],
   );
 
-  const { target: alvo, suggested: sugerido } = useSuggestedRepository({
+  const { target: alvo, suggestion, suggested: sugerido } = useSuggestedRepository({
     target,
     onTargetConsumed,
     repos,
     publishedByDomain: publicacoes.byDomain,
   });
+  /** Domínio clicado na lista de publicações antes de os repositórios chegarem. */
+  const [pendingRepoFullName, setPendingRepoFullName] = useState<string | null>(null);
   const selectedRepo = useMemo(
     () =>
       repos.find((repo) => repo.id === selectedRepoId) ??
+      (pendingRepoFullName
+        ? repos.find((repo) => repo.fullName === pendingRepoFullName)
+        : undefined) ??
       (selectedRepoId ? undefined : (sugerido ?? undefined)),
-    [repos, selectedRepoId, sugerido],
+    [repos, selectedRepoId, pendingRepoFullName, sugerido],
   );
 
   const repositorio = useRepositoryData({
@@ -106,18 +114,31 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
     templateVersion: painel.templateVersion,
   });
 
+  const publicacaoAtual = selectedRepo
+    ? publicacoes.byRepo.get(selectedRepo.fullName)
+    : undefined;
+
   const settings = usePublicationSettings({
     repoFullName: selectedRepo?.fullName ?? "",
     defaultFtpHost: painel.status?.defaultFtpHost ?? "",
     initialDomain: alvo?.domain,
-    knownDomain: selectedRepo
-      ? publicacoes.byRepo.get(selectedRepo.fullName)?.domain
-      : null,
-    knownSettings: selectedRepo
-      ? publicacoes.byRepo.get(selectedRepo.fullName)?.settings
-      : null,
+    knownDomain: publicacaoAtual?.domain,
+    knownSettings: publicacaoAtual?.settings,
     detectedAutoDeploy: repositorio.detectedAutoDeploy,
   });
+
+  /**
+   * Já configurado: o workflow de deploy está no repositório e o painel
+   * gravou uma publicação nele. Aí o caminho comum é só publicar, e o
+   * formulário vira um resumo — a um clique para quem precisa mudar algo.
+   */
+  const configurada = Boolean(
+    selectedRepo &&
+      repositorio.canDeploy &&
+      publicacaoAtual?.configuredAt &&
+      !repositorio.isCheckingWorkflow,
+  );
+  const mostrarFormulario = !configurada || editing;
 
   /**
    * Publicar muda o histórico e, com ele, o estado do projeto na outra seção
@@ -128,11 +149,22 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
     void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
   };
 
+  /**
+   * A lista de publicações chega antes da lista de repositórios (o GitHub
+   * demora). Um domínio clicado nesse intervalo fica guardado pelo nome e a
+   * seleção é derivada dele assim que a lista chega — antes o clique se
+   * perdia. Escolher outro repositório no seletor substitui a escolha.
+   */
   const openPublication = (repoFullName: string) => {
     const repo = repos.find((item) => item.fullName === repoFullName);
     if (repo) selectRepository(repo);
-    else toast.info("Repositório não encontrado na organização configurada.");
+    else setPendingRepoFullName(repoFullName);
   };
+  const pendingNotFound =
+    Boolean(pendingRepoFullName) &&
+    !painel.isLoadingRepos &&
+    repos.length > 0 &&
+    !repos.some((item) => item.fullName === pendingRepoFullName);
 
   const busy = isPublishing || isClearing || isDispatching;
 
@@ -176,6 +208,8 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
 
   const selectRepository = (repo: RepoOption) => {
     setSelectedRepoId(repo.id);
+    setPendingRepoFullName(null);
+    setEditing(false);
     setErrors((current) => ({ ...current, repo: undefined }));
     setPublicationResult(null);
     setDeleteResult(null);
@@ -210,9 +244,10 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
       });
       setPublicationResult(result);
       settings.persist();
+      setEditing(false);
       setConfiguredRepos(configuredRepositories());
       toast.success("Publicação configurada", {
-        description: 'Agora use "Publicar agora" para disparar o deploy.',
+        description: "Agora é só “Publicar agora”.",
       });
       refreshPublished();
       await repositorio.reloadWorkflows();
@@ -333,10 +368,18 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
             configuredRepos={configuredRepos}
             repoDomains={repoDomains}
             loading={painel.isLoadingRepos}
-            error={errors.repo}
+            error={
+              errors.repo ??
+              (pendingNotFound
+                ? `${pendingRepoFullName} não está na organização configurada — escolha na lista.`
+                : undefined)
+            }
             pickerOpen={pickerOpen}
             onPickerOpenChange={setPickerOpen}
             onSelect={selectRepository}
+            target={alvo}
+            suggestion={suggestion}
+            overridden={Boolean(selectedRepoId)}
           />
 
           {selectedRepo ? (
@@ -349,28 +392,56 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
                janela estreita. */
             <div className="grid items-start gap-6 xl:grid-cols-5">
               <div className="min-w-0 space-y-6 xl:col-span-3">
-                <form onSubmit={handlePublish} noValidate>
-                  <PublicationForm
-                    settings={settings.settings}
-                    errors={errors}
-                    isSaving={isPublishing}
-                    disabled={busy}
-                    suggestedDomain={alvo?.domain}
-                    advancedOpen={advancedOpen}
-                    onAdvancedOpenChange={setAdvancedOpen}
-                    onChange={updateSettings}
+                {/* Já configurado: publicar vem primeiro e a configuração
+                    vira leitura. Senão (ou ao alterar), o formulário é o
+                    passo 1 e o cartão de publicar, o 2. */}
+                {mostrarFormulario ? (
+                  <form onSubmit={handlePublish} noValidate>
+                    <PublicationForm
+                      settings={settings.settings}
+                      errors={errors}
+                      isSaving={isPublishing}
+                      disabled={busy}
+                      suggestedDomain={alvo?.domain}
+                      advancedOpen={advancedOpen}
+                      onAdvancedOpenChange={setAdvancedOpen}
+                      onChange={updateSettings}
+                      onCancel={configurada ? () => setEditing(false) : undefined}
+                    />
+                  </form>
+                ) : (
+                  <PublishCard
+                    canDeploy={repositorio.canDeploy}
+                    dryRun={dryRun}
+                    busy={busy}
+                    isDispatching={isDispatching}
+                    publicationResult={publicationResult}
+                    onDeploy={handleDeploy}
+                    onDryRunChange={setDryRun}
+                    showStep={false}
                   />
-                </form>
+                )}
 
-                <PublishCard
-                  canDeploy={repositorio.canDeploy}
-                  dryRun={dryRun}
-                  busy={busy}
-                  isDispatching={isDispatching}
-                  publicationResult={publicationResult}
-                  onDeploy={handleDeploy}
-                  onDryRunChange={setDryRun}
-                />
+                {mostrarFormulario ? (
+                  <PublishCard
+                    canDeploy={repositorio.canDeploy}
+                    dryRun={dryRun}
+                    busy={busy}
+                    isDispatching={isDispatching}
+                    publicationResult={publicationResult}
+                    onDeploy={handleDeploy}
+                    onDryRunChange={setDryRun}
+                  />
+                ) : (
+                  publicacaoAtual && (
+                    <PublicationSummary
+                      publication={publicacaoAtual}
+                      outdatedWorkflows={repositorio.outdatedWorkflows}
+                      disabled={busy}
+                      onEdit={() => setEditing(true)}
+                    />
+                  )
+                )}
               </div>
 
               <div className="min-w-0 space-y-6 xl:col-span-2">
@@ -391,30 +462,26 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
                   isLive={repositorio.hasActiveRun}
                   onRefresh={() => void repositorio.reloadRuns()}
                 />
-
-                <PublicationsCard
-                  items={publicacoes.items}
-                  loading={publicacoes.loading}
-                  selectedRepoFullName={selectedRepo.fullName}
-                  onOpen={(item) => openPublication(item.repoFullName)}
-                />
               </div>
             </div>
           ) : (
-            <>
-              <ChooseRepositoryCard
-                disabled={painel.isLoadingRepos || repos.length === 0}
-                onChoose={() => setPickerOpen(true)}
-              />
-              {/* O que já está no ar é da organização, não do repositório:
-                  não precisa esperar uma escolha para aparecer. */}
-              <PublicationsCard
-                items={publicacoes.items}
-                loading={publicacoes.loading}
-                onOpen={(item) => openPublication(item.repoFullName)}
-              />
-            </>
+            <ChooseRepositoryCard
+              disabled={painel.isLoadingRepos || repos.length === 0}
+              hasPublications={publicacoes.items.length > 0}
+              onChoose={() => setPickerOpen(true)}
+            />
           )}
+
+          {/* O que já está no ar é da organização, não do repositório. Sem
+              repositório escolhido, é por aqui que se chega ao site certo —
+              a pessoa pensa no domínio, não no nome que o Lovable deu ao
+              repositório. Com um escolhido, fica embaixo, como consulta. */}
+          <PublicationsCard
+            items={publicacoes.items}
+            loading={publicacoes.loading}
+            selectedRepoFullName={selectedRepo?.fullName}
+            onOpen={(item) => openPublication(item.repoFullName)}
+          />
         </>
       )}
 

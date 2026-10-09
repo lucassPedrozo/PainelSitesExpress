@@ -18,8 +18,9 @@
  * Sai com 0 quando está limpo, 1 quando acha algo e 2 em erro de execução.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { basename, join, relative, resolve, sep } from "node:path";
+import { CREDENTIAL_FORMATS } from "../shared/secret-formats.js";
 
 const RAIZ = resolve(import.meta.dirname, "..");
 
@@ -30,7 +31,7 @@ const CHAVES_PUBLICAS = new Set([
   "LOVABLE_ENABLE_GENERATION", "LOVABLE_MAX_ATTACHMENTS", "LOVABLE_MAX_ATTACHMENT_BYTES",
   "PREVIEW_WATCH_INTERVAL_MS", "DEV_AREA_WATCH_INTERVAL_MS", "DEV_AREA_FTP_DIR",
   "DEV_AREA_FTP_PROTOCOL", "DEV_AREA_FTP_PORT", "GENERATION_ENGINE", "AI_PROVIDER",
-  "AI_MODEL", "PANEL_DATA_DIR",
+  "AI_MODEL", "GEMINI_MODEL", "PANEL_DATA_DIR",
 ]);
 
 // Nos JSON locais, só os campos cujo caminho indica credencial. `redirect_uri` e
@@ -42,27 +43,18 @@ const ARQUIVOS_PROIBIDOS = [
   [/(^|\/)\.env(\.(?!example$)[^/]+)?$/, "arquivo .env"],
   [/(^|\/)g-suite-[^/]*\.json$|service-account[^/]*\.json$/i, "chave de service account"],
   [/(^|\/)server\/data\//, "banco local do painel"],
+  // Prompts, seções e template do motor Claude são conhecimento interno: o
+  // pacote vive num repositório privado e nunca entra neste.
+  [/(^|\/)joinvixable\//, "pacote do motor Claude (repositório privado)"],
   [/(^|\/)(lovable-auth|sessions)\.json$/, "credenciais do painel"],
   [/\.(pem|key|p12|pfx)$|(^|\/)id_(rsa|ed25519)$/i, "chave privada"],
   [/\.log(\.\d+)?$/, "log de execução"],
   [/\.exe$/i, "executável compilado"],
 ];
 
-// Formatos estritos: os valores de teste do projeto (github_pat_teste…,
-// sk-ant-api03-abc…) são curtos demais para casar.
-const FORMATOS = [
-  [/\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}\b/g, "token clássico do GitHub"],
-  [/\bgithub_pat_[A-Za-z0-9_]{70,}/g, "token fine-grained do GitHub"],
-  [/\bsk-ant-[a-z0-9]+-[A-Za-z0-9_-]{80,}/g, "chave da Anthropic"],
-  [/\bsk-(proj-)?[A-Za-z0-9]{40,}/g, "chave da OpenAI"],
-  [/\bAIza[0-9A-Za-z_-]{35}/g, "chave de API do Google"],
-  [/\bAKIA[0-9A-Z]{16}\b/g, "chave da AWS"],
-  [/\bxox[baprs]-[0-9A-Za-z-]{20,}/g, "token do Slack"],
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----/g, "chave privada PEM"],
-  [/eyJ[\w-]{10,}\.eyJ[\w-]{10,}\.[\w-]{20,}/g, "JWT completo"],
-  [/\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@'"`${}]+:[^\s/@'"`${}]{6,}@[^\s/'"`]+/gi, "senha embutida em URL"],
-  [/[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com/gi, "e-mail de service account"],
-];
+// Os formatos de credencial moram em `shared/`: a mesma lista confere o site
+// que o motor Claude gera, antes de ele ir ao GitHub.
+const FORMATOS = CREDENTIAL_FORMATS;
 
 function git(args, input) {
   const r = spawnSync("git", args, { cwd: RAIZ, input, maxBuffer: 1 << 30 });
@@ -80,11 +72,35 @@ function lerEnv(caminho) {
   return valores;
 }
 
+/**
+ * Os dados do motor Claude ficam na mesma pasta de dados, mas não guardam
+ * credencial do painel: são o material e os sites dos clientes, milhares de
+ * JSON de sessão, e uma junção `node_modules` que leva às dependências do
+ * motor. Ler tudo isso atrás de "segredos" só rendia falso positivo — o
+ * `keywords` de um pacote qualquer — e minutos de varredura.
+ */
+const FORA_DA_BUSCA = new Set(["joinvixable", "node_modules"]);
+
+/**
+ * Os arquivos que alguém enviou a um projeto criado no painel
+ * (`projetos/<id>/`) — um site inteiro, às vezes. Nos bancos do painel o nome
+ * do arquivo já diz que tudo ali é sensível (`sessions.json`,
+ * `lovable-auth.json`). Num arquivo enviado ele não diz nada: o
+ * `session.json` de um site é a sessão de trabalho dele, com o id do modelo
+ * que o gerou, e não o banco de sessões do painel. Lá quem decide se um valor
+ * é sensível é o nome do campo.
+ */
+const PASTA_DOS_ENVIADOS = "projetos";
+
 function jsonsEm(pasta) {
   if (!existsSync(pasta)) return [];
   return readdirSync(pasta).flatMap((nome) => {
+    if (FORA_DA_BUSCA.has(nome)) return [];
     const caminho = join(pasta, nome);
-    if (statSync(caminho).isDirectory()) return jsonsEm(caminho);
+    // `lstat`: uma junção ou um link não é seguido para fora da pasta de dados.
+    const info = lstatSync(caminho);
+    if (info.isSymbolicLink()) return [];
+    if (info.isDirectory()) return jsonsEm(caminho);
     return nome.endsWith(".json") ? [caminho] : [];
   });
 }
@@ -104,19 +120,30 @@ function segredosConhecidos() {
   if (env.GOOGLE_CREDENTIALS_PATH) chaves.push(resolve(RAIZ, env.GOOGLE_CREDENTIALS_PATH));
   const dados = resolve(RAIZ, env.PANEL_DATA_DIR || "server/data");
 
-  const visitar = (valor, caminho) => {
-    if (Array.isArray(valor)) valor.forEach((v, i) => visitar(v, `${caminho}[${i}]`));
+  /**
+   * @param {unknown} valor
+   * @param {string} caminho o rótulo que aparece no achado: arquivo e campo
+   * @param {string} campos só o caminho dos campos, sem o nome do arquivo
+   * @param {boolean} peloArquivo o nome do arquivo também conta
+   */
+  const visitar = (valor, caminho, campos, peloArquivo) => {
+    if (Array.isArray(valor)) valor.forEach((v, i) => visitar(v, `${caminho}[${i}]`, `${campos}[${i}]`, peloArquivo));
     else if (valor && typeof valor === "object") {
-      for (const [k, v] of Object.entries(valor)) visitar(v, `${caminho}.${k}`);
+      for (const [k, v] of Object.entries(valor)) visitar(v, `${caminho}.${k}`, `${campos}.${k}`, peloArquivo);
     } else if (typeof valor === "string" && valor.length >= 16) {
       const campo = caminho.split(".").pop();
-      if (CAMPO_SENSIVEL.test(caminho) && !CAMPO_PUBLICO.test(campo)) segredos.set(caminho, valor);
+      if (CAMPO_SENSIVEL.test(peloArquivo ? caminho : campos) && !CAMPO_PUBLICO.test(campo)) segredos.set(caminho, valor);
     }
   };
+  const enviados = join(dados, PASTA_DOS_ENVIADOS) + sep;
   for (const arquivo of new Set([...chaves, ...jsonsEm(dados)])) {
     if (!existsSync(arquivo)) continue;
+    const enviado = arquivo.startsWith(enviados);
+    // Dois sites enviados têm arquivos de mesmo nome: o rótulo leva o caminho
+    // inteiro, para o valor de um não tomar o lugar do valor do outro.
+    const rotulo = enviado ? relative(dados, arquivo).split(sep).join("/") : basename(arquivo);
     try {
-      visitar(JSON.parse(readFileSync(arquivo, "utf8")), basename(arquivo));
+      visitar(JSON.parse(readFileSync(arquivo, "utf8")), rotulo, "", !enviado);
     } catch {
       console.warn(`aviso: não consegui ler ${basename(arquivo)} como JSON`);
     }

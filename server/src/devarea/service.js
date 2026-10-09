@@ -2,7 +2,8 @@ import { devAreaConfig, isDevAreaConfigured, runtimeConfig } from "../config.js"
 import { httpError } from "../http.js";
 import { repoNameOf } from "../../../shared/lovable-repo.js";
 import { slugForProject } from "../preview/service.js";
-import { listGenerations, setGenerationDevArea } from "../store/generations.js";
+import { EXTERNAL_PREFIX, lovableNameOf } from "../lovable/link.js";
+import { listGenerations, setGenerationAgent, setGenerationDevArea } from "../store/generations.js";
 import { listPublications } from "../store/publications.js";
 import { deleteFile, listWorkflowFiles } from "../deploy/github/contents.js";
 import {
@@ -122,6 +123,35 @@ export function findRepoForGeneration(generation, repos) {
   const esperado = repoNameOf(generation.lovableName);
   if (!esperado) return null;
   return repos.find((repo) => repo.name.toLowerCase() === esperado) ?? null;
+}
+
+/**
+ * Como `findRepoForGeneration`, mas sem repositório pelo nome guardado relê o
+ * nome no Lovable (`get_project` é gratuita) e tenta de novo. O nome só é
+ * lido enquanto o agente trabalha, e o Lovable começa com um provisório (a
+ * primeira linha do pedido): renomeado depois, o GitHub cria o repositório
+ * com o nome novo — "Casa Aurora" virou `casa-aurora`, e o painel procurava
+ * `instru-o-construa-o-site-…`.
+ *
+ * @template {{ full_name: string, name: string }} R
+ * @param {string} projectId
+ * @param {{ id?: string, repoFullName?: string | null, lovableName?: string | null, devArea?: DevArea | null }} generation
+ * @param {R[]} repos
+ * @param {{ nameOf?: (lovableId: string) => Promise<string | null>,
+ *   save?: (projectId: string, lovableId: string, patch: { lovableName: string }) => Promise<unknown> }} [deps]
+ * @returns {Promise<R | null>}
+ */
+export async function findRepoRefreshingName(projectId, generation, repos, deps = {}) {
+  const { nameOf = lovableNameOf, save = setGenerationAgent } = deps;
+  const repo = findRepoForGeneration(generation, repos);
+  if (repo || generation.devArea?.repoFullName || generation.repoFullName) return repo;
+  if (!generation.id || generation.id.startsWith(EXTERNAL_PREFIX)) return null;
+
+  const nome = await nameOf(generation.id);
+  if (!nome || nome === generation.lovableName) return null;
+  await save(projectId, generation.id, { lovableName: nome });
+  console.log(`[area-dev] ${generation.id}: nome no Lovable agora é "${nome}".`);
+  return findRepoForGeneration({ ...generation, lovableName: nome }, repos);
 }
 
 /**
@@ -543,7 +573,7 @@ export async function sweepDevArea() {
       }
 
       repos ??= await listOrgRepos();
-      const repo = findRepoForGeneration(geracao, repos);
+      const repo = await findRepoRefreshingName(projectId, geracao, repos);
 
       if (!configurada) {
         producao ??= await productionRepoSet();
@@ -584,7 +614,7 @@ export async function publishDevAreaNow(projectId, lovableId, by = null) {
   );
   if (!geracao) throw httpError(404, "Geração não encontrada neste projeto");
 
-  const repo = findRepoForGeneration(geracao, await listOrgRepos());
+  const repo = await findRepoRefreshingName(projectId, geracao, await listOrgRepos());
   if (!repo) {
     const conhecido = geracao.devArea?.repoFullName ?? geracao.repoFullName;
     throw httpError(

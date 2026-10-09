@@ -3,6 +3,8 @@
  * daqui; a publicação tem o seu em `./deploy`, carregado só com aquela tela.
  */
 export * from "./access";
+export * from "./assistant";
+export * from "./claude";
 export * from "./generations";
 export * from "./lovable";
 export * from "./projects";

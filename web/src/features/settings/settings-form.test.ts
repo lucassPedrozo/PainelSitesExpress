@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { SettingField, SettingSection } from "@/lib/api/settings";
-import { changeOf, initialDrafts, sectionUpdates } from "@/features/settings/settings-form";
+import { changeOf, humanUnit, initialDrafts, sectionUpdates } from "@/features/settings/settings-form";
+
+describe("humanUnit", () => {
+  it("lê milissegundos e bytes como gente, e cala quando não há leitura redonda", () => {
+    expect(humanUnit("CACHE_TTL_MS", "60000")).toBe("1 min");
+    expect(humanUnit("PREVIEW_WATCH_INTERVAL_MS", "1800000")).toBe("30 min");
+    expect(humanUnit("DEV_AREA_WATCH_INTERVAL_MS", "7200000")).toBe("2 h");
+    expect(humanUnit("DEV_AREA_WATCH_INTERVAL_MS", "0")).toBe("desligado");
+    expect(humanUnit("CACHE_TTL_MS", "1500")).toBeNull();
+    expect(humanUnit("LOVABLE_MAX_ATTACHMENT_BYTES", "67108864")).toBe("64 MB");
+    expect(humanUnit("PORT", "3333")).toBeNull();
+    expect(humanUnit("CACHE_TTL_MS", "")).toBeNull();
+  });
+});
 
 const campo = (over: Partial<SettingField>): SettingField => ({
   key: "K",

@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { assertStartupConfig, config, runtimeConfig } from "./config.js";
 import { startDeployWatch } from "./deploy/watch.js";
 import { startDevAreaWatch } from "./devarea/service.js";
+import { servicoClaude } from "./engines/claude/service.js";
 import { resumeGenerationWatch } from "./lovable/progress.js";
 import { startSharePreviewWatch } from "./preview/service.js";
 import { configureSessionPersistence } from "./security/access.js";
@@ -50,6 +51,11 @@ server.on("listening", () => {
   );
   startDeployWatch();
   startDevAreaWatch();
+  // A fila do motor Claude sobe pausada: o que rodava quando o painel caiu
+  // vira interrompido, e nada volta a gastar sem alguém mandar.
+  void servicoClaude()
+    .fila()
+    .catch((err) => console.warn("[claude] a fila não subiu:", err?.message ?? err));
   console.log(`Painel Gerenciador em http://localhost:${config.port}`);
   console.log(`Pasta raiz: ${config.rootFolderId}`);
   console.log(

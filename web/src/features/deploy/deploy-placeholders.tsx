@@ -22,18 +22,25 @@ export function DeployHeader({
 }) {
   return (
     <PageHeader
-      title="Publicação de sites"
-      description="Escolha o repositório, confira as credenciais e publique o site no domínio do cliente."
+      title="Deploy"
+      description="Escolha o repositório do site, confira o destino e publique no domínio do cliente."
       actions={
         <>
-          <Button variant="outline" disabled={isLoadingRepos} onClick={onReload}>
+          <Button
+            variant="outline"
+            disabled={isLoadingRepos}
+            onClick={onReload}
+            title="Reler a lista de repositórios do GitHub"
+          >
             <RefreshCw className={isLoadingRepos ? "animate-spin" : undefined} />
             Atualizar
           </Button>
           {configurable && (
-            <Button variant="outline" onClick={onOpenSettings}>
+            // "Configurar" confundia com o passo "Configurar publicação": este
+            // botão abre as Configurações do painel, na seção do GitHub.
+            <Button variant="outline" onClick={onOpenSettings} title="Token e organização do GitHub, em Configurações">
               <Settings />
-              Configurar
+              GitHub e token
             </Button>
           )}
         </>
@@ -77,7 +84,7 @@ export function SetupRequiredAlert({
   onOpenSettings: () => void;
 }) {
   return (
-    <Alert>
+    <Alert variant="warning">
       <AlertCircle />
       <AlertTitle>Publicação ainda não configurada</AlertTitle>
       <AlertDescription>
@@ -109,16 +116,23 @@ export function SetupRequiredAlert({
  */
 export function ChooseRepositoryCard({
   disabled,
+  hasPublications,
   onChoose,
 }: {
   disabled: boolean;
+  /** Há domínios já publicados: a lista abaixo é um atalho até o repositório. */
+  hasPublications: boolean;
   onChoose: () => void;
 }) {
   return (
     <EmptyState
       icon={<GitBranch />}
-      title="Escolha um repositório para começar"
-      description="As credenciais, os workflows e o histórico de publicações são próprios de cada repositório da organização."
+      title="Escolha o repositório do site para começar"
+      description={
+        hasPublications
+          ? "Destino, workflows e execuções são de cada repositório. Para um site já publicado, clique no domínio na lista abaixo."
+          : "Destino, workflows e execuções são de cada repositório da organização."
+      }
       action={
         <Button disabled={disabled} onClick={onChoose}>
           <GitBranch />

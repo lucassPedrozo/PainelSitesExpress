@@ -1,4 +1,4 @@
-import { ExternalLink, Hourglass, Loader2 } from "lucide-react";
+import { Clock, ExternalLink, Hourglass, Loader2 } from "lucide-react";
 import type { Project } from "@/lib/api";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,7 @@ export function ProjectProgress({
  */
 function CompactProgress({ model, className }: { model: ProgressModel; className?: string }) {
   const esperando = model.kind === "agent" && model.waiting;
+  const naFila = model.kind === "agent" && model.queued === true;
   const detalhe = model.kind === "agent" ? [model.current, model.counts].filter(Boolean).join(" · ") : model.step;
   return (
     <div
@@ -43,16 +44,22 @@ function CompactProgress({ model, className }: { model: ProgressModel; className
       <div className="flex items-center gap-1.5">
         {esperando ? (
           <Hourglass className="size-3.5 shrink-0 text-destructive" />
+        ) : naFila ? (
+          <Clock className="size-3.5 shrink-0 text-muted-foreground" />
         ) : (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-info" />
         )}
         <span className="min-w-0 flex-1 truncate font-medium">{model.title}</span>
         <span className="text-muted-foreground">
-          <Elapsed startedAt={model.startedAt} waiting={esperando} />
+          <Elapsed startedAt={model.startedAt} waiting={esperando || naFila} />
         </span>
       </div>
       {model.kind === "agent" ? (
-        <div className="grid grid-cols-4 gap-1" aria-label="Fases da geração">
+        <div
+          className="grid gap-1"
+          style={{ gridTemplateColumns: `repeat(${model.phases.length}, minmax(0, 1fr))` }}
+          aria-label="Fases da geração"
+        >
           {model.phases.map((fase) => (
             <div
               key={fase.label}
@@ -95,6 +102,11 @@ function Elapsed({ startedAt, waiting }: { startedAt: string | null; waiting?: b
 
 function ProgressBody({ model, className }: { model: ProgressModel; className?: string }) {
   const esperando = model.kind === "agent" && model.waiting;
+  const naFila = model.kind === "agent" && model.queued === true;
+  // O passo atual só vai por extenso quando diz mais do que o nome da fase
+  // ativa, que já está escrito embaixo da barra.
+  const faseAtiva = model.kind === "agent" ? model.phases.find((fase) => fase.state === "active")?.label : null;
+  const passoAtual = model.kind === "agent" && model.current !== faseAtiva ? model.current : null;
   return (
     <div
       className={cn(
@@ -109,17 +121,23 @@ function ProgressBody({ model, className }: { model: ProgressModel; className?: 
       <div className="flex items-center gap-1.5">
         {esperando ? (
           <Hourglass className="size-3.5 shrink-0 text-destructive" />
+        ) : naFila ? (
+          <Clock className="size-3.5 shrink-0 text-muted-foreground" />
         ) : (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-info" />
         )}
         <span className="min-w-0 flex-1 truncate font-medium">{model.title}</span>
-        <Elapsed startedAt={model.startedAt} waiting={esperando} />
+        <Elapsed startedAt={model.startedAt} waiting={esperando || naFila} />
       </div>
 
       {model.kind === "agent" ? (
         <>
-          {/* As quatro fases de toda construção: é o que diz se falta pouco. */}
-          <ol className="grid grid-cols-4 gap-1" aria-label="Fases da geração">
+          {/* As fases de toda construção: é o que diz se falta pouco. */}
+          <ol
+            className="grid gap-1"
+            style={{ gridTemplateColumns: `repeat(${model.phases.length}, minmax(0, 1fr))` }}
+            aria-label="Fases da geração"
+          >
             {model.phases.map((fase) => (
               <li key={fase.label} className="min-w-0" title={fase.label}>
                 <div
@@ -141,10 +159,10 @@ function ProgressBody({ model, className }: { model: ProgressModel; className?: 
               </li>
             ))}
           </ol>
-          {(model.current || model.counts) && (
-            <p className="truncate text-muted-foreground" title={model.current ?? undefined}>
-              {model.current}
-              {model.current && model.counts && " · "}
+          {(passoAtual || model.counts) && (
+            <p className="truncate text-muted-foreground" title={passoAtual ?? undefined}>
+              {passoAtual}
+              {passoAtual && model.counts && " · "}
               {model.counts}
             </p>
           )}

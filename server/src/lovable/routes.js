@@ -21,12 +21,14 @@ import {
 } from "../preview/service.js";
 import { isConfigured as shortlinksConfigured } from "../shortlinks/service.js";
 import { checkDevArea, publishDevAreaNow, retireDevAreaRepo } from "../devarea/service.js";
-import { assertInsideDriveRoot } from "../drive.js";
+import { assertProjectId } from "../routes/drive-scoped.js";
+import { isLocalProjectId } from "../store/local-projects.js";
 import { httpError, publicMessageOf, statusOf } from "../http.js";
 import { identityAllows, requirePermission } from "../security/permissions.js";
 import { listTools } from "./mcp.js";
 import { generateSite, listWorkspaces } from "./generate.js";
 import { buildPackage, previewGeneration } from "./package.js";
+import { parseTerms, pixabay, pixabayStatus } from "../images/pixabay.js";
 import { replyToAgent, watchGeneration } from "./progress.js";
 import { lovableNameOf, parseLovableProject, planLink } from "./link.js";
 import { listRepos } from "../deploy/github/repositories.js";
@@ -36,13 +38,30 @@ import { getPublication, recordPublicationConfig, setPublicationRuns } from "../
 export const lovableRouter = Router();
 
 /**
- * Todo `:id` deste router é uma pasta de projeto do Drive: precisa ter formato
- * de id e estar dentro da pasta raiz das coletas.
+ * Todo `:id` deste router é um projeto: uma pasta do Drive dentro da pasta
+ * raiz das coletas, ou um projeto criado no painel.
  */
 lovableRouter.param("id", async (_req, _res, next, id) => {
-  await assertInsideDriveRoot(id);
+  await assertProjectId(id);
   next();
 });
+
+/**
+ * A geração monta o envio a partir da pasta do Drive (briefing e anexos). Um
+ * projeto criado no painel não tem pasta lá: o site dele chega pronto.
+ * @param {import("express").Request} req
+ * @param {import("express").Response} _res
+ * @param {import("express").NextFunction} next
+ */
+const driveProjectOnly = (req, _res, next) => {
+  if (isLocalProjectId(String(req.params.id))) {
+    throw httpError(
+      409,
+      "Este projeto foi criado no painel e não tem pasta no Drive: a geração pelo Lovable usa o material de lá. Envie o site pronto ao GitHub, ou vincule um site existente.",
+    );
+  }
+  next();
+};
 
 /* ------------------------------------------------------------------ *
  * Conexão com a conta do Lovable
@@ -172,6 +191,7 @@ lovableRouter.get(
 /** Prompt do briefing + arquivos do projeto classificados. Só lê o Drive. */
 lovableRouter.get(
   "/projects/:id/build-package",
+  driveProjectOnly,
   async (req, res) => {
     res.json(
       await buildPackage(req.params.id, { refresh: req.query.refresh === "1" }),
@@ -183,9 +203,40 @@ lovableRouter.get(
 lovableRouter.post(
   "/projects/:id/generate/preview",
   requirePermission("gerar"),
+  driveProjectOnly,
   async (req, res) => {
-    const { prompt, fileIds } = req.body ?? {};
-    res.json(await previewGeneration(req.params.id, { prompt, fileIds }));
+    const { prompt, fileIds, stockImages } = req.body ?? {};
+    res.json(await previewGeneration(req.params.id, { prompt, fileIds, stockImages }));
+  },
+);
+
+/**
+ * Imagens de banco (Pixabay) para completar o material do cliente. Buscar não
+ * gasta crédito do Lovable; a chave do Pixabay fica no servidor.
+ */
+lovableRouter.get("/images/status", (_req, res) => {
+  res.json(pixabayStatus());
+});
+
+/**
+ * Miniatura de uma foto, passando pelo painel — como as do Drive. As URLs do
+ * Pixabay ficam fora da CSP do painel e expiram em 24 h.
+ */
+lovableRouter.get("/images/:imageId/thumbnail", async (req, res) => {
+  const id = Number(req.params.imageId);
+  if (!Number.isSafeInteger(id) || id <= 0) throw httpError(400, "Imagem inválida");
+  const { bytes, contentType } = await pixabay.thumbnail(id);
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "private, max-age=86400");
+  res.send(bytes);
+});
+
+lovableRouter.post(
+  "/images/search",
+  requirePermission("gerar"),
+  async (req, res) => {
+    const terms = parseTerms(req.body?.terms);
+    res.json({ results: await pixabay.searchTerms(terms) });
   },
 );
 
@@ -199,8 +250,9 @@ lovableRouter.post(
 lovableRouter.post(
   "/projects/:id/generate",
   requirePermission("gerar"),
+  driveProjectOnly,
   async (req, res) => {
-    const { prompt, fileIds, workspaceId, workspaceName, confirm } =
+    const { prompt, fileIds, stockImages, workspaceId, workspaceName, confirm } =
       req.body ?? {};
 
     if (confirm !== true) {
@@ -212,8 +264,10 @@ lovableRouter.post(
     const result = await generateSite(req.params.id, {
       prompt,
       fileIds,
+      stockImages,
       workspaceId,
       workspaceName,
+      by: req.identity?.name ?? null,
     });
     // O site ainda vai ser construído: o painel acompanha e o card mostra.
     if (result.generation?.id) {
@@ -422,6 +476,24 @@ lovableRouter.post(
     }
 
     const quem = req.identity?.name ?? null;
+    const jaRegistrado = ((await listGenerations())[req.params.id] ?? []).some(
+      (item) => item.id === plano.id,
+    );
+    // Site já registrado (gerado pelo painel) cujo repositório não foi achado
+    // pelo nome: vincular de novo informando o repositório só grava qual é.
+    if (jaRegistrado && plano.repoFullName && plano.state !== "live") {
+      let generation = await setGenerationRepository(req.params.id, plano.id, plano.repoFullName);
+      let aviso = null;
+      if (querPrevia) {
+        try {
+          generation = await publishDevAreaNow(req.params.id, generation.id, quem);
+        } catch (err) {
+          aviso = publicMessageOf(err, statusOf(err));
+        }
+      }
+      return res.json({ generation, warning: aviso });
+    }
+
     let generation = await linkGeneration(req.params.id, {
       id: plano.id,
       url: plano.url,

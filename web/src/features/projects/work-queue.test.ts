@@ -49,4 +49,12 @@ describe("groupByNextStep", () => {
     ]);
     expect(grupos[0].items.map((p) => p.id)).toEqual(["b", "a"]);
   });
+
+  it("projeto do painel: o site espera o envio ao GitHub; o de arquivos fica fora da fila", () => {
+    const site = projeto("s", { source: "panel", purpose: "site" });
+    const arquivos = projeto("f", { source: "panel", purpose: "files" });
+    expect(groupByNextStep([site, arquivos]).map((g) => [g.key, g.items.length])).toEqual([["to-github", 1]]);
+    expect(isDone(arquivos)).toBe(true);
+    expect(isDone(site)).toBe(false);
+  });
 });

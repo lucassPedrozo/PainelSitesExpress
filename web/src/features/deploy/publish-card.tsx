@@ -23,6 +23,8 @@ type PublishCardProps = {
   publicationResult: PublicationResult | null;
   onDeploy: () => void;
   onDryRunChange: (value: boolean) => void;
+  /** Sem o passo 1 ao lado (repositório já configurado), o número sai. */
+  showStep?: boolean;
 };
 
 /**
@@ -62,6 +64,7 @@ export function PublishCard({
   publicationResult,
   onDeploy,
   onDryRunChange,
+  showStep = true,
 }: PublishCardProps) {
   const podePublicar = usePermissions().can("publicar");
 
@@ -69,11 +72,12 @@ export function PublishCard({
     <Card className="gap-4">
       <CardHeader>
         <div className="flex items-center gap-2">
-          <StepBadge>2</StepBadge>
+          {showStep && <StepBadge>2</StepBadge>}
           <CardTitle>Publicar</CardTitle>
         </div>
         <CardDescription>
-          Dispara o workflow de deploy na branch padrão do repositório.
+          Dispara o workflow de deploy na branch padrão do repositório; o
+          resultado aparece nas execuções e no selo do projeto.
         </CardDescription>
       </CardHeader>
 
@@ -102,7 +106,7 @@ export function PublishCard({
         <Readiness canDeploy={canDeploy} />
 
         {publicationResult && (
-          <Alert>
+          <Alert variant="success">
             <CheckCircle2 />
             <AlertTitle>
               Workflows gravados em {publicationResult.workflowBranch}
@@ -137,15 +141,10 @@ export function PublishCard({
         >
           <Button
             type="button"
-            size="lg"
             onClick={onDeploy}
             disabled={!canDeploy || busy || !podePublicar}
           >
-            {isDispatching ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <PlayCircle className="size-4" />
-            )}
+            {isDispatching ? <Loader2 className="animate-spin" /> : <PlayCircle />}
             {isDispatching
               ? "Enviando..."
               : dryRun

@@ -1,6 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { GenerationPlan, Project } from "@/lib/api";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, pluralize } from "@/lib/format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,33 +17,30 @@ import {
  * conferência e a confirmação do gasto de crédito.
  */
 
-/** Gerações anteriores, da mais recente para a mais antiga. */
+/** Gerações anteriores, da mais recente para a mais antiga — uma linha. */
 export function PreviousGenerations({ project }: { project: Project }) {
   const previous = [...project.generations].reverse();
   if (previous.length === 0) return null;
 
   return (
-    <div className="rounded-lg border bg-muted/40 p-3 text-xs">
-      <p className="font-medium">
-        Esta coleta já gerou {previous.length}{" "}
-        {previous.length === 1 ? "site" : "sites"}
-      </p>
-      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
-        {previous.map((item) => (
-          <a
-            key={item.id ?? item.createdAt}
-            href={item.previewUrl ?? item.url ?? "#"}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-          >
-            <ExternalLink className="size-3" />
-            {item.displayName ?? "site"} ·{" "}
-            {new Date(item.createdAt).toLocaleDateString("pt-BR")}
-          </a>
-        ))}
-      </div>
-    </div>
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">
+        Esta coleta já gerou {pluralize(previous.length, "site")} — este será outro:
+      </span>
+      {previous.map((item) => (
+        <a
+          key={item.id ?? item.createdAt}
+          href={item.previewUrl ?? item.url ?? "#"}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 hover:text-foreground"
+        >
+          <ExternalLink className="size-3" />
+          {item.displayName ?? "site"} ·{" "}
+          {new Date(item.createdAt).toLocaleDateString("pt-BR")}
+        </a>
+      ))}
+    </p>
   );
 }
 
@@ -52,11 +49,13 @@ export function PlanSummary({ plan }: { plan: GenerationPlan }) {
     <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs">
       <p className="font-medium">Conferido — nada foi enviado ao Lovable</p>
       <p className="mt-1 text-muted-foreground">
-        {plan.promptChars.toLocaleString("pt-BR")} caracteres de prompt e{" "}
-        {plan.attachments.length} anexo(s)
+        {pluralize(plan.promptChars, "caractere")} de prompt e{" "}
+        {pluralize(plan.attachments.length, "anexo")}
         {plan.totalBytes > 0 && ` (${formatBytes(plan.totalBytes)})`}
         {plan.unknownSizes > 0 &&
           `, ${plan.unknownSizes} com tamanho conhecido só na exportação`}
+        {plan.stockZip &&
+          `, mais ${plan.stockZip} com ${pluralize(plan.stockImages.length, "foto")} de banco conferidas no Pixabay`}
         .
       </p>
     </div>
@@ -69,6 +68,7 @@ export function ConfirmGenerationDialog({
   promptChars,
   attachments,
   workspaceName,
+  warnings = 0,
   onConfirm,
 }: {
   open: boolean;
@@ -77,6 +77,8 @@ export function ConfirmGenerationDialog({
   promptChars: number;
   attachments: number;
   workspaceName: string;
+  /** Itens da faixa "O que vai no envio" que ainda avisam. */
+  warnings?: number;
   onConfirm: () => void;
 }) {
   return (
@@ -90,9 +92,17 @@ export function ConfirmGenerationDialog({
             {/* O número é o do prompt final, com as observações: antes esta
                 linha contava só o briefing e prometia um envio menor do que
                 o que de fato saía. */}
-            {promptChars.toLocaleString("pt-BR")} caracteres de prompt e{" "}
-            {attachments} anexo(s) para o workspace{" "}
+            {pluralize(promptChars, "caractere")} de prompt e{" "}
+            {pluralize(attachments, "anexo")} para o workspace{" "}
             <strong>{workspaceName}</strong>.
+            {warnings > 0 && (
+              <>
+                {" "}
+                A faixa “O que vai no envio” ainda aponta{" "}
+                <strong>{pluralize(warnings, "ponto")}</strong> a completar; dá para gerar
+                assim mesmo.
+              </>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

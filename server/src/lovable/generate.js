@@ -4,7 +4,7 @@ import { GenerationGuard } from "./generation-guard.js";
 import { callTool } from "./mcp.js";
 import { generationGate, planFor } from "./package.js";
 import { listSignatureFiles } from "./signature.js";
-import { uploadAttachment, uploadSignature } from "./upload.js";
+import { uploadAttachment, uploadSignature, uploadStockZip } from "./upload.js";
 
 /**
  * Montagem e disparo da geração do site no Lovable.
@@ -44,6 +44,7 @@ export async function listWorkspaces() {
  * @param {GenerationGuard} [deps.guard]
  * @param {typeof listSignatureFiles} [deps.signatures]
  * @param {typeof uploadSignature} [deps.uploadLocal]
+ * @param {typeof uploadStockZip} [deps.uploadStock]
  */
 export function createSiteGenerator({
   plan = planFor,
@@ -54,9 +55,10 @@ export function createSiteGenerator({
   guard = new GenerationGuard(),
   signatures = listSignatureFiles,
   uploadLocal = uploadSignature,
+  uploadStock = uploadStockZip,
 } = {}) {
-  async function run(projectId, { prompt, fileIds, workspaceId, workspaceName }) {
-    const { text, attachments } = await plan(projectId, prompt, fileIds);
+  async function run(projectId, { prompt, fileIds, stockImages, workspaceId, workspaceName, by }) {
+    const { text, attachments, stock = [] } = await plan(projectId, prompt, fileIds, stockImages);
 
     const liberacao = gate();
     if (!liberacao.enabled) throw httpError(423, liberacao.reason);
@@ -71,6 +73,11 @@ export function createSiteGenerator({
     const uploaded = [];
     for (const file of attachments) {
       uploaded.push(await upload(file));
+    }
+    // Fotos de banco: baixadas do Pixabay agora e enviadas num zip só. Uma
+    // falha aqui ainda é antes do `create_project` — nada foi cobrado.
+    if (stock.length > 0) {
+      uploaded.push(await uploadStock(stock));
     }
     // A assinatura Joinvix vai em todo site: a Knowledge (§8) só a aplica
     // quando as imagens chegam com a mensagem.
@@ -127,6 +134,8 @@ export function createSiteGenerator({
         workspaceName: workspaceName ?? null,
         attachments: uploaded.length,
         promptChars: text.length,
+        // Quem gerou: o nome da chave de acesso de quem clicou.
+        createdBy: by ?? null,
       });
     } catch (err) {
       // O crédito já saiu e o site existe. Gerar de novo duplicaria, e o link

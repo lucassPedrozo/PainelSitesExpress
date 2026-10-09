@@ -36,6 +36,7 @@ import {
   githubConfig,
   mapRepo,
   mapRun,
+  refreshOutdatedWorkflows,
 } from "./operations.js";
 import { configurePublication } from "./publication.js";
 import {
@@ -261,6 +262,12 @@ deployRouter.post(
       ? assertWorkflowFileName(body.workflow)
       : DEPLOY_WORKFLOW_FILE;
     const dryRun = body.dryRun === true;
+
+    // Simulação não regrava nada: com o gatilho automático, o commit do
+    // workflow já publicaria de verdade.
+    if (!dryRun && workflowFile === DEPLOY_WORKFLOW_FILE) {
+      await refreshOutdatedWorkflows({ owner: route.owner, repo: route.repo, branch });
+    }
 
     await dispatchWithRetry({
       owner: route.owner,

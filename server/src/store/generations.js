@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { httpError } from "../http.js";
 import { flush, read } from "./db.js";
 
@@ -22,6 +23,8 @@ export async function recordGeneration(projectId, generation) {
     attachments: generation.attachments ?? 0,
     promptChars: generation.promptChars ?? 0,
     createdAt: new Date().toISOString(),
+    /** Quem clicou em "Gerar" — o responsável pelo site na linha do tempo. */
+    createdBy: generation.createdBy ?? null,
     // ---- Link público do cliente -------------------------------------------
     // `previewUrl` acima é o preview interno do Lovable: ele exige sessão e
     // devolve 401 a qualquer visitante. O que vai ao cliente é o link do botão
@@ -97,6 +100,77 @@ export async function linkGeneration(projectId, site) {
 }
 
 /**
+ * Registra o site que o motor Claude acabou de gerar e validar — ou, num site
+ * já registrado (um ajuste), a hora da versão nova.
+ *
+ * O id leva o prefixo dos sites de fora do Lovable: nada no painel consulta
+ * este site lá. Daqui em diante ele segue o caminho dos outros — repositório,
+ * área de aprovação, entrega e domínio.
+ *
+ * @param {string} projectId
+ * @param {{ slug: string, displayName?: string | null, by?: string | null }} site
+ *   `slug`: a pasta do site na pasta de trabalho do motor
+ */
+export async function recordClaudeSite(projectId, site) {
+  const data = await read();
+  const lista = data.generations[projectId] ?? [];
+  const agora = new Date().toISOString();
+
+  const existente = lista.find(
+    (item) => item.engine === "claude" && item.claudeSlug === site.slug,
+  );
+  if (existente) {
+    existente.claudeValidatedAt = agora;
+    await flush();
+    return withDefaults(existente);
+  }
+
+  const entry = {
+    ...PREVIEW_DEFAULTS,
+    id: `ext-${randomBytes(6).toString("hex")}`,
+    /** O motor que fez o site. As gerações do Lovable não têm o campo. */
+    engine: "claude",
+    claudeSlug: site.slug,
+    /** A última versão validada; maior que a do envio = há o que mandar ao GitHub. */
+    claudeValidatedAt: agora,
+    claudePushedAt: null,
+    claudePushedSha: null,
+    url: null,
+    previewUrl: null,
+    displayName: site.displayName ?? null,
+    workspaceId: null,
+    workspaceName: null,
+    attachments: 0,
+    promptChars: 0,
+    createdAt: agora,
+    createdBy: site.by ?? null,
+    // O site já nasce pronto e validado: não há agente a acompanhar.
+    agentState: "done",
+    agentDoneAt: agora,
+  };
+  data.generations[projectId] = [...lista, entry];
+  await flush();
+  return withDefaults(entry);
+}
+
+/**
+ * Marca que a versão validada do site do Claude foi ao GitHub. É a comparação
+ * desta data com a da validação que diz se há algo novo a enviar.
+ *
+ * @param {string} projectId
+ * @param {string} siteId
+ * @param {{ at?: string, sha?: string | null }} [push]
+ */
+export async function setClaudeSitePushed(projectId, siteId, push = {}) {
+  const data = await read();
+  const entry = findGeneration(data, projectId, siteId);
+  entry.claudePushedAt = push.at ?? new Date().toISOString();
+  entry.claudePushedSha = push.sha ?? null;
+  await flush();
+  return withDefaults(entry);
+}
+
+/**
  * Troca o projeto do Lovable de um site já registrado — o cliente pediu
  * mudanças e o site foi refeito num projeto novo.
  *
@@ -134,6 +208,8 @@ export async function changeGenerationProject(projectId, lovableId, novo) {
   entry.deliveredAt = null;
   entry.deliveredBy = null;
   entry.agentState = "done";
+  // A conclusão registrada era a do projeto antigo.
+  entry.agentDoneAt = null;
   entry.agentQuestion = null;
   entry.agentActivity = null;
   entry.screenshotUrl = null;
@@ -159,6 +235,11 @@ export async function changeGenerationProject(projectId, lovableId, novo) {
 const AGENT_DEFAULTS = {
   agentState: "unknown",
   agentCheckedAt: null,
+  /**
+   * Quando o agente terminou pela última vez. `agentCheckedAt` não serve: é a
+   * hora da última conferência, não a da conclusão.
+   */
+  agentDoneAt: null,
   screenshotUrl: null,
   /** A linha "Já usado" deste site já entrou na Workspace Knowledge. */
   styleRegistered: false,
@@ -199,6 +280,8 @@ const PREVIEW_DEFAULTS = {
   origin: "panel",
   linkedAt: null,
   linkedBy: null,
+  /** `null` nas gerações de antes de o painel guardar quem gerou. */
+  createdBy: null,
   /** Repositório do GitHub confirmado para este site, ao publicar. */
   repoFullName: null,
   /**
@@ -267,6 +350,36 @@ function findGeneration(data, projectId, lovableId) {
   return entry;
 }
 
+/**
+ * Um site feito fora do painel passa a ser um site do motor Claude: a pasta
+ * dele foi trazida para a pasta de trabalho do motor. Se o projeto já tem esse
+ * site registrado como "de fora" (enviado ou vinculado, com repositório e
+ * área de aprovação), é esse registro que muda — o repositório, o link do
+ * cliente e a publicação continuam os mesmos. Senão, nasce um registro novo.
+ *
+ * @param {string} projectId
+ * @param {{ slug: string, displayName?: string | null, by?: string | null }} site
+ */
+export async function adoptClaudeSite(projectId, site) {
+  const data = await read();
+  const lista = data.generations[projectId] ?? [];
+  const ultimo = lista.at(-1);
+  if (!ultimo || !String(ultimo.id).startsWith("ext-") || ultimo.engine === "claude") {
+    return recordClaudeSite(projectId, site);
+  }
+  ultimo.engine = "claude";
+  ultimo.claudeSlug = site.slug;
+  // Há uma versão a mandar: a que está no repositório (se há) foi enviada
+  // crua, sem a configuração do template.
+  ultimo.claudeValidatedAt = new Date().toISOString();
+  ultimo.claudePushedAt = null;
+  ultimo.claudePushedSha = null;
+  ultimo.claudeAdoptedAt = ultimo.claudeValidatedAt;
+  ultimo.claudeAdoptedBy = site.by ?? null;
+  await flush();
+  return withDefaults(ultimo);
+}
+
 /** Remove um site da lista do projeto — o projeto no Lovable não é tocado. */
 export async function forgetGeneration(projectId, lovableId) {
   const data = await read();
@@ -328,6 +441,13 @@ export async function setGenerationRepository(projectId, lovableId, repoFullName
 export async function setGenerationAgent(projectId, lovableId, patch) {
   const data = await read();
   const entry = findGeneration(data, projectId, lovableId);
+  const agora = new Date().toISOString();
+
+  // Só a passagem para "pronto" marca a conclusão: as conferências seguintes
+  // repetem o estado e não podem empurrar a data para a frente.
+  if (patch.agentState === "done" && entry.agentState !== "done") {
+    entry.agentDoneAt = agora;
+  }
 
   for (const key of [
     "agentState",
@@ -341,7 +461,7 @@ export async function setGenerationAgent(projectId, lovableId, patch) {
   ]) {
     if (patch[key] !== undefined) entry[key] = patch[key];
   }
-  entry.agentCheckedAt = new Date().toISOString();
+  entry.agentCheckedAt = agora;
 
   await flush();
   return withDefaults(entry);

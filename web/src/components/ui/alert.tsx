@@ -10,6 +10,11 @@ const alertVariants = cva(
         default: "bg-card text-card-foreground",
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+        /* Faixas de aviso do painel: fundo suave e ícone no tom; o texto segue
+           o normal, para ler bem nos dois temas. */
+        warning: "border-warning/30 bg-warning/8 text-card-foreground *:[svg]:text-warning",
+        info: "border-info/25 bg-info/5 text-card-foreground *:[svg]:text-info",
+        success: "border-success/25 bg-success/5 text-card-foreground *:[svg]:text-success",
       },
     },
     defaultVariants: {

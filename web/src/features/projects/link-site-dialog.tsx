@@ -188,7 +188,7 @@ function LinkSiteForm({
               />
             </div>
             {repo && (
-              <Button type="button" variant="ghost" size="icon" onClick={() => setRepo(undefined)} aria-label="Tirar o repositório">
+              <Button type="button" variant="ghost" size="icon" onClick={() => setRepo(undefined)} aria-label="Tirar o repositório" title="Tirar o repositório">
                 <X />
               </Button>
             )}
@@ -210,7 +210,7 @@ function LinkSiteForm({
                 aria-pressed={estado === opcao.value}
                 onClick={() => setEstado(opcao.value)}
                 className={cn(
-                  "rounded-lg border p-3 text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                  "rounded-lg border p-3 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
                   estado === opcao.value
                     ? "border-primary/40 bg-primary/5 ring-1 ring-primary/30"
                     : "hover:bg-accent",
@@ -266,7 +266,7 @@ function LinkSiteForm({
       </div>
 
       <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onCancel} disabled={enviando}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={enviando}>
           Cancelar
         </Button>
         <Button type="submit" disabled={!podeVincular}>

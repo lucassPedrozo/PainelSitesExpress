@@ -19,6 +19,7 @@ import { deployApi, isRunActive, type WorkflowRun } from "@/lib/api/deploy";
 import { projectIdentity } from "@/lib/format";
 import { queryKeys } from "@/lib/query";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,9 +35,9 @@ import {
   publishTargetOf,
   readyToPublish,
   suggestRepository,
-  type RepositorySuggestion,
 } from "./publish-target";
 import { RepositoryPicker } from "./repository-picker";
+import { SuggestionNote } from "./suggestion-note";
 import { configuredRepositories } from "./settings-store";
 import {
   useDeployStatus,
@@ -247,7 +248,7 @@ function PublishContent({
           A publicação ainda não foi configurada (token do GitHub e organização).
         </p>
         <Button className="self-start" onClick={onOpenDeployTab}>
-          Configurar na aba Deploy
+          Abrir a seção Deploy
         </Button>
       </>
     );
@@ -330,16 +331,12 @@ function PublishContent({
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="lg" disabled={busy !== null} onClick={() => void dispatch()}>
-              {busy === "dispatching" ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <PlayCircle className="size-4" />
-              )}
+            <Button disabled={busy !== null} onClick={() => void dispatch()}>
+              {busy === "dispatching" ? <Loader2 className="animate-spin" /> : <PlayCircle />}
               Publicar agora
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-              <Settings2 className="size-4" />
+            <Button variant="ghost" onClick={() => setEditing(true)}>
+              <Settings2 />
               Alterar configuração
             </Button>
           </div>
@@ -347,12 +344,12 @@ function PublishContent({
       )}
 
       {repo && (!pronto || editing) && !repositorio.isCheckingWorkflow && (
-        <form onSubmit={saveAndPublish} noValidate>
+        <form onSubmit={saveAndPublish} noValidate className="space-y-3">
           {repositorio.outdatedWorkflows.length > 0 && (
-            <p className="mb-3 text-xs text-warning">
-              Os workflows deste repositório são de uma versão antiga do painel —
-              salvar atualiza.
-            </p>
+            <Alert variant="warning">
+              <Settings2 />
+              <AlertTitle>Workflows de uma versão antiga do painel — salvar atualiza.</AlertTitle>
+            </Alert>
           )}
           <PublicationForm
             settings={settings.settings}
@@ -383,36 +380,9 @@ function PublishContent({
         className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
         onClick={onOpenDeployTab}
       >
-        Abrir na aba Deploy (simulação, workflows e histórico)
+        Abrir na seção Deploy (simulação, workflows e histórico)
       </button>
     </>
-  );
-}
-
-/** Por que este repositório — só o palpite pede conferência. */
-function SuggestionNote({
-  suggestion,
-  lovableName,
-}: {
-  suggestion: RepositorySuggestion;
-  lovableName: string | null;
-}) {
-  const texto = {
-    bound: "Confirmado para este site na publicação anterior.",
-    published: "É o repositório que já publicou este domínio.",
-    "lovable-name": `Tem o nome do projeto no Lovable${lovableName ? ` (“${lovableName}”)` : ""}.`,
-    guess: "Palpite pelo nome da coleta — confira antes de publicar.",
-  }[suggestion.reason];
-  return (
-    <p
-      className={
-        suggestion.reason === "guess"
-          ? "text-xs text-warning"
-          : "text-xs text-muted-foreground"
-      }
-    >
-      {texto}
-    </p>
   );
 }
 

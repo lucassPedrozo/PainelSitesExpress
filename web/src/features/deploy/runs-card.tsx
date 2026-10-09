@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { isRunActive, type WorkflowRun } from "@/lib/api/deploy";
 import { formatDateTime, relativeTime } from "@/lib/format";
+import { stepLabel } from "@/features/projects/project-progress";
+import { EmptyNotice } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,7 +52,7 @@ const describe = (
 };
 
 const toneClasses: Record<RunTone, string> = {
-  running: "text-blue-600 dark:text-blue-400",
+  running: "text-info",
   success: "text-success",
   failure: "text-destructive",
   neutral: "text-muted-foreground",
@@ -75,8 +77,8 @@ export function RunsCard({
         <div className="flex items-center gap-2">
           <CardTitle>Execuções recentes</CardTitle>
           {isLive && (
-            <Badge variant="secondary" className="gap-1">
-              <Loader2 className="size-3 animate-spin" />
+            <Badge variant="info">
+              <Loader2 className="animate-spin" />
               ao vivo
             </Badge>
           )}
@@ -88,14 +90,15 @@ export function RunsCard({
             onClick={onRefresh}
             disabled={isLoading}
             aria-label="Atualizar execuções"
+            title="Atualizar execuções"
           >
-            <RefreshCw className={cn("size-4", isLoading && "animate-spin")} />
+            <RefreshCw className={cn(isLoading && "animate-spin")} />
           </Button>
         </div>
         <CardDescription>
           {isLive
             ? "Atualizando sozinho enquanto houver execução em andamento."
-            : "Histórico do GitHub Actions para a branch padrão do repositório."}
+            : "O que o GitHub Actions rodou na branch padrão do repositório."}
         </CardDescription>
       </CardHeader>
 
@@ -107,17 +110,21 @@ export function RunsCard({
               <Skeleton className="h-10 w-full" />
             </div>
           ) : runs.length === 0 ? (
-            <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-              <Clock3 className="size-7 text-muted-foreground" />
-              <p className="text-sm font-medium">Nenhuma execução ainda</p>
-              <p className="text-xs text-muted-foreground">
-                Publique para acompanhar o progresso em tempo real.
-              </p>
-            </div>
+            <EmptyNotice
+              icon={<Clock3 />}
+              title="Nenhuma execução ainda"
+              description="Publique para acompanhar o progresso aqui."
+            />
           ) : (
             <ul className="divide-y">
-              {runs.map((run) => {
+              {runs.map((run, index) => {
                 const { label, tone, Icon } = describe(run);
+                // A dica de abrir a execução vale para a falha mais recente;
+                // repetida em cada linha virava ruído.
+                const falhou =
+                  tone === "failure" &&
+                  (Boolean(run.failedStep) ||
+                    runs.findIndex((item) => describe(item).tone === "failure") === index);
                 return (
                   <li key={run.id} className="flex items-center gap-3 px-3 py-2.5">
                     <Icon
@@ -137,6 +144,15 @@ export function RunsCard({
                       >
                         {run.title || run.event} · {relativeTime(run.updatedAt)}
                       </p>
+                      {/* Onde parou, quando a API diz; senão, o caminho mais
+                          curto até o motivo. */}
+                      {falhou && (
+                        <p className="truncate text-xs text-destructive">
+                          {run.failedStep
+                            ? `Parou em “${stepLabel(run.failedStep)}”`
+                            : "Abra a execução para ver em que passo parou."}
+                        </p>
+                      )}
                     </div>
                     <span
                       className={cn(
@@ -152,8 +168,9 @@ export function RunsCard({
                         target="_blank"
                         rel="noreferrer noopener"
                         aria-label={`Abrir execução ${run.runNumber} no GitHub`}
+                        title="Abrir no GitHub"
                       >
-                        <ExternalLink className="size-4" />
+                        <ExternalLink />
                       </a>
                     </Button>
                   </li>

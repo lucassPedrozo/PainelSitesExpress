@@ -36,7 +36,7 @@ export function PanelIdentity() {
     <>
       <div className="flex items-center gap-1">
         <span
-          className="mr-1 hidden items-center gap-1.5 text-xs font-medium text-muted-foreground sm:flex"
+          className="mr-1 hidden items-center gap-1.5 text-xs font-medium text-muted-foreground xl:flex"
           title={
             user.kind === "admin"
               ? "Autenticado com a chave do .env"
@@ -64,7 +64,7 @@ export function PanelIdentity() {
           size="icon"
           onClick={() => void sair()}
           aria-label="Sair do painel"
-          title="Sair do painel"
+          title={`Sair do painel · ${user.name}`}
         >
           <LogOut className="size-4" />
         </Button>

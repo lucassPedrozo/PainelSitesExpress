@@ -8,7 +8,10 @@ import {
   ProjectActions,
   type ProjectActionHandlers,
 } from "@/features/projects/project-actions";
+import { nextStep } from "@/features/projects/next-step";
+import { isInProgress } from "@/features/projects/project-progress";
 import { ProjectProgress } from "@/features/projects/project-progress-view";
+import { projectStatus } from "@/features/projects/project-status";
 import { ProjectTags } from "@/features/projects/project-tags";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,7 +21,20 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-export type Crumb = { id: string; name: string };
+export type Crumb = {
+  id: string;
+  name: string;
+  /**
+   * O nível fica dentro de um `.zip`: qual arquivo do Drive e qual pasta
+   * dentro dele (vazio na raiz do zip). Ausente nas pastas do Drive.
+   */
+  archive?: { fileId: string; prefix: string };
+  /**
+   * O caminho da pasta dentro de um projeto criado no painel (vazio na raiz)
+   * — é para onde vão os arquivos enviados. Ausente nas pastas do Drive.
+   */
+  localPath?: string;
+};
 
 /**
  * Cabeçalho do diálogo: identidade do projeto, o que dá para fazer com ele e
@@ -31,9 +47,12 @@ export function ProjectFilesHeader({
   onNavigateTo,
   actions,
   onTagsChange,
+  claudeOpen = false,
 }: {
   project: Project;
   tags: TagsController;
+  /** A aba do Claude está aberta: o passo que só levaria até ela não aparece. */
+  claudeOpen?: boolean;
   trail: Crumb[];
   /** Voltar para um nível do caminho (índice dentro da trilha). */
   onNavigateTo: (index: number) => void;
@@ -41,6 +60,8 @@ export function ProjectFilesHeader({
   onTagsChange: (project: Project, tagIds: string[]) => void;
 }) {
   const meta = projectIdentity(project);
+  const status = projectStatus(project);
+  const emCurso = isInProgress(project);
 
   return (
     <DialogHeader className="gap-2">
@@ -57,11 +78,21 @@ export function ProjectFilesHeader({
             pedindo "Enviar ao cliente". */}
         <div className="ml-auto flex items-center gap-1">
           {project.brief && <ViewBriefButton project={project} />}
-          <ProjectActions project={project} {...actions} />
+          <ProjectActions
+            project={project}
+            {...actions}
+            stepInView={claudeOpen && nextStep(project).kind === "claude"}
+          />
         </div>
       </div>
 
-      <ProjectProgress project={project} className="max-w-xl" />
+      {/* O que falta, por extenso — no card cabe uma linha; aqui cabe a
+          frase inteira. Com algo em curso, o andamento toma o lugar. */}
+      {emCurso ? (
+        <ProjectProgress project={project} className="max-w-xl" />
+      ) : (
+        <p className="text-sm text-muted-foreground">{status.detail}</p>
+      )}
 
       {/* O mesmo componente do card: mesma aparência e a mesma regra de
           permissão (sem "organizar", as tags aparecem sem o "x"). */}

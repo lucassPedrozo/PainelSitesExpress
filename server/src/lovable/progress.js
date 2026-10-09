@@ -99,7 +99,8 @@ export const SIGNATURE_FIX_MESSAGE =
   "Adicione a assinatura Joinvix no rodapé, conforme a §8 da Workspace Knowledge. " +
   "Use a imagem anexada que combina com o fundo real do rodapé (o nome diz para qual " +
   "fundo cada uma serve) e salve em src/assets/joinvix-rodape-claro ou " +
-  "src/assets/joinvix-rodape-escuro. Mexa só no rodapé.";
+  "src/assets/joinvix-rodape-escuro. A logo tem 45px de altura no desktop e 36px no " +
+  "celular, com a largura proporcional. Mexa só no rodapé.";
 
 /**
  * Confere a assinatura depois que o agente termina e, se faltar, pede uma vez

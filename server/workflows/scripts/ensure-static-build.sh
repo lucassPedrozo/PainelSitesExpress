@@ -7,7 +7,9 @@
 # so no runner, sem commit: `nitro: false` e `spa: { enabled: true }`.
 #
 # Projeto que ja declara `spa`, `prerender` ou `nitro` fica como esta: alguem
-# ja escolheu como ele sai estatico, e a escolha dele vale.
+# ja escolheu como ele sai estatico, e a escolha dele vale. Se essa escolha
+# depende de uma variavel de ambiente (STATIC_SPA e afins), ela e ligada para
+# os passos seguintes via GITHUB_ENV.
 set -euo pipefail
 
 node --input-type=module <<'NODE'
@@ -32,6 +34,19 @@ if (!original.includes("@lovable.dev/vite-tanstack-config")) {
 const escolha = original.match(/\b(spa|prerender|nitro)\s*:/);
 if (escolha) {
   console.log(`${arquivo} ja declara "${escolha[1]}": configuracao do projeto mantida como esta.`);
+  // Ha projetos que so saem estaticos com uma variavel ligada
+  // (`STATIC_SPA=true bun run build`, o eixo-express): sem ela o build segue
+  // em modo servidor e a publicacao falha com .output/server. Liga aqui.
+  const flags = new Set();
+  for (const [, ponto, colchete] of original.matchAll(/process\.env(?:\.([A-Za-z_][A-Za-z0-9_]*)|\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\])/g)) {
+    const nome = ponto ?? colchete;
+    if (/STATIC|SPA|PRERENDER|SSG/i.test(nome)) flags.add(nome);
+  }
+  if (flags.size) {
+    const linhas = [...flags].map((nome) => `${nome}=true`).join("\n") + "\n";
+    if (process.env.GITHUB_ENV) fs.appendFileSync(process.env.GITHUB_ENV, linhas);
+    console.log(`::notice::Build estatico pela variavel do proprio projeto: ${[...flags].map((nome) => `${nome}=true`).join(", ")}.`);
+  }
   process.exit(0);
 }
 

@@ -3,15 +3,19 @@ import type { TagsController } from "@/features/tags/use-tags";
 import type { ProjectActionHandlers } from "@/features/projects/project-actions";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SHARE_PREVIEW_INPUT_ID } from "./share-input-id";
-import { ProjectFilesBrowser } from "./project-files-browser";
+import { ProjectFilesBrowser, type ProjectTab } from "./project-files-browser";
+
+export type { ProjectTab };
 
 /**
  * O material da coleta, dentro do painel: arquivos, briefing, tags, link do
- * cliente e os atalhos para gerar e publicar.
+ * cliente, a linha do tempo e os atalhos para gerar e publicar.
  */
 export function ProjectFilesDialog({
   project,
   tags,
+  tab,
+  onTabChange,
   focusShareInput = false,
   onOpenChange,
   actions,
@@ -20,6 +24,13 @@ export function ProjectFilesDialog({
 }: {
   project: Project | null;
   tags: TagsController;
+  /**
+   * Arquivos ou linha do tempo. Mora em quem abre o modal: o menu do card
+   * abre direto na linha do tempo, e o mesmo item, dentro do modal, troca a
+   * aba de um projeto já aberto.
+   */
+  tab: ProjectTab;
+  onTabChange: (tab: ProjectTab) => void;
   /** Aberto por "Criar link": o campo do Share preview já vem em foco. */
   focusShareInput?: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,6 +60,8 @@ export function ProjectFilesDialog({
             key={project.id}
             project={project}
             tags={tags}
+            tab={tab}
+            onTabChange={onTabChange}
             focusShareInput={focusShareInput}
             actions={actions}
             onTagsChange={onTagsChange}

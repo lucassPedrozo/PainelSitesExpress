@@ -1,19 +1,18 @@
 import { Check, ExternalLink } from "lucide-react";
 import type { GenerationResult, LovableStatus } from "@/lib/api";
+import { pluralize } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 export function ConnectionBadge({ status }: { status: LovableStatus | null }) {
   if (!status) return null;
   return status.connected ? (
-    <Badge variant="secondary" className="gap-1">
-      <Check className="size-3" />
+    <Badge variant="success">
+      <Check />
       Lovable conectado
     </Badge>
   ) : (
-    <Badge variant="outline" className="gap-1 text-muted-foreground">
-      Desconectado
-    </Badge>
+    <Badge variant="warning">Lovable desconectado</Badge>
   );
 }
 
@@ -35,8 +34,8 @@ export function ResultPanel({ result }: { result: GenerationResult }) {
     <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-xs">
       <p className="font-medium">Site criado no Lovable</p>
       <p className="mt-1 text-muted-foreground">
-        {result.attachments.length} anexo(s) enviados ·{" "}
-        {result.promptChars.toLocaleString("pt-BR")} caracteres de prompt
+        {pluralize(result.attachments.length, "anexo enviado", "anexos enviados")} ·{" "}
+        {pluralize(result.promptChars, "caractere")} de prompt
         {id && ` · projeto ${id}`}
       </p>
       {url && (
