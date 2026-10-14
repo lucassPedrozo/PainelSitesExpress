@@ -1,20 +1,22 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSerialQueue, writeFileAtomic } from "../../atomic-write.js";
 import { HttpError } from "../../http.js";
-import { comandoTexto, configuracoesDoAgente, executavel, montarComando, montarComandoTeste } from "./command.js";
+import {
+  comandoTexto,
+  configuracoesDoAgente,
+  ESFORCOS,
+  esforcoDoContrato,
+  executavel,
+  montarComando,
+  montarComandoTeste,
+} from "./command.js";
 import { ambienteDoFilho } from "./environment.js";
 import { criarFiltro, criarFormatador, filtrarLegiveis, leitorDeLinhas } from "./stream.js";
-import {
-  gravarNoHistorico,
-  pastasDeProjeto,
-  prepararRaiz,
-  projetosDoCliente,
-  temSessao,
-  ultimaSessao,
-} from "./workspace.js";
+import { gravarNoHistorico, prepararRaiz, projetosDoCliente, temSessao, ultimaSessao } from "./workspace.js";
 
 /**
  * O executor do motor Claude: dispara o Claude Code em modo não interativo
@@ -30,20 +32,25 @@ import {
  *   que achou uma chave;
  * - ferramentas e comandos em lista fechada, sem MCP, sem skills e sem rede;
  * - o pedido vai pelo stdin, com a frase do runbook;
- * - uma execução por vez nesta máquina;
+ * - uma execução por vez nesta máquina, a não ser as que a fila põe lado a
+ *   lado (os ajustes), cada uma com o seu projeto atual;
  * - sucesso é código de saída 0 **e** a validação do motor passando;
- * - ajuste e continuação retomam a sessão do projeto, e recuam para uma
- *   sessão nova quando ela sumiu;
+ * - ajuste, continuação e refino retomam a sessão de quem escreveu o site, e
+ *   recuam para uma sessão nova quando ela sumiu; a crítica abre sempre uma
+ *   sessão nova, que nunca é retomada;
+ * - o modelo e o esforço são os que o projeto escolheu, senão os das
+ *   Configurações, senão os que o motor espera;
  * - cancelamento em dois tempos, encerrando a árvore de processos;
  * - cada execução fica registrada, com o stream bruto em disco.
  */
 
 /**
  * @typedef {{ tipo: "cliente", pasta: string, refazer?: boolean }
- *   | { tipo: "briefing", arquivo: string }
  *   | { tipo: "analisar", pasta: string, observacoes?: string }
  *   | { tipo: "ajuste", slug: string, pedido: string }
- *   | { tipo: "continuar", slug: string }} Pedido
+ *   | { tipo: "continuar", slug: string }
+ *   | { tipo: "criticar", slug: string }
+ *   | { tipo: "refinar", slug: string }} Pedido
  * @typedef {"rodando" | "sucesso" | "falha" | "cancelada" | "aguardando_aprovacao" | "interrompida"} StatusExecucao
  * @typedef {import("./stream.js").Legivel} Legivel
  * @typedef {{ ts: string, legiveis: Legivel[], bruto?: unknown, slug?: string,
@@ -52,13 +59,17 @@ import {
  *   id: string, status: Exclude<StatusExecucao, "rodando" | "interrompida">, pedido: string,
  *   slug?: string, pasta?: string, sessionId?: string, retomou?: string,
  *   codigoSaida: number | null, duracaoMs: number, custoEstimadoUsd: number | null,
- *   mensagem: string, etapaAberta?: string | null,
+ *   mensagem: string, etapaAberta?: string | null, projeto?: Record<string, any> | null,
  *   validacao?: { ok: boolean, texto: string }, sinais: string[], log: string,
- * }} ResultadoDaExecucao
+ * }} ResultadoDaExecucao `projeto`: o que o motor respondeu em `estado` quando
+ *   a execução terminou — é dele que o painel tira se o site foi entregue e
+ *   qual é o passo seguinte.
  * @typedef {{ id: string, promessa: Promise<ResultadoDaExecucao>, cancelar(): void,
  *   readonly slug: string | undefined, readonly sessionId: string | undefined }} Execucao
+ * @typedef {{ modelo?: string | null, esforco?: string | null }} Escolhas o
+ *   modelo e o esforço que um projeto escolheu; vazio é "o das Configurações"
  * @typedef {{
- *   bin?: string, modelo?: string, base?: NodeJS.ProcessEnv,
+ *   bin?: string, modelo?: string, esforco?: string, base?: NodeJS.ProcessEnv,
  *   ambiente?: Record<string, string | null | undefined>,
  *   protegidos?: string[], segredos?: Array<string | null | undefined>,
  * }} OpcoesDoExecutor
@@ -145,8 +156,9 @@ export function foraDoContrato(ev, { contrato, sites, trabalho }) {
  *   registrar?: (execucao: Record<string, any>) => unknown,
  *   validar?: (slug: string) => Promise<{ ok: boolean, texto: string }>,
  * }} dependencias
- *   `opcoes`: lidas a cada execução — o executável, o modelo, o que o painel
- *   passa ao ambiente do motor e o que o agente não pode ler nem ver.
+ *   `opcoes`: lidas a cada execução — o executável, o modelo e o esforço das
+ *   Configurações, o que o painel passa ao ambiente do motor e o que o agente
+ *   não pode ler nem ver.
  *   `registrar`: chamado a cada mudança da execução (o banco do painel).
  *   `validar`: os testes trocam o build de verdade por uma resposta pronta.
  */
@@ -175,6 +187,27 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
       segredos,
     });
   };
+
+  /**
+   * O modelo e o esforço de uma execução. Vale primeiro o que o projeto
+   * escolheu, depois o das Configurações e, por fim, o que o motor espera — o
+   * esforço esperado depende do tipo do pedido.
+   *
+   * @param {{ contrato: import("./command.js").Contrato, modeloEsperado: string,
+   *   tipo?: import("./command.js").TipoDePedido, doProjeto?: Escolhas | null }} params
+   */
+  function resolver({ contrato, modeloEsperado, tipo, doProjeto = null }) {
+    const configurado = opcoes();
+    const esforcoEsperado = esforcoDoContrato(contrato, tipo);
+    // Um nível que o claude não conhece (um `.env` editado à mão) não vira argumento dele.
+    const nivel = (valor) => (ESFORCOS.includes(String(valor ?? "").trim()) ? String(valor).trim() : "");
+    return {
+      modelo: (doProjeto?.modelo ?? "").trim() || (configurado.modelo ?? "").trim() || modeloEsperado,
+      modeloEsperado,
+      esforco: nivel(doProjeto?.esforco) || nivel(configurado.esforco) || esforcoEsperado,
+      esforcoEsperado,
+    };
+  }
 
   /* ---------------------------------------------------------------- *
    * Uma execução por vez
@@ -210,21 +243,54 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
   }
 
   /**
-   * O motor aponta um projeto "atual" só (`projects/.atual`): duas gerações
-   * juntas escreveriam uma no projeto da outra. E a assinatura é uma só.
+   * As execuções deste processo em andamento. A trava em disco diz a outro
+   * painel na mesma pasta de dados que há alguma; esta lista diz quais.
+   * @type {Map<string, { pedido: string, desde: string, slug?: string }>}
    */
-  function travar(pedido) {
+  const emCurso = new Map();
+
+  const gravarTrava = () => {
+    const primeira = [...emCurso.values()][0];
+    if (!primeira) return rmSync(caminhos.trava, { force: true });
+    mkdirSync(caminhos.dados, { recursive: true });
+    writeFileSync(
+      caminhos.trava,
+      JSON.stringify({ pid: process.pid, pedido: primeira.pedido, desde: primeira.desde, execucoes: emCurso.size }),
+    );
+  };
+
+  /**
+   * A assinatura é uma só, e a criação de um site é comparada com os sites
+   * anteriores: por padrão, uma execução de cada vez. A fila pode pôr uma ao
+   * lado de outra (`aoLado`) — os ajustes, que não dependem de nenhum outro
+   * site — porque cada execução tem o seu projeto "atual"
+   * (`JOINVIXABLE_ATUAL`), e uma não escreve no projeto da outra. Nunca duas
+   * no mesmo site, nem ao lado da execução de outro painel.
+   *
+   * @param {string} id
+   * @param {string} pedido
+   * @param {{ aoLado?: boolean, slug?: string }} [opcoes]
+   */
+  function travar(id, pedido, { aoLado = false, slug } = {}) {
     const outra = execucaoEmAndamento();
-    if (outra) {
+    const deOutroPainel = Boolean(outra && outra.pid !== process.pid);
+    const noMesmoSite = Boolean(slug && [...emCurso.values()].some((execucao) => execucao.slug === slug));
+    if (outra && (!aoLado || deOutroPainel || noMesmoSite)) {
       throw new HttpError(
         409,
         `Já há uma execução do Claude em andamento desde ${outra.desde.slice(11, 16)} (${outra.pedido}). Espere terminar ou cancele-a.`,
       );
     }
-    mkdirSync(caminhos.dados, { recursive: true });
-    writeFileSync(caminhos.trava, JSON.stringify({ pid: process.pid, pedido, desde: new Date().toISOString() }));
-    return () => rmSync(caminhos.trava, { force: true });
+    emCurso.set(id, { pedido, desde: new Date().toISOString(), ...(slug ? { slug } : {}) });
+    gravarTrava();
+    return () => {
+      emCurso.delete(id);
+      gravarTrava();
+    };
   }
+
+  /** Onde a execução anota o projeto em que as ferramentas dela agem. */
+  const arquivoDoAtual = (id) => path.join(caminhos.atual, `${id}.txt`);
 
   /* ---------------------------------------------------------------- *
    * O processo
@@ -304,8 +370,11 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
     });
   }
 
-  /** O que o painel põe no ambiente do claude e dos comandos que ele roda. */
-  function ambienteDoClaude(contrato, modelo) {
+  /**
+   * O que o painel põe no ambiente do claude e dos comandos que ele roda.
+   * `id`: a execução, para o projeto atual ser só dela.
+   */
+  function ambienteDoClaude(contrato, modelo, id) {
     const { base = process.env, ambiente = {} } = opcoes();
     return ambienteDoFilho({
       base,
@@ -318,6 +387,7 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
         JOINVIXABLE_HEADLESS: "1",
         JOINVIXABLE_HEADLESS_MODELO: modelo,
         JOINVIXABLE_TRABALHO: caminhos.trabalho,
+        ...(id ? { JOINVIXABLE_ATUAL: arquivoDoAtual(id) } : {}),
         CLI_MODEL: modelo,
       },
       removidas: contrato.variaveis_removidas,
@@ -330,12 +400,29 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
    */
   async function preparar(contrato) {
     await prepararRaiz(caminhos);
-    await motor.gravarRunbook(caminhos.runbook);
+    await fs.mkdir(caminhos.atual, { recursive: true });
+    // Outra execução pode estar lendo estes dois arquivos agora: só são
+    // regravados quando o conteúdo muda, e nunca pela metade.
+    const rascunho = `${caminhos.runbook}.${process.pid}.${Date.now()}.novo`;
+    try {
+      await motor.gravarRunbook(rascunho);
+      await trocarSeMudou(caminhos.runbook, await fs.readFile(rascunho, "utf8"));
+    } finally {
+      await fs.rm(rascunho, { force: true });
+    }
     const { protegidos = [] } = opcoes();
-    await writeFileAtomic(
+    await trocarSeMudou(
       caminhos.configuracoes,
       `${JSON.stringify(configuracoesDoAgente({ contrato, protegidos }), null, 2)}\n`,
     );
+  }
+
+  /** A preparação de uma execução não se mistura com a de outra. */
+  const umaPreparacaoPorVez = createSerialQueue();
+
+  async function trocarSeMudou(arquivo, conteudo) {
+    const atual = await fs.readFile(arquivo, "utf8").catch(() => null);
+    if (atual !== conteudo) await writeFileAtomic(arquivo, conteudo);
   }
 
   /* ---------------------------------------------------------------- *
@@ -348,8 +435,12 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
    *
    * @param {Pedido} pedido
    * @param {{ onEvento?: (evento: EventoDaExecucao) => void, esperaCancelamentoMs?: number,
-   *   esperaDepoisDoResultadoMs?: number, extra?: Record<string, any> }} [deps] `extra`: campos
-   *   do painel gravados junto da execução (o projeto, quem pediu)
+   *   esperaDepoisDoResultadoMs?: number, extra?: Record<string, any>, aoLado?: boolean,
+   *   doProjeto?: () => Escolhas | null | Promise<Escolhas | null> }} [deps] `extra`: campos
+   *   do painel gravados junto da execução (o projeto, quem pediu).
+   *   `doProjeto`: o modelo e o esforço que o projeto escolheu, lidos quando a
+   *   execução começa — o que mudou enquanto o pedido esperava na fila já vale.
+   *   `aoLado`: a fila decidiu que esta execução pode rodar junto de outra.
    * @returns {Execucao}
    */
   function iniciarExecucao(pedido, deps = {}) {
@@ -386,13 +477,14 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
       // 1. Recusa, antes de gastar qualquer coisa, o pedido que o agente só
       //    poderia responder com uma pergunta ou um erro — e pega a frase.
       const { frase: texto, sites } = await motor.conferirPedido(pedido);
-      const soltar = travar(texto);
+      const soltar = travar(id, texto, { aoLado: deps.aoLado === true, slug });
       const inicio = Date.now();
       try {
         const { headless: contrato, modeloEsperado } = await motor.ambiente();
         esperaMs ??= contrato.cancelamento_espera_ms;
         const configurado = opcoes();
-        const modelo = (configurado.modelo ?? "").trim() || modeloEsperado;
+        const doProjeto = await Promise.resolve(deps.doProjeto?.()).catch(() => null);
+        const { modelo, esforco } = resolver({ contrato, modeloEsperado, tipo: pedido.tipo, doProjeto });
         const pasta = "pasta" in pedido ? pedido.pasta : undefined;
         const filtro = filtroDaTela();
 
@@ -405,6 +497,7 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
           pedido: texto,
           status: "rodando",
           modelo,
+          esforco,
           pid: process.pid,
           log: path.basename(log),
           ...(pasta ? { pasta } : {}),
@@ -449,17 +542,15 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
           emitir([{ tipo: "aviso", texto: mensagem }]);
         };
 
-        await preparar(contrato);
+        await umaPreparacaoPorVez(() => preparar(contrato));
         mkdirSync(caminhos.execucoes, { recursive: true });
         void gravar();
 
-        // O slug de uma geração só nasce durante ela: sai do registro do
-        // cliente (ou, no briefing avulso, das pastas de projects/).
-        const projetosAgora = () =>
-          pedido.tipo === "cliente" ? projetosDoCliente(caminhos.trabalho, pedido.pasta) : pastasDeProjeto(caminhos.trabalho);
+        // O slug de uma geração só nasce durante ela: sai do registro do cliente.
+        const projetosAgora = () => (pedido.tipo === "cliente" ? projetosDoCliente(caminhos.trabalho, pedido.pasta) : []);
         const conhecidos = new Set(projetosAgora());
         const procurarSlug = () => {
-          if (slug || pedido.tipo === "analisar") return;
+          if (slug) return;
           const novo = projetosAgora().find(
             (nome) => !conhecidos.has(nome) && !nome.startsWith("_") && !nome.startsWith(".") && temSessao(caminhos.trabalho, nome),
           );
@@ -474,6 +565,7 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
             contrato,
             bin: configurado.bin,
             modelo,
+            esforco,
             tipo: pedido.tipo,
             resume,
             sites,
@@ -499,7 +591,7 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
           const saida = await rodarClaude({
             comando,
             entrada: texto,
-            env: ambienteDoClaude(contrato, modelo),
+            env: ambienteDoClaude(contrato, modelo, id),
             aoIniciar: (novoControle) => (controle = novoControle),
             onLinha: (linha) => {
               appendFileSync(log, `${linha}\n`);
@@ -558,7 +650,9 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
           return { ...t, ...saida, ...(t.encerradoDepoisDoResultado && !cancelada ? { codigo: 0 } : {}) };
         };
 
-        const retoma = pedido.tipo === "ajuste" || pedido.tipo === "continuar";
+        // Ajuste, continuação e refino seguem na conversa de quem escreveu o
+        // site. A crítica nunca: é de uma sessão nova, que não viu o site nascer.
+        const retoma = pedido.tipo === "ajuste" || pedido.tipo === "continuar" || pedido.tipo === "refinar";
         const anterior = retoma ? ultimaSessao(caminhos.trabalho, /** @type {string} */ (slug)) : null;
         if (retoma && !anterior) aviso(`"${slug}" não tem sessão anterior do Claude: abrindo uma sessão nova.`);
         let t = await tentar(anterior);
@@ -655,11 +749,13 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
           custoEstimadoUsd: custo,
           mensagem: filtro(mensagem),
           etapaAberta: proj?.etapaAberta ?? null,
+          projeto: proj,
           validacao,
           sinais,
           log,
         };
       } finally {
+        rmSync(arquivoDoAtual(id), { force: true });
         soltar();
       }
     };
@@ -738,33 +834,41 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
     });
   }
 
-  /** O comando que uma geração dispararia, para mostrar à pessoa. Não roda nada. */
-  async function comandoPrevisto({ tipo = "cliente", sites = [], pasta = null } = {}) {
+  /**
+   * O comando que uma geração dispararia, para mostrar à pessoa. Não roda nada.
+   *
+   * @param {{ tipo?: import("./command.js").TipoDePedido, sites?: string[], pasta?: string | null,
+   *   doProjeto?: Escolhas | null }} [params] `doProjeto`: o que o projeto
+   *   escolheu; sem ele, o comando é o das Configurações
+   */
+  async function comandoPrevisto({ tipo = "cliente", sites = [], pasta = null, doProjeto = null } = {}) {
     const { headless: contrato, modeloEsperado } = await motor.ambiente();
     const configurado = opcoes();
-    const modelo = (configurado.modelo ?? "").trim() || modeloEsperado;
+    const escolhido = resolver({ contrato, modeloEsperado, tipo, doProjeto });
     const comando = montarComando({
       contrato,
       bin: configurado.bin,
-      modelo,
-      tipo: /** @type {any} */ (tipo),
+      modelo: escolhido.modelo,
+      esforco: escolhido.esforco,
+      tipo,
       sites,
       pasta,
       runbook: caminhos.runbook,
       configuracoes: caminhos.configuracoes,
     });
-    return { texto: filtroDaTela()(comandoTexto(comando)), modelo, modeloEsperado };
+    return { texto: filtroDaTela()(comandoTexto(comando)), ...escolhido };
   }
 
   /**
    * Um `claude -p` mínimo, que só responde "ok": diz se o login da assinatura
-   * está funcionando. GASTA UM POUCO da assinatura — só roda a pedido.
+   * está funcionando. GASTA UM POUCO da assinatura — só roda a pedido. O
+   * modelo é o das Configurações: o teste não é de nenhum projeto.
    */
   async function testarClaude() {
     const { headless: contrato, modeloEsperado } = await motor.ambiente();
     const configurado = opcoes();
-    const modelo = (configurado.modelo ?? "").trim() || modeloEsperado;
-    const soltar = travar("teste do login do Claude");
+    const { modelo } = resolver({ contrato, modeloEsperado });
+    const soltar = travar(`teste-${Date.now().toString(36)}`, "teste do login do Claude");
     try {
       await prepararRaiz(caminhos);
       /** @type {any} */
@@ -836,6 +940,7 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
     filtrar: (/** @type {string} */ texto) => filtroDaTela()(String(texto ?? "")),
     lerLog,
     versaoClaude,
+    resolver,
     comandoPrevisto,
     testarClaude,
   };

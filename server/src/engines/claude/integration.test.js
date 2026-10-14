@@ -63,11 +63,11 @@ const clienteEm = (pasta, ...resto) => path.join(caminhos.trabalho, "clientes", 
 after(() => fs.rmSync(raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
 
 describe("pasta de trabalho do motor", { skip: pular }, () => {
-  it("encaminha os cinco comandos do runbook e põe as dependências do motor ao alcance dos projetos", async () => {
+  it("encaminha os quatro comandos do runbook e põe as dependências do motor ao alcance dos projetos", async () => {
     await prepararRaiz(caminhos);
     const pacoteDaRaiz = JSON.parse(fs.readFileSync(path.join(caminhos.trabalho, "package.json"), "utf8"));
     assert.deepEqual(Object.keys(pacoteDaRaiz.scripts), COMANDOS_DO_RUNBOOK);
-    assert.deepEqual(COMANDOS_DO_RUNBOOK, ["cliente", "new-project", "step", "tool", "report"]);
+    assert.deepEqual(COMANDOS_DO_RUNBOOK, ["cliente", "new-project", "step", "tool"]);
     for (const nome of COMANDOS_DO_RUNBOOK) {
       assert.ok(fs.existsSync(path.join(dirMotor, "scripts", `${nome}.ts`)), `scripts/${nome}.ts existe no pacote`);
       assert.ok(pacoteDaRaiz.scripts[nome].includes(`scripts/${nome}.ts`));
@@ -105,12 +105,29 @@ describe("pasta de trabalho do motor", { skip: pular }, () => {
   it("o runbook que vai ao claude é gerado das fontes do motor, e o contrato de permissões monta o comando", async () => {
     await motor.gravarRunbook(caminhos.runbook);
     const runbook = fs.readFileSync(caminhos.runbook, "utf8");
-    assert.match(runbook, /# Runbook do modo CLI/);
+    assert.match(runbook, /^# Runbook$/m);
     assert.equal(runbook, fs.readFileSync(path.join(dirMotor, "AGENTS.md"), "utf8"), "o mesmo texto do AGENTS.md");
     assert.ok(!caminhos.runbook.toLowerCase().startsWith(caminhos.trabalho.toLowerCase()), "fora da pasta que o agente lê");
 
-    const { headless: contrato, modeloEsperado } = await motor.ambiente();
-    assert.equal(modeloEsperado, "claude-sonnet-5-5");
+    const { headless: contrato, modeloEsperado, limites, padroes, opcoes } = await motor.ambiente();
+    assert.equal(modeloEsperado, "claude-opus-5-5");
+    assert.deepEqual(contrato.esforco, { criacao: "high", ajuste: "high", briefing: "high" });
+    // Os comandos que o agente pode rodar são os quatro que a pasta de trabalho encaminha.
+    assert.deepEqual(
+      contrato.permitir.filter((regra) => regra.startsWith("Bash(")),
+      COMANDOS_DO_RUNBOOK.map((nome) => `Bash(npm run -s ${nome} *)`),
+    );
+    // O pipeline que o painel encadeia: as etapas de crítica e refino, os padrões e o que cada escolha aceita.
+    assert.ok(limites.critica && limites.refino, "crítica e refino têm limite de chamadas, como as outras etapas");
+    assert.deepEqual(
+      [typeof padroes.rodadas, typeof padroes.direcao_de_arte, typeof padroes.movimento, typeof padroes.escolher_rota],
+      ["number", "string", "string", "boolean"],
+    );
+    assert.deepEqual(opcoes, { rodadas: { min: 1, max: 4 }, direcao_de_arte: ["sobria", "autoral", "ousada"], movimento: ["discreto", "expressivo", "cinematografico"] });
+    assert.deepEqual(
+      [(await motor.frase({ tipo: "criticar", slug: "padaria" })).frase, (await motor.frase({ tipo: "refinar", slug: "padaria" })).frase],
+      ["critique o site padaria", "refine o site padaria"],
+    );
     const { args } = montarComando({ contrato, modelo: modeloEsperado, tipo: "analisar", pasta: "padaria", runbook: caminhos.runbook, configuracoes: caminhos.configuracoes });
     const depois = (flag) => args[args.indexOf(flag) + 1];
     assert.deepEqual(
@@ -133,7 +150,7 @@ describe("executor com o pacote do motor de verdade", { skip: pular }, () => {
     const r = await executor.iniciarExecucao({ tipo: "cliente", pasta: "padaria-teste" }, { onEvento: (evento) => saidas.push(JSON.stringify(evento.bruto ?? "")) }).promessa;
 
     assert.equal(chamadas().at(-1).entrada, "gere o site do cliente padaria-teste", "a frase vem do motor");
-    assert.match(saidas.join("\n"), /MODO=headless \(esta conversa foi aberta pelo executor\): você é o agente/);
+    assert.match(saidas.join("\n"), /MODO=headless \(esta conversa foi aberta pelo painel\): você é o agente/);
     assert.match(saidas.join("\n"), /PROJETO_CRIADO=padaria-teste/, "dentro do claude, npm run cliente só cria o projeto");
     // O claude saiu com código 0, mas deixou a direção aberta: não é sucesso.
     assert.deepEqual([r.slug, r.status, r.etapaAberta, r.codigoSaida], ["padaria-teste", "falha", "direcao", 0]);
@@ -149,6 +166,8 @@ describe("executor com o pacote do motor de verdade", { skip: pular }, () => {
     const historico = JSON.parse(fs.readFileSync(path.join(projeto, ".session", "headless.json"), "utf8")).execucoes;
     assert.deepEqual(historico.map((e) => [e.tipo, e.status, e.session_id]), [["cliente", "falha", "sessao-falsa-1"]]);
     assert.deepEqual([registros.at(-1).slug, registros.at(-1).etapa, registros.at(-1).etapa_aberta], ["padaria-teste", "direcao", "direcao"]);
+    // O estado que o motor informa no fim da execução: nada entregue, e o passo seguinte é continuar a etapa aberta.
+    assert.deepEqual([r.projeto.entregue, r.projeto.proximo, r.projeto.pipeline.fase], [false, "continuar", "direcao"]);
 
     // Cliente que já tem projeto: recusado antes de gastar; continuar é aceito porque há etapa aberta.
     const antes = chamadas().length;

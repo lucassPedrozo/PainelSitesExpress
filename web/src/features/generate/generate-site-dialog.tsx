@@ -113,7 +113,8 @@ function GenerateSiteContent({
             </div>
             <DialogDescription>
               O Claude Code desta máquina lê o material do projeto e escreve o briefing. Depois de revisado,
-              ele gera o site. Nada é disparado antes da confirmação.
+              ele gera o site, que passa por rodadas de crítica e refino antes de ser entregue. Nada é
+              disparado antes da confirmação.
             </DialogDescription>
           </DialogHeader>
 

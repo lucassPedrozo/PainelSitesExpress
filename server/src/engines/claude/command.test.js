@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { caminhoDeRegra, comandoTexto, configuracoesDoAgente, executavel, montarComando, montarComandoTeste } from "./command.js";
+import {
+  caminhoDeRegra,
+  comandoTexto,
+  configuracoesDoAgente,
+  ESFORCOS,
+  esforcoDoContrato,
+  executavel,
+  MODELO_VALIDO,
+  MODELOS,
+  montarComando,
+  montarComandoTeste,
+} from "./command.js";
 import { ambienteDoFilho, VARIAVEIS_PERMITIDAS } from "./environment.js";
 import { criarFiltro, criarFormatador, leitorDeLinhas } from "./stream.js";
 import { CONTRATO, SEGREDOS_DO_PAINEL } from "./fixtures/apoio.mjs";
@@ -28,12 +39,30 @@ describe("linha de comando do claude -p", () => {
     assert.match(comandoTexto(cmd), /^claude -p .*"Bash\(npm run -s step \*\)"/);
   });
 
-  it("o esforço de raciocínio acompanha o tipo do pedido", () => {
-    const esforco = (tipo) => depois(montarComando({ contrato: CONTRATO, modelo: "m", tipo }).args, "--effort");
+  it("o esforço de raciocínio acompanha o tipo do pedido, e o que foi escolhido vale no lugar dele", () => {
+    // Um esforço por chave do contrato, para o teste ver qual delas cada tipo usa.
+    const contrato = { ...CONTRATO, esforco: { criacao: "xhigh", ajuste: "medium", briefing: "low" } };
+    const esforco = (tipo, escolhido) => depois(montarComando({ contrato, modelo: "m", tipo, esforco: escolhido }).args, "--effort");
     assert.deepEqual(
-      ["cliente", "briefing", "continuar", "ajuste", "analisar"].map(esforco),
-      ["xhigh", "xhigh", "xhigh", "medium", "high"],
+      ["cliente", "continuar", "criticar", "refinar", "ajuste", "analisar", undefined].map((tipo) => esforco(tipo)),
+      ["xhigh", "xhigh", "xhigh", "xhigh", "medium", "low", "xhigh"],
+      "criticar e refinar pensam como quem cria o site",
     );
+    assert.equal(esforcoDoContrato(contrato, "refinar"), "xhigh");
+    // O que o projeto ou as Configurações escolheram vale para qualquer tipo; vazio volta ao do contrato.
+    for (const tipo of ["cliente", "ajuste", "analisar", "criticar"]) assert.equal(esforco(tipo, "max"), "max", tipo);
+    assert.deepEqual([esforco("ajuste", ""), esforco("ajuste", null)], ["medium", "medium"]);
+    assert.deepEqual(ESFORCOS, ["low", "medium", "high", "xhigh", "max"]);
+  });
+
+  it("o modelo é só um id ou um apelido: nada que pareça outra opção do claude", () => {
+    for (const valor of ["claude-opus-5-5", "sonnet", "opus[1m]"]) assert.ok(MODELO_VALIDO.test(valor), valor);
+    for (const valor of ["--dangerously-skip-permissions", "opus --resume x", "modelo;rm", ""]) assert.ok(!MODELO_VALIDO.test(valor), valor);
+    assert.deepEqual(
+      MODELOS.map((modelo) => [modelo.id, modelo.rotulo]),
+      [["claude-opus-5-5", "Opus 5.5"], ["claude-fable-5-1", "Fable 5.1"], ["claude-sonnet-5-5", "Sonnet 5.5"]],
+    );
+    assert.ok(MODELOS.every((modelo) => MODELO_VALIDO.test(modelo.id)));
   });
 
   it("a leitura de páginas só entra para os domínios citados, e a escrita na pasta do cliente só no pedido de briefing", () => {
@@ -79,7 +108,8 @@ describe("ambiente dos processos do motor", () => {
     const base = { PATH: "p", Path: "p2", USERPROFILE: "C:/Users/x", SystemRoot: "C:/Windows", TEMP: "t", QUALQUER_OUTRA: "x", CLAUDE_CODE_OAUTH_TOKEN: "o", ...SEGREDOS_DO_PAINEL };
     const env = ambienteDoFilho({
       base,
-      definidas: { JOINVIXABLE_HEADLESS: "1", PIXABAY_API_KEY: "chave-do-pixabay", BROWSER_PATH: "", CLI_MODEL: null, ANTHROPIC_API_KEY: "sk-ant-pedida-por-engano" },
+      // O que as Configurações deixam vazio (aqui, a direção de arte e o movimento) não entra: vale o padrão do motor.
+      definidas: { JOINVIXABLE_HEADLESS: "1", JOINVIXABLE_RODADAS: "3", JOINVIXABLE_DIRECAO_DE_ARTE: "", JOINVIXABLE_MOVIMENTO: null, PIXABAY_API_KEY: "chave-do-pixabay", BROWSER_PATH: "", CLI_MODEL: null, ANTHROPIC_API_KEY: "sk-ant-pedida-por-engano" },
       removidas: CONTRATO.variaveis_removidas,
     });
     assert.deepEqual(env, {
@@ -90,8 +120,11 @@ describe("ambiente dos processos do motor", () => {
       SystemRoot: "C:/Windows",
       TEMP: "t",
       JOINVIXABLE_HEADLESS: "1",
+      JOINVIXABLE_RODADAS: "3",
       PIXABAY_API_KEY: "chave-do-pixabay",
     });
+    // Do ambiente do painel nada do pipeline é herdado: só chega ao motor o que as Configurações dizem.
+    assert.equal(ambienteDoFilho({ base: { JOINVIXABLE_RODADAS: "4", JOINVIXABLE_MOVIMENTO: "cinematografico" } }).JOINVIXABLE_RODADAS, undefined);
     for (const nome of ["GITHUB_TOKEN", "DEV_AREA_FTP_PASSWORD", "PANEL_ACCESS_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"]) {
       assert.ok(!VARIAVEIS_PERMITIDAS.includes(nome), `${nome} não está na lista de permissão`);
     }
@@ -115,12 +148,14 @@ describe("stream do claude", () => {
     const formatar = criarFormatador({ raiz });
     const uso = (id, name, input) => ({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } });
     const volta = (id, content, is_error = false) => ({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content, is_error }] } });
-    const cmd = "npm run -s step -- start geracao padaria --modelo=x\nnpm run -s tool -- write_file path=content.json <<'EOF'\n{ \"segredo\": 1 }\nEOF\nnpm run -s report -- padaria";
+    const cmd = "npm run -s step -- start geracao padaria --modelo=x\nnpm run -s tool -- write_file path=content.json <<'EOF'\n{ \"segredo\": 1 }\nEOF\nnpm run -s cliente -- padaria";
     assert.deepEqual(formatar(uso("a", "Bash", { command: cmd })), [
       { tipo: "etapa", texto: "Etapa geracao (padaria)" },
       { tipo: "ferramenta", texto: "write_file path=content.json" },
-      { tipo: "comando", texto: "npm run -s report -- padaria" },
+      { tipo: "comando", texto: "npm run -s cliente -- padaria" },
     ]);
+    // As etapas das rodadas de crítica e refino aparecem como as outras.
+    assert.deepEqual(formatar(uso("a2", "Bash", { command: "npm run -s step -- start critica padaria --modelo=x" })), [{ tipo: "etapa", texto: "Etapa critica (padaria)" }]);
     assert.deepEqual(formatar(volta("a", "BUILD OK. VALIDAÇÃO OK.\nsegunda linha")), [{ tipo: "saida", texto: "BUILD OK. VALIDAÇÃO OK." }]);
     assert.deepEqual(
       formatar(uso("b", "Read", { file_path: path.join(raiz, "projects", "p", ".session", "telas", "desktop-1.png") })),

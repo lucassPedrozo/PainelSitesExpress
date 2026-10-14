@@ -17,6 +17,7 @@ import {
   MoreHorizontal,
   Pencil,
   PencilLine,
+  Play,
   RefreshCw,
   Rocket,
   RotateCcw,
@@ -113,6 +114,7 @@ const claudeIcons: Record<string, LucideIcon> = {
   "Revisar e gerar": Sparkles,
   "Corrigir briefing": FilePen,
   "Aprovar direção": CheckCheck,
+  Continuar: Play,
   "Ver erro": TriangleAlert,
   "Retomar ou descartar": RotateCcw,
 };

@@ -22,13 +22,12 @@ export const CONTRATO = {
     'Bash(npm run -s new-project *)',
     'Bash(npm run -s step *)',
     'Bash(npm run -s tool *)',
-    'Bash(npm run -s report *)',
   ],
   permitir_no_briefing: ['Edit(./clientes/{pasta}/**)'],
   negar: ['Bash(rm *)', 'Bash(git *)', 'Bash(curl *)', 'Bash(cat *)', 'Bash(grep *)', 'Bash(ls *)', 'Read(//**/.env)'],
   variaveis_removidas: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY'],
   variaveis_definidas: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' },
-  esforco: { criacao: 'xhigh', ajuste: 'medium', briefing: 'high' },
+  esforco: { criacao: 'high', ajuste: 'high', briefing: 'high' },
   cancelamento_espera_ms: 8000,
 }
 
@@ -50,9 +49,10 @@ export const SEGREDOS_DO_PAINEL = {
 /** A frase do runbook, no motor de mentira. A de verdade mora em joinvixable/agent/pedidos.ts. */
 export function fraseDe(p) {
   if (p.tipo === 'cliente') return `gere o site do cliente ${p.pasta}${p.refazer ? ' com --refazer' : ''}`
-  if (p.tipo === 'briefing') return `gere o site do briefing ${p.arquivo}`
   if (p.tipo === 'analisar') return `gere o briefing do cliente ${p.pasta}${p.observacoes?.trim() ? `\nObservações: ${p.observacoes.trim()}` : ''}`
   if (p.tipo === 'ajuste') return `ajuste o site ${p.slug}: ${p.pedido.trim()}`
+  if (p.tipo === 'criticar') return `critique o site ${p.slug}`
+  if (p.tipo === 'refinar') return `refine o site ${p.slug}`
   return `continue o site ${p.slug}`
 }
 
@@ -73,7 +73,11 @@ export function bancada({ validar = async () => ({ ok: true, texto: 'BUILD OK. V
   const estado = {
     cenario: 'ok',
     extraNoAmbiente: {},
-    /** @type {Record<string, { etapaAberta?: string | null, aguardandoAprovacao?: boolean, entregue?: boolean }>} */
+    /** O que as Configurações dizem do modelo e do esforço; vazio é "o que o motor espera". */
+    configurado: { modelo: '', esforco: '' },
+    /** O contrato que o motor de mentira devolve; os testes trocam o esforço esperado por tipo de pedido. */
+    contrato: structuredClone(CONTRATO),
+    /** @type {Record<string, { etapaAberta?: string | null, aguardandoAprovacao?: boolean, entregue?: boolean, proximo?: string | null }>} */
     projetos: {},
     /** @type {Record<string, string[]>} erros da conferência do briefing, por pasta */
     briefings: {},
@@ -88,7 +92,7 @@ export function bancada({ validar = async () => ({ ok: true, texto: 'BUILD OK. V
 
   const motor = {
     dir: dirMotor,
-    ambiente: async () => ({ ok: true, headless: structuredClone(CONTRATO), modeloEsperado: 'claude-sonnet-5-5' }),
+    ambiente: async () => ({ ok: true, headless: structuredClone(estado.contrato), modeloEsperado: 'claude-opus-5-5' }),
     conferirPedido: async (pedido) => {
       if (estado.recusa) {
         const erro = /** @type {any} */ (new Error(estado.recusa))
@@ -98,7 +102,7 @@ export function bancada({ validar = async () => ({ ok: true, texto: 'BUILD OK. V
       }
       return { frase: fraseDe(pedido), sites: estado.sites }
     },
-    estadoDoProjeto: async (slug) => ({ ok: true, etapaAberta: null, aguardandoAprovacao: false, entregue: true, ...(estado.projetos[slug] ?? {}) }),
+    estadoDoProjeto: async (slug) => ({ ok: true, etapaAberta: null, aguardandoAprovacao: false, entregue: true, proximo: null, ...(estado.projetos[slug] ?? {}) }),
     conferirBriefing: async (pasta) => ({ ok: true, existe: true, erros: estado.briefings[pasta] ?? [], avisos: [] }),
     gravarRunbook: async (arquivo) => {
       fs.mkdirSync(path.dirname(arquivo), { recursive: true })
@@ -117,7 +121,8 @@ export function bancada({ validar = async () => ({ ok: true, texto: 'BUILD OK. V
     registrar: (execucao) => estado.registros.push(execucao),
     opcoes: () => ({
       bin: CLAUDE_FALSO,
-      modelo: 'claude-sonnet-5-5',
+      modelo: estado.configurado.modelo,
+      esforco: estado.configurado.esforco,
       // O ambiente do painel, com os segredos dele: é daqui que o executor tira só o que o claude pode ver.
       base: { ...process.env, ...SEGREDOS_DO_PAINEL },
       ambiente: {

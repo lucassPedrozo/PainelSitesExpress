@@ -1,4 +1,5 @@
 import path from "node:path";
+import { ESFORCOS, MODELO_INVALIDO, MODELO_VALIDO } from "../engines/claude/command.js";
 import { config } from "../config.js";
 import { isLocalNetworkAddress } from "../security/network.js";
 import { hostPattern } from "../deploy/input.js";
@@ -68,8 +69,8 @@ const programaConhecido = (nomes, quais, { soNome = false } = {}) => (valor) => 
 const CLAUDE_CODE = /^claude(\.exe)?$/i;
 /** Os navegadores que o motor sabe usar nas capturas (Chrome, Edge e Chromium). */
 const NAVEGADOR = /^(chrome|msedge|chromium|chromium-browser|google-chrome(-stable)?|microsoft-edge(-stable)?|Google Chrome|Microsoft Edge|Chromium)(\.exe)?$/i;
-/** Id ou apelido de modelo do Claude Code: `claude-opus-5-5`, `opus`, `sonnet[1m]`. */
-const MODELO_CLAUDE = /^[a-z0-9][a-z0-9._:[\]-]{0,79}$/i;
+/** Como a tela chama cada nível do `--effort` do Claude Code. */
+const NOME_DO_ESFORCO = { low: "Baixo", medium: "Médio", high: "Alto", xhigh: "Muito alto", max: "Máximo" };
 
 const urlHttps = (value) => {
   try {
@@ -173,32 +174,93 @@ export const SETTINGS_SCHEMA = [
     id: "claude",
     title: "Motor Claude",
     description:
-      "O Claude Code desta máquina escreve o briefing e o site, pelo login da assinatura. O painel prepara a pasta de trabalho, acompanha a execução e envia o site validado ao GitHub.",
+      "O Claude Code desta máquina escreve o briefing e o site, pelo login da assinatura, e o site passa por rodadas de crítica e refino antes de ser entregue. O painel prepara a pasta de trabalho, enfileira e acompanha cada execução e envia o site entregue ao GitHub.",
     fields: [
       {
         key: "CLAUDE_ENABLE_GENERATION",
         label: "Liberar o uso do Claude",
         type: "boolean",
-        help: "Desligado, o painel monta e confere o pedido e mostra o comando, mas nunca dispara o Claude Code. Ligado, cada briefing, site, ajuste e teste consome a assinatura do Claude Code.",
-      },
-      {
-        key: "CLAUDE_HUMAN_APPROVAL",
-        label: "Aprovação da direção criativa",
-        type: "select",
-        options: [
-          { value: "", label: "Padrão do motor" },
-          { value: "1", label: "Parar e esperar a aprovação de uma pessoa" },
-          { value: "0", label: "Seguir sem parar" },
-        ],
-        help: "Com a parada, o site só é escrito depois que alguém aprova a direção criativa no projeto.",
+        help: "Desligado, o painel monta e confere o pedido e mostra o comando, mas nunca dispara o Claude Code. Ligado, cada briefing, site, crítica, refino, ajuste e teste consome a assinatura do Claude Code.",
       },
       {
         key: "CLAUDE_MODEL",
         label: "Modelo",
         type: "text",
         placeholder: "o que o motor espera",
-        help: "Vazio usa o modelo que o motor espera, mostrado no estado acima. Outro modelo muda o resultado e o consumo da assinatura.",
-        validate: (v) => (MODELO_CLAUDE.test(v) ? null : "Use só o id ou o apelido do modelo (ex.: claude-opus-5-5, sonnet)."),
+        help: "O modelo que escreve os briefings e os sites. Vazio usa o que o motor espera, mostrado no estado acima. É o padrão de todos os projetos; cada um pode escolher outro na hora de gerar.",
+        validate: (v) => (MODELO_VALIDO.test(v) ? null : MODELO_INVALIDO),
+      },
+      {
+        key: "CLAUDE_REASONING_EFFORT",
+        label: "Esforço de raciocínio",
+        type: "select",
+        options: [
+          { value: "", label: "O que o motor espera" },
+          ...ESFORCOS.map((nivel) => ({ value: nivel, label: `${NOME_DO_ESFORCO[nivel]} (${nivel})` })),
+        ],
+        help: "Quanto o modelo pensa antes de escrever. Mais esforço dá um site mais bem resolvido; cada execução demora mais e consome mais da assinatura. É o padrão de todos os projetos; cada um pode escolher outro na hora de gerar.",
+      },
+      {
+        key: "CLAUDE_REVIEW_ROUNDS",
+        label: "Rodadas de crítica e refino",
+        type: "select",
+        options: [
+          { value: "", label: "Padrão do motor" },
+          { value: "1", label: "1 rodada" },
+          { value: "2", label: "2 rodadas" },
+          { value: "3", label: "3 rodadas" },
+          { value: "4", label: "4 rodadas" },
+        ],
+        help: "Depois de gerado, o site é criticado por outra sessão do Claude, que não o escreveu, e refinado por quem o escreveu com o que a crítica apontou. Cada rodada são duas execuções a mais; a sequência termina antes se a crítica aprovar o site. É o padrão de todos os projetos; cada site pode escolher outro número na revisão do briefing.",
+      },
+      {
+        key: "CLAUDE_PARALLEL_ADJUSTMENTS",
+        label: "Ajustes ao mesmo tempo",
+        type: "select",
+        options: [
+          { value: "", label: "Padrão (2 ajustes)" },
+          { value: "0", label: "Nenhum: tudo em uma fila só" },
+          { value: "1", label: "1 ajuste" },
+          { value: "2", label: "2 ajustes" },
+          { value: "3", label: "3 ajustes" },
+          { value: "4", label: "4 ajustes" },
+        ],
+        help: "O ajuste de um site já entregue não espera a criação de outro: roda ao lado dela, e até esta quantidade de ajustes roda junta. A criação (briefing, geração, crítica e refino) continua uma de cada vez, e nunca há duas execuções no mesmo site. Mais execuções juntas consomem a assinatura mais depressa e pesam mais nesta máquina.",
+      },
+      {
+        key: "CLAUDE_ART_DIRECTION",
+        label: "Direção de arte",
+        type: "select",
+        options: [
+          { value: "", label: "Padrão do motor" },
+          { value: "sobria", label: "Sóbria" },
+          { value: "autoral", label: "Autoral" },
+          { value: "ousada", label: "Ousada" },
+        ],
+        help: "Até onde o visual do site se afasta do convencional: da sóbria, mais contida, à ousada, que arrisca mais. É o padrão de todos os projetos; cada site pode escolher outra na revisão do briefing.",
+      },
+      {
+        key: "CLAUDE_MOTION",
+        label: "Movimento",
+        type: "select",
+        options: [
+          { value: "", label: "Padrão do motor" },
+          { value: "discreto", label: "Discreto" },
+          { value: "expressivo", label: "Expressivo" },
+          { value: "cinematografico", label: "Cinematográfico" },
+        ],
+        help: "Quanta animação o site leva: do discreto, só com transições leves, ao cinematográfico, em que o movimento faz parte da apresentação. É o padrão de todos os projetos; cada site pode escolher outro na revisão do briefing.",
+      },
+      {
+        key: "CLAUDE_HUMAN_APPROVAL",
+        label: "Escolha da rota criativa",
+        type: "select",
+        options: [
+          { value: "", label: "Padrão do motor" },
+          { value: "1", label: "Parar para uma pessoa escolher a rota" },
+          { value: "0", label: "Seguir com a rota que o Claude escolher" },
+        ],
+        help: "Com a parada, a geração espera depois da direção criativa: as rotas propostas aparecem no projeto, e o site só é escrito depois que alguém aprova a direção ou escolhe outra rota.",
       },
       {
         key: "CLAUDE_BIN",
@@ -213,7 +275,7 @@ export const SETTINGS_SCHEMA = [
         label: "Navegador das capturas",
         type: "text",
         placeholder: "automático",
-        help: "O Chrome, Edge ou Chromium que fotografa e filma o site. Vazio usa o que estiver instalado no lugar de costume.",
+        help: "O Chrome, Edge ou Chromium que fotografa o site. Vazio usa o que estiver instalado no lugar de costume.",
         validate: programaConhecido(NAVEGADOR, "um Chrome, Edge ou Chromium"),
       },
     ],

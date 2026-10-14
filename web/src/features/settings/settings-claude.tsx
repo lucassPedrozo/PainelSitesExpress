@@ -11,6 +11,7 @@ import {
 import { queryKeys } from "@/lib/query";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { effortLabel } from "@/features/claude/claude-options";
 import { ConfirmClaudeDialog } from "@/features/claude/claude-shared";
 import { errorMessage, formatEstimate } from "@/features/claude/claude-text";
 import { FIELD_GRID } from "./settings-form";
@@ -61,8 +62,14 @@ export function ClaudeStateRow() {
   );
 }
 
+/** "Alto (high)": o nome do nível e o valor que vai ao claude, como no seletor logo abaixo. */
+const nivelDeEsforco = (nivel: string) => {
+  const nome = effortLabel(nivel);
+  return nome === nivel ? nivel : `${nome} (${nivel})`;
+};
+
 function ClaudeState({ state }: { state: ClaudeDiagnostics }) {
-  const { claude, browser, model, humanApproval } = state;
+  const { claude, browser, model, effort, humanApproval } = state;
 
   if (!state.installed || !claude || !browser || !model || !humanApproval) {
     return (
@@ -96,7 +103,7 @@ function ClaudeState({ state }: { state: ClaudeDiagnostics }) {
             {browser.custom
               ? "O navegador informado não está nesse caminho."
               : "Nenhum Chrome, Edge ou Chromium no lugar de costume."}{" "}
-            Sem navegador o site é revisado só pelo código, e não há telas nem filme.
+            Sem navegador o site é revisado só pelo código, e não há telas.
           </Linha>
         )}
 
@@ -109,11 +116,21 @@ function ClaudeState({ state }: { state: ClaudeDiagnostics }) {
           </Linha>
         )}
 
+        {effort &&
+          (effort.effective === effort.expected ? (
+            <Linha ok>Esforço: {nivelDeEsforco(effort.effective)}, o que o motor espera.</Linha>
+          ) : (
+            <Linha ok="warn">
+              Esforço: {nivelDeEsforco(effort.effective)}. O motor espera {nivelDeEsforco(effort.expected)}: outro
+              nível muda o resultado, a duração de cada execução e o consumo da assinatura.
+            </Linha>
+          ))}
+
         <Linha ok>
-          Direção criativa:{" "}
+          Rota criativa:{" "}
           {humanApproval.enabled
-            ? "a geração para e espera a aprovação de uma pessoa"
-            : "a geração segue sem parar"}
+            ? "a geração para depois da direção criativa e espera uma pessoa aprovar a rota ou escolher outra"
+            : "a geração segue com a rota que o Claude escolher, sem parar"}
           {humanApproval.custom ? "." : " (padrão do motor)."}
         </Linha>
       </ul>

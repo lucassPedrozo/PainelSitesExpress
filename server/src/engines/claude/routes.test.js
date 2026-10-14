@@ -45,9 +45,17 @@ const controle = {
   texto: "",
   /** Quanto o claude falso demora para responder, em ms. */
   atraso: "",
-  /** O que as Configurações dizem do modelo e da aprovação da direção criativa. */
+  /** O que as Configurações dizem do modelo, do esforço, do pipeline e da parada na direção criativa. */
   modelo: "",
+  esforco: "",
+  rodadas: /** @type {number | null} */ (null),
+  direcao: "",
+  movimento: "",
   aprovacao: /** @type {boolean | null} */ (null),
+  /** No cenário "pipeline" do claude falso: a rodada em que a crítica aprova, o passo que não anda e o que falha. */
+  aprovaNa: "",
+  empaca: "",
+  falhaNo: "",
   /** O que o build e a validação do motor respondem. */
   validacao: { ok: true, texto: "BUILD OK. VALIDAÇÃO OK." },
   /** A área de aprovação está configurada no `.env`? */
@@ -65,6 +73,10 @@ const novoServico = (extras = {}) =>
       enableGeneration: controle.trava,
       bin: CLAUDE_FALSO,
       model: controle.modelo,
+      effort: controle.esforco,
+      reviewRounds: controle.rodadas,
+      artDirection: controle.direcao,
+      motion: controle.movimento,
       browserPath: "",
       humanApproval: controle.aprovacao,
       engineDir,
@@ -76,6 +88,9 @@ const novoServico = (extras = {}) =>
       CLAUDE_FALSO_REGISTRO: chamadasEm,
       CLAUDE_FALSO_TEXTO: controle.texto,
       CLAUDE_FALSO_ATRASO_MS: controle.atraso,
+      CLAUDE_FALSO_APROVA_NA: controle.aprovaNa,
+      CLAUDE_FALSO_EMPACA: controle.empaca,
+      CLAUDE_FALSO_FALHA_NO: controle.falhaNo,
     }),
     validar: async () => controle.validacao,
     log: () => undefined,
@@ -228,9 +243,9 @@ describe("motor Claude — nada que custa acontece por acaso", () => {
     assert.match(travado.body.error, /Liberar o uso do Claude.*Configurações → Motor Claude/);
 
     // As outras rotas que gastam respondem igual.
-    for (const rota of ["generate", "adjust", "continue", "approve"]) {
-      const semChave = await call(`/api/projects/${projectId}/claude/${rota}`, { method: "POST", como: "organiza", json: { confirm: true, pedido: "x" } });
-      const semConfirmacao = await call(`/api/projects/${projectId}/claude/${rota}`, { method: "POST", json: { pedido: "x" } });
+    for (const rota of ["generate", "adjust", "continue", "approve", "route"]) {
+      const semChave = await call(`/api/projects/${projectId}/claude/${rota}`, { method: "POST", como: "organiza", json: { confirm: true, pedido: "x", rota: 1 } });
+      const semConfirmacao = await call(`/api/projects/${projectId}/claude/${rota}`, { method: "POST", json: { pedido: "x", rota: 1 } });
       assert.deepEqual([semChave.status, semConfirmacao.status], [403, 428], rota);
     }
     for (const rota of ["/api/claude/queue/resume", "/api/claude/queue/interrupted/x/resume"]) {
@@ -298,10 +313,13 @@ describe("motor Claude — nada que custa acontece por acaso", () => {
     const semMaterial = await call(`/api/projects/${vazio}/claude/briefing/preview`, { method: "POST", json: {} });
     assert.equal(semMaterial.status, 400);
     assert.match(semMaterial.body.error, /Não há material para analisar/);
-    for (const rota of ["generate", "adjust", "continue", "approve"]) {
-      const r = await call(`/api/projects/${vazio}/claude/${rota}`, { method: "POST", json: { confirm: true, pedido: "x" } });
+    for (const rota of ["generate", "adjust", "continue", "approve", "route"]) {
+      const r = await call(`/api/projects/${vazio}/claude/${rota}`, { method: "POST", json: { confirm: true, pedido: "x", rota: 1 } });
       assert.equal(r.status, 409, rota);
     }
+    // O que saiu do painel não responde mais: as métricas do site, por rótulo.
+    assert.equal((await call(`/api/projects/${vazio}/claude/metrics`)).status, 404);
+    assert.equal((await call(`/api/projects/${projectId}/claude/metrics`)).status, 404);
   });
 });
 
@@ -314,10 +332,10 @@ describe("motor Claude — na tela de Configurações", () => {
   });
 
   after(() => {
-    Object.assign(controle, { trava: false, cenario: "ok", atraso: "", modelo: "", aprovacao: null });
+    Object.assign(controle, { trava: false, cenario: "ok", atraso: "", modelo: "", esforco: "", aprovacao: null });
   });
 
-  it("o estado do motor: versão do claude, navegador, modelo e comando — sem disparar nada", async () => {
+  it("o estado do motor: versão do claude, navegador, modelo, esforço e comando — sem disparar nada", async () => {
     const antes = chamadas().length;
     assert.equal((await call("/api/settings/claude", { como: "gera" })).status, 403, "só quem configura o painel");
 
@@ -327,20 +345,22 @@ describe("motor Claude — na tela de Configurações", () => {
     assert.deepEqual(body.claude, { found: true, version: "0.0.0 (claude falso)", custom: true });
     // Do navegador, só o nome do programa: o caminho é desta máquina.
     assert.deepEqual(body.browser, { found: true, name: "chrome.exe", custom: false });
-    assert.deepEqual(body.model, { effective: "claude-sonnet-5-5", expected: "claude-sonnet-5-5", custom: false });
+    assert.deepEqual(body.model, { effective: "claude-opus-5-5", expected: "claude-opus-5-5", custom: false });
+    assert.deepEqual(body.effort, { effective: "high", expected: "high", custom: false });
     assert.deepEqual(body.humanApproval, { enabled: false, custom: false });
-    assert.match(body.command, /claude-falso\.mjs"? -p --output-format stream-json --verbose --model claude-sonnet-5-5 /);
+    assert.match(body.command, /claude-falso\.mjs"? -p --output-format stream-json --verbose --model claude-opus-5-5 --effort high /);
     assert.match(body.command, /--permission-mode dontAsk --permission-prompts none --setting-sources user/);
     const texto = JSON.stringify(body);
     assert.ok(!texto.includes(raiz) && !texto.includes(raiz.replace(/\\/g, "/")) && !texto.includes("Program Files"), texto);
 
     // O que as Configurações mudam aparece no estado e no comando.
-    Object.assign(controle, { modelo: "claude-opus-5-5", aprovacao: true });
+    Object.assign(controle, { modelo: "claude-fable-5-1", esforco: "max", aprovacao: true });
     const mudado = (await call("/api/settings/claude")).body;
-    assert.deepEqual(mudado.model, { effective: "claude-opus-5-5", expected: "claude-sonnet-5-5", custom: true });
+    assert.deepEqual(mudado.model, { effective: "claude-fable-5-1", expected: "claude-opus-5-5", custom: true });
+    assert.deepEqual(mudado.effort, { effective: "max", expected: "high", custom: true });
     assert.equal(mudado.humanApproval.custom, true);
-    assert.match(mudado.command, /--model claude-opus-5-5 /);
-    Object.assign(controle, { modelo: "", aprovacao: null });
+    assert.match(mudado.command, /--model claude-fable-5-1 --effort max /);
+    Object.assign(controle, { modelo: "", esforco: "", aprovacao: null });
 
     assert.equal(chamadas().length, antes, "nenhum claude -p");
     assert.equal(fs.existsSync(caminhos.trava), false);
@@ -353,10 +373,16 @@ describe("motor Claude — na tela de Configurações", () => {
     const secao = body.sections.find((section) => section.id === "claude");
     assert.deepEqual(
       secao.fields.map((campo) => campo.key),
-      ["CLAUDE_ENABLE_GENERATION", "CLAUDE_HUMAN_APPROVAL", "CLAUDE_MODEL", "CLAUDE_BIN", "CLAUDE_BROWSER_PATH"],
+      ["CLAUDE_ENABLE_GENERATION", "CLAUDE_MODEL", "CLAUDE_REASONING_EFFORT", "CLAUDE_REVIEW_ROUNDS", "CLAUDE_PARALLEL_ADJUSTMENTS", "CLAUDE_ART_DIRECTION", "CLAUDE_MOTION", "CLAUDE_HUMAN_APPROVAL", "CLAUDE_BIN", "CLAUDE_BROWSER_PATH"],
     );
     // Vale na hora: o serviço relê a configuração a cada uso.
-    assert.deepEqual(secao.fields.map((campo) => campo.restart), [false, false, false, false, false]);
+    assert.ok(secao.fields.every((campo) => campo.restart === false));
+    // As escolhas do pipeline são listas fechadas, com o padrão do motor na frente.
+    const opcoesDe = (chave) => secao.fields.find((campo) => campo.key === chave).options.map((opcao) => opcao.value);
+    assert.deepEqual(opcoesDe("CLAUDE_REASONING_EFFORT"), ["", "low", "medium", "high", "xhigh", "max"]);
+    assert.deepEqual(opcoesDe("CLAUDE_REVIEW_ROUNDS"), ["", "1", "2", "3", "4"]);
+    assert.deepEqual(opcoesDe("CLAUDE_ART_DIRECTION"), ["", "sobria", "autoral", "ousada"]);
+    assert.deepEqual(opcoesDe("CLAUDE_MOTION"), ["", "discreto", "expressivo", "cinematografico"]);
   });
 
   it("Testar Claude: 403 sem a permissão, 428 sem confirmar e 423 com a trava desligada — e o claude não roda", async () => {
@@ -386,6 +412,7 @@ describe("motor Claude — na tela de Configurações", () => {
     const chamada = chamadas().at(-1);
     assert.equal(chamada.entrada, "Responda apenas com a palavra: ok");
     assert.ok(chamada.args.includes("--no-session-persistence"));
+    assert.equal(chamada.args[chamada.args.indexOf("--model") + 1], "claude-opus-5-5", "o modelo das Configurações — aqui, o que o motor espera");
     // O teste não é a execução de um projeto: nada entra na fila nem no registro.
     const estado = (await call("/api/claude/status")).body;
     assert.deepEqual([estado.queue.running, estado.queue.waiting], [null, []]);
@@ -533,11 +560,23 @@ describe("motor Claude — do briefing ao ajuste, pelo painel", () => {
     assert.deepEqual([corrigido.status, corrigido.body.review.erros], [200, []]);
     assert.equal((await detalhe(projectId)).project.briefing.state, "ok");
 
-    const opcoes = await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { opcoes: { multiplas_paginas: true, skills: [] } } });
-    assert.deepEqual([opcoes.status, opcoes.body.review.opcoes.multiplas_paginas], [200, true]);
-    const skillRuim = await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { opcoes: { skills: ["nao-existe"] } } });
+    // As opções do site vão para o briefing, pelo motor — com as do pipeline entre elas.
+    const opcoes = await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { site: { multiplas_paginas: true, skills: [], rodadas: 3, direcao_de_arte: "ousada" } } });
+    assert.deepEqual(
+      [opcoes.status, opcoes.body.site.multiplas_paginas, opcoes.body.site.rodadas, opcoes.body.site.direcao_de_arte],
+      [200, true, 3, "ousada"],
+      JSON.stringify(opcoes.body),
+    );
+    assert.equal((await detalhe(projectId)).review.opcoes.rodadas, 3, "a revisão mostra o que ficou no briefing");
+    // Quem confere é o motor, e a recusa dele chega como veio.
+    const skillRuim = await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { site: { skills: ["nao-existe"] } } });
     assert.deepEqual([skillRuim.status, skillRuim.body.error], [409, "Skill não encontrada: nao-existe."]);
+    const rodadasDemais = await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { site: { rodadas: 9 } } });
+    assert.deepEqual([rodadasDemais.status, rodadasDemais.body.error], [409, "Rodadas: escolha de 1 a 4."]);
     assert.equal((await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: {} })).status, 400);
+    assert.equal((await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { site: ["lista"] } })).status, 400);
+    assert.equal((await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { opcoes: { skills: [] } } })).status, 400, "o corpo de antes não é mais aceito");
+    assert.equal((await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", como: "organiza", json: { site: {} } })).status, 403);
     assert.equal(chamadas().length, antes, "nada disso dispara o claude");
   });
 
@@ -547,7 +586,7 @@ describe("motor Claude — do briefing ao ajuste, pelo painel", () => {
       [ensaio.status, ensaio.body.dryRun, ensaio.body.plan.phrase, ensaio.body.plan.errors, ensaio.body.plan.previousSites],
       [200, true, `gere o site do cliente ${pasta}`, [], []],
     );
-    assert.match(ensaio.body.command, /--effort xhigh/);
+    assert.match(ensaio.body.command, /--model claude-opus-5-5 --effort high /);
     assert.ok(!ensaio.body.command.includes("Edit(./clientes/"), "fora do briefing o agente não escreve na pasta do cliente");
 
     controle.cenario = "site";
@@ -559,6 +598,8 @@ describe("motor Claude — do briefing ao ajuste, pelo painel", () => {
       [d.project.lastRun.type, d.project.lastRun.status, d.project.slug, d.project.site.delivered, d.project.site.openStage],
       ["cliente", "sucesso", pasta, true, null],
     );
+    // Site sem rodadas pela frente: entregue, e sem passo seguinte.
+    assert.deepEqual([d.project.site.phase, d.project.site.next, d.site.proximo, d.site.pipeline.fase], ["entregue", null, null, "entregue"]);
     assert.equal(chamadas().at(-1).entrada, `gere o site do cliente ${pasta}`);
 
     // O site validado vira um site do projeto, como os dos outros motores — sem nunca ser consultado no Lovable.
@@ -694,10 +735,76 @@ describe("motor Claude — do briefing ao ajuste, pelo painel", () => {
     controle.texto = "";
   });
 
+  it("o tipo do site muda depois de gerado: várias páginas ou página única, sem gastar", async () => {
+    const tipo = (corpo, como) => call(`/api/projects/${projectId}/claude/site/type`, { method: "PUT", como, json: corpo });
+    const antes = chamadas().length;
+    assert.deepEqual([(await detalhe(projectId)).site.multiplasPaginas, (await detalhe(projectId)).site.paginas], [false, []]);
+
+    assert.equal((await tipo({ multiplas_paginas: true }, "organiza")).status, 403);
+    assert.equal((await tipo({ multiplas_paginas: "sim" })).status, 400);
+    assert.equal((await tipo({})).status, 400);
+
+    const ligado = await tipo({ multiplas_paginas: true });
+    assert.deepEqual([ligado.status, ligado.body], [200, { multiplasPaginas: true, paginas: [] }]);
+    assert.equal((await detalhe(projectId)).site.multiplasPaginas, true);
+    // O briefing do cliente acompanha: o motor recebe a pasta dele.
+    assert.ok(doMotor.consultas.includes("tipoDoSite"));
+
+    const desligado = await tipo({ multiplas_paginas: false });
+    assert.deepEqual([desligado.status, desligado.body.multiplasPaginas], [200, false]);
+    assert.equal(chamadas().length, antes, "nada disso dispara o claude");
+
+    const semSite = await novoProjeto("sem-site-ainda.com.br", {});
+    assert.equal((await call(`/api/projects/${semSite}/claude/site/type`, { method: "PUT", json: { multiplas_paginas: true } })).status, 409);
+  });
+
+  it("o ajuste roda ao lado da criação de outro site: cada um com o seu log, e o cancelamento é por item", { timeout: 120_000 }, async () => {
+    controle.cenario = "lento";
+    const outro = await novoProjeto("ao-lado.com.br", { "sobre.txt": "Outro cliente" });
+    const antes = { ajuste: (await detalhe(projectId)).project.lastRun.id, briefing: null };
+    const briefing = await call(`/api/projects/${outro}/claude/briefing`, { method: "POST", json: { confirm: true } });
+    assert.equal(briefing.status, 201, JSON.stringify(briefing.body));
+    const ajuste = await call(`/api/projects/${projectId}/claude/adjust`, { method: "POST", json: { confirm: true, pedido: "troque o telefone" } });
+    assert.equal(ajuste.status, 201, JSON.stringify(ajuste.body));
+
+    const fila = await esperarAte(async () => {
+      const s = (await call("/api/claude/status")).body.queue;
+      return s.runningAll.length === 2 ? s : null;
+    });
+    assert.deepEqual(fila.runningAll.map((item) => [item.projectId, item.tipo]), [[outro, "analisar"], [projectId, "ajuste"]]);
+    assert.deepEqual([fila.running.projectId, fila.waiting.length], [outro, 0], "a principal é a da criação, e ninguém espera");
+    const doAjuste = fila.runningAll[1].id;
+
+    // Cada execução tem o seu log; sem dizer qual, a tela vê a principal.
+    const log = await esperarAte(async () => {
+      const eventos = (await call(`/api/claude/events?item=${doAjuste}`)).body;
+      return eventos.item === doAjuste && eventos.events.length ? eventos : null;
+    });
+    assert.match(JSON.stringify(log.events), /ajuste/);
+    const principal = await esperarAte(async () => {
+      const eventos = (await call("/api/claude/events")).body;
+      return eventos.item === fila.running.id ? eventos : null;
+    });
+    assert.notEqual(principal.cursor, log.cursor);
+
+    assert.deepEqual((await call(`/api/claude/queue/cancel?item=${doAjuste}`, { method: "POST", json: {} })).body, { cancelled: true });
+    const d = await esperarFim(projectId, antes.ajuste);
+    assert.equal(d.project.lastRun.status, "cancelada");
+    const depois = (await call("/api/claude/status")).body.queue;
+    assert.deepEqual(depois.runningAll.map((item) => item.projectId), [outro], "a outra execução continua");
+
+    assert.deepEqual((await call("/api/claude/queue/cancel", { method: "POST", json: {} })).body, { cancelled: true });
+    assert.equal((await esperarFim(outro, antes.briefing)).project.lastRun.status, "cancelada");
+    controle.cenario = "ok";
+  });
+
   it("telas e imagens: só imagem, só de dentro da pasta de trabalho, e nunca o site gerado", async () => {
     const capturas = await call(`/api/projects/${projectId}/claude/captures/telas`, { method: "POST", json: {} });
     assert.deepEqual([capturas.status, capturas.body.telas], [200, ["desktop-topo.png"]]);
     assert.equal((await call(`/api/projects/${projectId}/claude/captures/outra`, { method: "POST", json: {} })).status, 404);
+    // Só as telas: o filme da abertura saiu do painel, na captura e na imagem.
+    assert.equal((await call(`/api/projects/${projectId}/claude/captures/filme`, { method: "POST", json: {} })).status, 404);
+    assert.deepEqual(Object.keys(capturas.body), ["telas"]);
     assert.equal((await call(`/api/projects/${projectId}/claude/captures/telas`, { method: "POST", como: "organiza", json: {} })).status, 403);
 
     const tela = await call(`/api/projects/${projectId}/claude/images/telas?path=desktop-topo.png`);
@@ -722,6 +829,7 @@ describe("motor Claude — do briefing ao ajuste, pelo painel", () => {
       ["material", ""],
       ["miniatura", "../../../painel.json"],
       ["dist", "index.html"],
+      ["filme", "desktop-topo.png"],
     ]) {
       const r = await call(`/api/projects/${projectId}/claude/images/${tipo}?path=${encodeURIComponent(caminho)}`);
       assert.equal(r.status, 404, `${tipo} ${caminho}`);
@@ -1244,5 +1352,488 @@ describe("motor Claude — o site validado vai ao GitHub", () => {
     assert.deepEqual([d.project.lastRun.status, gh.commits.length, d.project.push.state, d.project.push.automatic], ["sucesso", commits, "failed", true]);
     assert.match(d.project.push.message, /framer-motion/);
     fs.rmSync(path.join(doSite, "src", "sections"), { recursive: true });
+  });
+});
+
+/** Um projeto com o briefing já aceito pelo motor, pronto para gerar o site. */
+async function projetoComBriefing(nome) {
+  const projectId = await novoProjeto(nome, { "sobre.txt": `${nome}: material do cliente.` });
+  const ensaio = await call(`/api/projects/${projectId}/claude/briefing/preview`, { method: "POST", json: {} });
+  assert.equal(ensaio.status, 200, JSON.stringify(ensaio.body));
+  const pasta = ensaio.body.plan.folder;
+  doMotor.briefings[pasta] = { dados: { empresa: { nome, ramo: "serviços" } }, erros: [], avisos: [] };
+  return { projectId, pasta };
+}
+
+/** O modelo e o esforço de um comando, como o claude os recebe. */
+const escolhidoEm = (args) => [args[args.indexOf("--model") + 1], args[args.indexOf("--effort") + 1]];
+const SEM_ESCOLHA = { modelo: "", esforco: "", rodadas: null, direcao: "", movimento: "", aprovacao: null };
+
+describe("motor Claude — o modelo e o esforço de cada projeto", () => {
+  let projectId;
+  let pasta;
+  const opcoes = (init) => call(`/api/projects/${projectId}/claude/options`, init);
+  const gravar = (json, como = "admin") => opcoes({ method: "PUT", json, como });
+  /** O modelo e o esforço do comando que o ensaio mostra. */
+  const noEnsaio = async (json = {}, rota = "generate") => {
+    const ensaio = await call(`/api/projects/${projectId}/claude/${rota}/preview`, { method: "POST", json });
+    assert.equal(ensaio.status, 200, JSON.stringify(ensaio.body));
+    return [/--model (\S+)/.exec(ensaio.body.command)[1], /--effort (\S+)/.exec(ensaio.body.command)[1]];
+  };
+
+  before(async () => {
+    Object.assign(controle, SEM_ESCOLHA, { trava: true, cenario: "ok" });
+    projectId = await novoProjeto("opcoes-do-projeto.com.br", { "sobre.txt": "Material do cliente." });
+  });
+
+  after(() => {
+    Object.assign(controle, SEM_ESCOLHA, { cenario: "ok" });
+  });
+
+  it("projeto que nunca passou pelo motor: nada escolhido, os padrões do motor e nenhuma opção de site", async () => {
+    const { status, body } = await opcoes();
+    assert.equal(status, 200, JSON.stringify(body));
+    assert.deepEqual(body.options, { modelo: null, esforco: null });
+    assert.deepEqual(body.defaults, {
+      modelo: "claude-opus-5-5",
+      esforco: "high",
+      rodadas: 2,
+      direcao_de_arte: "autoral",
+      movimento: "expressivo",
+      escolher_rota: false,
+      modelos: [
+        { id: "claude-opus-5-5", rotulo: "Opus 5.5" },
+        { id: "claude-fable-5-1", rotulo: "Fable 5.1" },
+        { id: "claude-sonnet-5-5", rotulo: "Sonnet 5.5" },
+      ],
+      esforcos: ["low", "medium", "high", "xhigh", "max"],
+    });
+    assert.equal(body.site, null);
+    assert.equal(await registro.getClaudeProject(projectId), null, "ler as opções não cria nada");
+
+    // Os padrões são os das Configurações; onde elas estão vazias, os do motor.
+    Object.assign(controle, { modelo: "claude-sonnet-5-5", esforco: "medium", rodadas: 3, direcao: "ousada", aprovacao: true });
+    const comConfiguracoes = (await opcoes()).body.defaults;
+    assert.deepEqual(
+      [comConfiguracoes.modelo, comConfiguracoes.esforco, comConfiguracoes.rodadas, comConfiguracoes.direcao_de_arte, comConfiguracoes.movimento, comConfiguracoes.escolher_rota],
+      ["claude-sonnet-5-5", "medium", 3, "ousada", "expressivo", true],
+    );
+    Object.assign(controle, SEM_ESCOLHA);
+  });
+
+  it("gravar o modelo e o esforço: só quem pode gerar, só valores válidos, e sem gastar", async () => {
+    const antes = chamadas().length;
+    assert.equal((await gravar({ modelo: "claude-fable-5-1" }, "organiza")).status, 403);
+    // O modelo vira um argumento do claude: a mesma regra das Configurações.
+    for (const corpo of [{ modelo: "--dangerously-skip-permissions" }, { modelo: "opus --resume x" }, { modelo: 5 }, { esforco: "ultra" }, { esforco: ["max"] }, {}]) {
+      assert.equal((await gravar(corpo)).status, 400, JSON.stringify(corpo));
+    }
+    assert.match((await gravar({ modelo: "modelo;rm" })).body.error, /id ou o apelido do modelo/);
+    assert.match((await gravar({ esforco: "ultra" })).body.error, /Esforço inválido — use low, medium, high, xhigh, max/);
+    // As opções do site moram no briefing: sem projeto no motor não há onde gravar, e nada do pedido entra.
+    const semBriefing = await gravar({ modelo: "claude-fable-5-1", site: { multiplas_paginas: true } });
+    assert.deepEqual([semBriefing.status, /ainda não tem briefing do Claude/.test(semBriefing.body.error)], [409, true]);
+    assert.equal(await registro.getClaudeProject(projectId), null);
+
+    const gravado = await gravar({ modelo: "claude-fable-5-1", esforco: "max" });
+    assert.equal(gravado.status, 200, JSON.stringify(gravado.body));
+    assert.deepEqual([gravado.body.options, gravado.body.site, gravado.body.defaults.modelo], [{ modelo: "claude-fable-5-1", esforco: "max" }, null, "claude-opus-5-5"]);
+    pasta = await pastaDe(projectId);
+    assert.deepEqual((await registro.getClaudeProject(projectId)).options, { modelo: "claude-fable-5-1", esforco: "max" });
+    assert.deepEqual((await opcoes()).body.options, { modelo: "claude-fable-5-1", esforco: "max" });
+
+    // Com o projeto aberto e ainda sem briefing, quem recusa as opções do site é o motor — e o modelo que veio junto não entra.
+    const recusado = await gravar({ modelo: "claude-sonnet-5-5", site: { multiplas_paginas: true } });
+    assert.equal(recusado.status, 409);
+    assert.match(recusado.body.error, /^Nenhum arquivo \.json em <pasta do motor>/);
+    assert.deepEqual((await opcoes()).body.options, { modelo: "claude-fable-5-1", esforco: "max" });
+
+    // O que não vem no corpo fica como está; `null` ou vazio volta ao das Configurações.
+    assert.deepEqual((await gravar({ esforco: null })).body.options, { modelo: "claude-fable-5-1", esforco: null });
+    assert.deepEqual((await gravar({ modelo: "", esforco: "low" })).body.options, { modelo: null, esforco: "low" });
+    assert.deepEqual((await gravar({ modelo: " claude-fable-5-1 ", esforco: "max" })).body.options, { modelo: "claude-fable-5-1", esforco: "max" });
+    assert.equal(chamadas().length, antes, "nada disso dispara o claude");
+  });
+
+  it("do projeto ao comando: o que o projeto escolheu, senão as Configurações, senão o que o motor espera", { timeout: 90_000 }, async () => {
+    // 1. O projeto escolheu os dois.
+    assert.deepEqual(await noEnsaio(), ["claude-fable-5-1", "max"]);
+    assert.deepEqual(await noEnsaio({}, "briefing"), ["claude-fable-5-1", "max"], "o pedido de briefing segue a mesma ordem");
+    // 2. Campo a campo: o que o projeto não escolheu vem das Configurações.
+    Object.assign(controle, { modelo: "claude-sonnet-5-5", esforco: "medium" });
+    await gravar({ esforco: null });
+    assert.deepEqual(await noEnsaio(), ["claude-fable-5-1", "medium"]);
+    await gravar({ modelo: null });
+    assert.deepEqual(await noEnsaio(), ["claude-sonnet-5-5", "medium"]);
+    // 3. Sem nada no projeto nem nas Configurações: o que o motor espera.
+    Object.assign(controle, { modelo: "", esforco: "" });
+    assert.deepEqual(await noEnsaio(), ["claude-opus-5-5", "high"]);
+    // O que vem com o ensaio vale só para ele: mostra o comando e não grava.
+    assert.deepEqual(await noEnsaio({ modelo: "claude-fable-5-1", esforco: "low" }), ["claude-fable-5-1", "low"]);
+    assert.deepEqual((await opcoes()).body.options, { modelo: null, esforco: null });
+    assert.equal((await call(`/api/projects/${projectId}/claude/generate/preview`, { method: "POST", json: { esforco: "ultra" } })).status, 400);
+
+    // O mesmo vale para a execução de verdade — e as Configurações do pipeline chegam ao ambiente do agente.
+    Object.assign(controle, { modelo: "claude-sonnet-5-5", esforco: "medium", rodadas: 3, direcao: "ousada", movimento: "discreto", aprovacao: true, cenario: "briefing-simples" });
+    await gravar({ esforco: "xhigh" });
+    const pedido = await call(`/api/projects/${projectId}/claude/briefing`, { method: "POST", json: { confirm: true } });
+    assert.equal(pedido.status, 201, JSON.stringify(pedido.body));
+    const d = await esperarFim(projectId);
+    const chamada = chamadas().at(-1);
+    assert.equal(chamada.entrada, `gere o briefing do cliente ${pasta}`);
+    assert.deepEqual(escolhidoEm(chamada.args), ["claude-sonnet-5-5", "xhigh"]);
+    assert.deepEqual([d.runs[0].status, d.runs[0].modelo, d.runs[0].esforco, chamada.modelo], ["sucesso", "claude-sonnet-5-5", "xhigh", "claude-sonnet-5-5"]);
+    assert.deepEqual(chamada.pipeline, { rodadas: "3", direcaoDeArte: "ousada", movimento: "discreto", aprovacao: "1" });
+    Object.assign(controle, SEM_ESCOLHA, { cenario: "ok" });
+  });
+
+  it("o modelo e o esforço que chegam com o pedido ficam no projeto — quando o pedido entra na fila", { timeout: 90_000 }, async () => {
+    await gravar({ modelo: null, esforco: null });
+    const gerar = (json) => call(`/api/projects/${projectId}/claude/generate`, { method: "POST", json: { confirm: true, ...json } });
+    const antes = chamadas().length;
+
+    // Recusado — pelo valor, ou pela trava —, o pedido não muda o que o projeto tinha.
+    assert.equal((await gerar({ esforco: "ultra" })).status, 400);
+    controle.trava = false;
+    assert.equal((await gerar({ modelo: "claude-fable-5-1", esforco: "max" })).status, 423);
+    controle.trava = true;
+    assert.deepEqual((await opcoes()).body.options, { modelo: null, esforco: null });
+    assert.equal(chamadas().length, antes);
+
+    controle.cenario = "site";
+    let anterior = (await detalhe(projectId)).project.lastRun.id;
+    assert.equal((await gerar({ modelo: "claude-fable-5-1", esforco: "max" })).status, 201);
+    assert.deepEqual((await registro.getClaudeProject(projectId)).options, { modelo: "claude-fable-5-1", esforco: "max" }, "gravado antes de o pedido rodar");
+    let d = await esperarFim(projectId, anterior);
+    assert.deepEqual([d.project.lastRun.type, d.project.lastRun.status, ...escolhidoEm(chamadas().at(-1).args)], ["cliente", "sucesso", "claude-fable-5-1", "max"]);
+    // Sem as rodadas das Configurações, nada do pipeline entra no ambiente do agente.
+    assert.deepEqual(chamadas().at(-1).pipeline, { rodadas: null, direcaoDeArte: null, movimento: null, aprovacao: null });
+
+    // O ajuste traz só o esforço: o modelo continua o do projeto.
+    controle.cenario = "ok";
+    anterior = d.project.lastRun.id;
+    const ajuste = await call(`/api/projects/${projectId}/claude/adjust`, { method: "POST", json: { confirm: true, pedido: "troque o telefone", esforco: "low" } });
+    assert.equal(ajuste.status, 201, JSON.stringify(ajuste.body));
+    d = await esperarFim(projectId, anterior);
+    assert.deepEqual([d.project.lastRun.type, ...escolhidoEm(chamadas().at(-1).args)], ["ajuste", "claude-fable-5-1", "low"]);
+    assert.deepEqual((await opcoes()).body.options, { modelo: "claude-fable-5-1", esforco: "low" });
+    // As opções do site aparecem ao lado, agora que há um briefing.
+    assert.deepEqual(
+      [(await opcoes()).body.site.rodadas, (await opcoes()).body.site.referencias],
+      [null, { links: [], notas: "" }],
+    );
+
+    // "Continuar" num site entregue é recusado pelo motor, e o que veio com o pedido não entra.
+    const semOQueContinuar = await call(`/api/projects/${projectId}/claude/continue`, { method: "POST", json: { confirm: true, modelo: "claude-sonnet-5-5" } });
+    assert.equal(semOQueContinuar.status, 409);
+    assert.match(semOQueContinuar.body.error, /já foi entregue/);
+    assert.equal((await opcoes()).body.options.modelo, "claude-fable-5-1");
+  });
+});
+
+describe("motor Claude — a sequência de um site: geração, crítica e refino", () => {
+  /** Um GitHub de mentira que anota, a cada commit, quantas execuções do claude já tinham rodado. */
+  const gh = { repos: new Map(), commits: [] };
+  const github = {
+    conta: () => ({ githubToken: "github_pat_teste_nao_usado", organization: "org-de-teste" }),
+    config: () => ({}),
+    getRepository: async (_config, { owner, repo }) => gh.repos.get(`${owner}/${repo}`) ?? null,
+    createOrgRepository: async (_config, { organization, name }) => {
+      const repo = { full_name: `${organization}/${name}`, name, default_branch: "main", html_url: `https://github.com/${organization}/${name}` };
+      gh.repos.set(repo.full_name, repo);
+      return repo;
+    },
+    commitSite: async ({ owner, repo, files }) => {
+      gh.commits.push({ repo: `${owner}/${repo}`, arquivos: files.map((file) => file.path).sort(), execucoes: chamadas().length });
+      return { sha: `sha-${gh.commits.length}`, changed: true, uploaded: files.length, total: files.length };
+    },
+  };
+  const areaDeAprovacao = { configurada: () => false, publicar: async () => assert.fail("a área de aprovação não está configurada"), acompanhar: () => undefined };
+
+  const gerar = (projectId, como = "admin") => call(`/api/projects/${projectId}/claude/generate`, { method: "POST", como, json: { confirm: true } });
+  const continuar = (projectId, como = "admin") => call(`/api/projects/${projectId}/claude/continue`, { method: "POST", como, json: { confirm: true } });
+  const sitesDe = async (projectId) => (await listGenerations())[projectId] ?? [];
+  /** As execuções do projeto como o banco as guarda, da mais antiga para a mais nova. */
+  const execucoesDe = async (projectId) => (await registro.listClaudeRuns({ projectId })).reverse().filter((run) => run.tipo !== "analisar");
+  const pontoDe = (site) => [site.delivered, site.phase, site.round, site.rounds, site.next];
+
+  before(async () => {
+    await servico.parar().catch(() => undefined);
+    servico = novoServico({ github, areaDeAprovacao });
+    usarServicoClaude(servico);
+    Object.assign(controle, SEM_ESCOLHA, { trava: true, cenario: "pipeline", rodadas: 2, atraso: "", aprovaNa: "", empaca: "", falhaNo: "", validacao: { ok: true, texto: "BUILD OK. VALIDAÇÃO OK." } });
+    // A configuração do repositório vem do template do motor.
+    fs.mkdirSync(path.join(engineDir, "template"), { recursive: true });
+    fs.writeFileSync(path.join(engineDir, "template", "package.json"), JSON.stringify({ name: "site", scripts: { build: "vite build" }, dependencies: { react: "18.3.1" } }));
+  });
+
+  after(() => {
+    Object.assign(controle, SEM_ESCOLHA, { cenario: "ok", atraso: "", aprovaNa: "", empaca: "", falhaNo: "" });
+  });
+
+  it("duas rodadas: cada execução que termina bem põe a seguinte na fila, e o site só é entregue e enviado no fim", { timeout: 120_000 }, async () => {
+    const { projectId, pasta } = await projetoComBriefing("sequencia-inteira.com.br");
+    const antes = chamadas().length;
+    const commits = gh.commits.length;
+    const pedido = await gerar(projectId);
+    assert.equal(pedido.status, 201, JSON.stringify(pedido.body));
+    assert.deepEqual([pedido.body.item.tipo, pedido.body.item.encadeado], ["cliente", false]);
+    const d = await esperarFim(projectId);
+
+    // Cinco execuções do claude, uma depois da outra, cada uma com a frase do runbook.
+    const rodadas = chamadas().slice(antes);
+    assert.deepEqual(rodadas.map((chamada) => chamada.entrada), [
+      `gere o site do cliente ${pasta}`,
+      `critique o site ${pasta}`,
+      `refine o site ${pasta}`,
+      `critique o site ${pasta}`,
+      `refine o site ${pasta}`,
+    ]);
+    assert.deepEqual(d.runs.map((run) => [run.tipo, run.status]).reverse(), [["cliente", "sucesso"], ["criticar", "sucesso"], ["refinar", "sucesso"], ["criticar", "sucesso"], ["refinar", "sucesso"]]);
+    assert.deepEqual(d.runs.map((run) => run.etapa).reverse(), ["geracao", "critica", "refino", "critica", "refino"]);
+    assert.ok(rodadas.every((chamada) => chamada.pipeline.rodadas === "2"), "as rodadas das Configurações chegam ao agente em toda execução");
+
+    // Quem critica é uma sessão nova, que não escreveu o site; quem refina é o autor, retomado.
+    const retomada = (chamada) => (chamada.args.includes("--resume") ? chamada.args[chamada.args.indexOf("--resume") + 1] : null);
+    assert.deepEqual(rodadas.map(retomada), [null, null, "sessao-falsa-1", null, "sessao-falsa-1"]);
+    assert.deepEqual(d.runs.map((run) => run.retomou).reverse(), [false, false, true, false, true]);
+    const historico = JSON.parse(fs.readFileSync(noTrabalho("projects", pasta, ".session", "headless.json"), "utf8")).execucoes;
+    assert.deepEqual(historico.map((execucao) => [execucao.tipo, execucao.session_id]), [
+      ["cliente", "sessao-falsa-1"],
+      ["criticar", "sessao-do-critico"],
+      ["refinar", "sessao-falsa-1"],
+      ["criticar", "sessao-do-critico"],
+      ["refinar", "sessao-falsa-1"],
+    ]);
+
+    // A sequência segue em nome de quem pediu a geração, com a permissão de publicar dela.
+    const guardadas = await execucoesDe(projectId);
+    assert.deepEqual(guardadas.map((run) => [run.tipo, run.encadeado === true, run.por, run.publicar]), [
+      ["cliente", false, "Administrador", true],
+      ["criticar", true, "Administrador", true],
+      ["refinar", true, "Administrador", true],
+      ["criticar", true, "Administrador", true],
+      ["refinar", true, "Administrador", true],
+    ]);
+
+    // Entregue só no fim: o site entra na lista de sites e vai ao GitHub depois da última execução, e não antes.
+    assert.deepEqual([d.project.lastRun.type, d.project.lastRun.status, d.project.queue], ["refinar", "sucesso", null]);
+    assert.deepEqual(pontoDe(d.project.site), [true, "entregue", 2, 2, null]);
+    assert.equal(d.project.site.situation, "entregue");
+    const sites = await sitesDe(projectId);
+    assert.deepEqual([sites.length, sites[0].engine, sites[0].claudeSlug], [1, "claude", pasta]);
+    assert.equal(gh.commits.length, commits + 1, "um envio, e só um");
+    assert.equal(gh.commits.at(-1).execucoes, antes + 5, "feito depois da quinta execução");
+    for (const arquivo of ["content.json", "package.json", "src/main.tsx"]) assert.ok(gh.commits.at(-1).arquivos.includes(arquivo), arquivo);
+    assert.ok(!gh.commits.at(-1).arquivos.some((arquivo) => arquivo.startsWith(".session")), "a sessão, com a crítica, fica nesta máquina");
+    assert.deepEqual([d.project.push.state, d.project.push.automatic], ["sent", true]);
+
+    // O site, como o motor o descreve, chega à tela: o pipeline, o passo seguinte e a última crítica —
+    // pelo mesmo filtro dos outros textos do motor, sem o caminho desta máquina.
+    assert.deepEqual([d.site.pipeline, d.site.proximo, d.site.entregue], [{ rodadas: 2, rodada: 2, fase: "entregue" }, null, true]);
+    assert.deepEqual([d.site.critica.rodada, d.site.critica.veredito, d.site.critica.notas, d.site.critica.problemas.length], [2, "refinar", { identidade: 5, hierarquia: 7, movimento: 6 }, 1]);
+    assert.match(d.site.critica.problemas[0].onde, /^<pasta do motor>[\\/]projects[\\/]/);
+    assert.deepEqual(d.site.rotas, []);
+    assert.equal("filme" in d.site, false);
+    const naTela = JSON.stringify(d);
+    assert.ok(!naTela.includes(raiz) && !naTela.includes(raiz.replace(/\\/g, "\\\\")) && !naTela.includes(raiz.replace(/\\/g, "/")), "nenhum caminho da máquina");
+
+    // O resumo que a lista de projetos entrega a cada card traz o mesmo ponto do pipeline.
+    assert.deepEqual(pontoDe((await servico.resumos())[projectId].site), [true, "entregue", 2, 2, null]);
+  });
+
+  it("a crítica que aprova encerra a sequência antes; pedida por quem não publica, o site fica esperando o envio", { timeout: 120_000 }, async () => {
+    const { projectId, pasta } = await projetoComBriefing("aprovado-na-primeira.com.br");
+    controle.aprovaNa = "1";
+    const antes = chamadas().length;
+    const commits = gh.commits.length;
+    assert.equal((await gerar(projectId, "gera")).status, 201);
+    const d = await esperarFim(projectId);
+    controle.aprovaNa = "";
+
+    assert.deepEqual(chamadas().slice(antes).map((chamada) => chamada.entrada), [`gere o site do cliente ${pasta}`, `critique o site ${pasta}`]);
+    assert.deepEqual(pontoDe(d.project.site), [true, "entregue", 1, 2, null]);
+    assert.deepEqual([d.site.critica.veredito, d.site.critica.problemas], ["aprovado", []]);
+    assert.deepEqual((await execucoesDe(projectId)).map((run) => [run.tipo, run.por, run.publicar]), [["cliente", "gera", false], ["criticar", "gera", false]]);
+    // Entregue, o site entra na lista; o envio fica para quem pode publicar.
+    assert.equal((await sitesDe(projectId)).length, 1);
+    assert.deepEqual([gh.commits.length, d.project.push ?? null], [commits, null]);
+  });
+
+  it("com a trava desligada no meio a sequência para, nada é entregue, e o Continuar retoma do passo certo", { timeout: 120_000 }, async () => {
+    const { projectId, pasta } = await projetoComBriefing("trava-no-meio.com.br");
+    const antes = chamadas().length;
+    const commits = gh.commits.length;
+    controle.atraso = "700";
+    assert.equal((await gerar(projectId)).status, 201);
+    // A geração já está rodando: a trava é desligada antes de ela terminar.
+    controle.trava = false;
+    let d = await esperarFim(projectId);
+    controle.atraso = "";
+
+    assert.deepEqual([d.project.lastRun.type, d.project.lastRun.status, d.project.queue], ["cliente", "sucesso", null]);
+    assert.equal(chamadas().length, antes + 1, "a crítica não foi disparada");
+    assert.deepEqual(pontoDe(d.project.site), [false, "critica", 1, 2, "criticar"]);
+    assert.equal(d.project.site.situation, "em crítica");
+    // Sem a sequência inteira o site não é do projeto ainda, nem vai ao GitHub.
+    assert.deepEqual([(await sitesDe(projectId)).length, gh.commits.length], [0, commits]);
+    const semSite = await call(`/api/projects/${projectId}/claude/repository`, { method: "POST", json: {} });
+    assert.equal(semSite.status, 409);
+
+    // Continuar gasta: com a trava desligada, 423. Ligada, entra na fila o passo que o motor indica.
+    assert.equal((await continuar(projectId)).status, 423);
+    assert.equal((await continuar(projectId, "organiza")).status, 403);
+    controle.trava = true;
+    const retomado = await continuar(projectId);
+    assert.equal(retomado.status, 201, JSON.stringify(retomado.body));
+    assert.deepEqual([retomado.body.item.tipo, retomado.body.item.frase, retomado.body.item.encadeado], ["criticar", `critique o site ${pasta}`, false]);
+    d = await esperarFim(projectId, d.project.lastRun.id);
+    assert.deepEqual(chamadas().slice(antes + 1).map((chamada) => chamada.entrada), [`critique o site ${pasta}`, `refine o site ${pasta}`, `critique o site ${pasta}`, `refine o site ${pasta}`]);
+    assert.deepEqual(pontoDe(d.project.site), [true, "entregue", 2, 2, null]);
+    assert.deepEqual([(await sitesDe(projectId)).length, gh.commits.length], [1, commits + 1]);
+  });
+
+  it("uma falha para a sequência, e o Continuar pede de novo o passo que falhou", { timeout: 120_000 }, async () => {
+    const { projectId, pasta } = await projetoComBriefing("refino-que-falha.com.br");
+    const antes = chamadas().length;
+    const commits = gh.commits.length;
+    controle.falhaNo = "refinar";
+    assert.equal((await gerar(projectId)).status, 201);
+    let d = await esperarFim(projectId);
+    controle.falhaNo = "";
+
+    assert.deepEqual(chamadas().slice(antes).map((chamada) => chamada.entrada), [`gere o site do cliente ${pasta}`, `critique o site ${pasta}`, `refine o site ${pasta}`]);
+    assert.deepEqual([d.project.lastRun.type, d.project.lastRun.status, d.project.queue], ["refinar", "falha", null]);
+    assert.match(d.project.lastRun.message, /Não consegui terminar a etapa de refino/);
+    await new Promise((ok) => setTimeout(ok, 400));
+    assert.equal(chamadas().length, antes + 3, "nada roda depois da falha");
+    assert.deepEqual(pontoDe(d.project.site), [false, "refino", 1, 2, "refinar"]);
+    assert.deepEqual([(await sitesDe(projectId)).length, gh.commits.length], [0, commits]);
+    // A crítica que o refino ia atender continua à vista.
+    assert.deepEqual([d.site.critica.rodada, d.site.critica.veredito, d.site.proximo], [1, "refinar", "refinar"]);
+
+    const retomado = await continuar(projectId);
+    assert.deepEqual([retomado.status, retomado.body.item.tipo, retomado.body.item.frase], [201, "refinar", `refine o site ${pasta}`]);
+    d = await esperarFim(projectId, d.project.lastRun.id);
+    assert.deepEqual(chamadas().slice(antes + 3).map((chamada) => chamada.entrada), [`refine o site ${pasta}`, `critique o site ${pasta}`, `refine o site ${pasta}`]);
+    assert.deepEqual([pontoDe(d.project.site), (await sitesDe(projectId)).length, gh.commits.length], [[true, "entregue", 2, 2, null], 1, commits + 1]);
+  });
+
+  it("execução que termina bem sem fazer o site andar não é repetida sozinha", { timeout: 120_000 }, async () => {
+    const { projectId, pasta } = await projetoComBriefing("critica-que-empaca.com.br");
+    const antes = chamadas().length;
+    controle.empaca = "criticar";
+    assert.equal((await gerar(projectId)).status, 201);
+    let d = await esperarFim(projectId);
+    await new Promise((ok) => setTimeout(ok, 600));
+
+    // O motor pede de novo a mesma crítica, no mesmo ponto: a sequência para em vez de gastar em círculo.
+    assert.deepEqual(chamadas().slice(antes).map((chamada) => chamada.entrada), [`gere o site do cliente ${pasta}`, `critique o site ${pasta}`]);
+    d = await detalhe(projectId);
+    assert.deepEqual([d.project.lastRun.type, d.project.lastRun.status, d.project.queue], ["criticar", "sucesso", null]);
+    assert.deepEqual(pontoDe(d.project.site), [false, "critica", 1, 2, "criticar"]);
+    assert.equal((await sitesDe(projectId)).length, 0);
+
+    // Quem decide repetir é uma pessoa — e a repetição também é uma só.
+    assert.equal((await continuar(projectId)).status, 201);
+    d = await esperarFim(projectId, d.project.lastRun.id);
+    await new Promise((ok) => setTimeout(ok, 600));
+    assert.equal(chamadas().length, antes + 3);
+    controle.empaca = "";
+  });
+
+  it("depois de um reinício nada segue sozinho; retomar a crítica interrompida pede uma crítica, e não a continuação pelo autor", { timeout: 120_000 }, async () => {
+    // O painel cai no meio da primeira crítica de um site já gerado.
+    const { projectId, pasta } = await projetoComBriefing("interrompida-na-critica.com.br");
+    fs.mkdirSync(noTrabalho("projects", pasta, ".session"), { recursive: true });
+    fs.writeFileSync(noTrabalho("projects", pasta, ".session", "session.json"), "{}");
+    fs.writeFileSync(noTrabalho("projects", pasta, ".session", "pipeline.json"), JSON.stringify({ rodadas: 2, rodada: 1, fase: "critica", critica: null }));
+    fs.writeFileSync(noTrabalho("clientes", pasta, "projeto.json"), JSON.stringify({ projetos: [{ slug: pasta }] }));
+    await registro.patchClaudeProject(projectId, { slug: pasta });
+    await registro.saveClaudeQueue([
+      { id: "item-critica", pedido: { tipo: "criticar", slug: pasta }, frase: `critique o site ${pasta}`, criadoEm: "2026-01-01T10:00:00.000Z", estado: "rodando", slug: pasta, sessionId: "sessao-do-critico", extra: { projectId, por: "Ana", publicar: false, encadeado: true, trilha: ["criticar@critica:1"] } },
+    ]);
+    const antes = chamadas().length;
+    const commits = gh.commits.length;
+    await servico.parar().catch(() => undefined);
+    servico = novoServico({ github, areaDeAprovacao });
+    usarServicoClaude(servico);
+
+    const parada = (await call("/api/claude/status")).body.queue;
+    assert.deepEqual([parada.running, parada.waiting, parada.interrupted.map((item) => [item.tipo, item.estado, item.projectId])], [null, [], [["criticar", "interrompida", projectId]]]);
+    await new Promise((ok) => setTimeout(ok, 400));
+    assert.equal(chamadas().length, antes, "reabrir o painel não segue a sequência");
+
+    const retomada = await call("/api/claude/queue/interrupted/item-critica/resume", { method: "POST", json: { confirm: true } });
+    assert.equal(retomada.status, 200, JSON.stringify(retomada.body));
+    assert.deepEqual([retomada.body.item.tipo, retomada.body.item.frase, retomada.body.item.encadeado], ["criticar", `critique o site ${pasta}`, false]);
+    const d = await esperarFim(projectId);
+    // Retomada por alguém, a sequência segue até o fim — sem a sessão do crítico interrompido entrar na conversa do autor.
+    const rodadas = chamadas().slice(antes);
+    assert.deepEqual(rodadas.map((chamada) => chamada.entrada), [`critique o site ${pasta}`, `refine o site ${pasta}`, `critique o site ${pasta}`, `refine o site ${pasta}`]);
+    assert.ok(rodadas.every((chamada) => !chamada.args.includes("sessao-do-critico")), "ninguém retoma a sessão de uma crítica");
+    assert.deepEqual(pontoDe(d.project.site), [true, "entregue", 2, 2, null]);
+    // Quem pediu a geração não podia publicar: o site entra na lista e espera o envio.
+    assert.deepEqual([(await sitesDe(projectId)).length, gh.commits.length], [1, commits]);
+  });
+});
+
+describe("motor Claude — a escolha da rota criativa", () => {
+  let projectId;
+  let pasta;
+  const escolher = (json, como = "admin") => call(`/api/projects/${projectId}/claude/route`, { method: "POST", como, json });
+
+  before(async () => {
+    Object.assign(controle, SEM_ESCOLHA, { trava: true, cenario: "site" });
+    ({ projectId, pasta } = await projetoComBriefing("rotas-para-escolher.com.br"));
+    assert.equal((await call(`/api/projects/${projectId}/claude/generate`, { method: "POST", como: "gera", json: { confirm: true } })).status, 201);
+    await esperarFim(projectId);
+    controle.cenario = "ok";
+  });
+
+  it("as rotas propostas aparecem com a direção, e a escolha responde 403, 428, 409, 400 e 423, nesta ordem", async () => {
+    // Fora da espera pela direção não há rota a escolher.
+    const foraDeHora = await escolher({ confirm: true, rota: 2 });
+    assert.deepEqual([foraDeHora.status, foraDeHora.body.error], [409, "Não há direção criativa esperando a escolha de uma rota neste projeto."]);
+
+    doMotor.projetos[pasta] = { aguardandoAprovacao: true, entregue: false };
+    const d = await detalhe(projectId);
+    assert.deepEqual(d.site.rotas.map((rota) => [rota.n, rota.nome, rota.escolhida]), [[1, "Oficina de bairro", true], [2, "Manual técnico", false], [3, "Vitrine noturna", false]]);
+    assert.deepEqual([d.site.aguardandoAprovacao, d.site.proximo, d.site.pipeline.fase], [true, null, "aprovacao"]);
+
+    const antes = { chamadas: chamadas().length, consultas: doMotor.consultas.filter((nome) => nome === "rota").length };
+    assert.equal((await escolher({ confirm: true, rota: 2 }, "organiza")).status, 403);
+    assert.equal((await escolher({ rota: 2 })).status, 428);
+    for (const rota of [9, 0, "2", 1.5, null, undefined]) {
+      const invalida = await escolher({ confirm: true, rota });
+      assert.deepEqual([invalida.status, invalida.body.error], [400, "Escolha uma das rotas propostas para este site."], JSON.stringify(rota));
+    }
+    controle.trava = false;
+    assert.equal((await escolher({ confirm: true, rota: 2 })).status, 423);
+    controle.trava = true;
+    // Recusada, a escolha não chegou ao motor nem pôs nada na fila.
+    assert.equal(doMotor.consultas.filter((nome) => nome === "rota").length, antes.consultas);
+    assert.deepEqual([chamadas().length, (await detalhe(projectId)).site.aguardandoAprovacao], [antes.chamadas, true]);
+  });
+
+  it("escolhida a rota, o motor a registra e a continuação entra na fila para refazer a direção", { timeout: 90_000 }, async () => {
+    const antes = chamadas().length;
+    const anterior = (await detalhe(projectId)).project.lastRun.id;
+    const escolhida = await escolher({ confirm: true, rota: 2 });
+    assert.equal(escolhida.status, 201, JSON.stringify(escolhida.body));
+    assert.deepEqual([escolhida.body.item.tipo, escolhida.body.item.frase], ["continuar", `continue o site ${pasta}`]);
+    assert.deepEqual(
+      [escolhida.body.site.aguardandoAprovacao, escolhida.body.site.proximo, escolhida.body.site.rotas.map((rota) => rota.escolhida)],
+      [false, "continuar", [false, true, false]],
+    );
+    // Um pedido por projeto de cada vez: a segunda escolha espera a primeira.
+    assert.equal((await escolher({ confirm: true, rota: 3 })).status, 409);
+
+    const d = await esperarFim(projectId, anterior);
+    assert.deepEqual([d.project.lastRun.type, d.project.lastRun.status], ["continuar", "sucesso"]);
+    assert.deepEqual(chamadas().slice(antes).map((chamada) => chamada.entrada), [`continue o site ${pasta}`]);
+    assert.equal(chamadas().at(-1).args[chamadas().at(-1).args.indexOf("--resume") + 1], "sessao-falsa-1", "a direção é refeita por quem a escreveu");
+    assert.equal(d.project.site.awaitingApproval, false);
+    doMotor.projetos[pasta] = {};
   });
 });

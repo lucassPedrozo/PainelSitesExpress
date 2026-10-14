@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { writeFileAtomic } from "../../atomic-write.js";
 import { HttpError } from "../../http.js";
@@ -16,6 +16,7 @@ import { HttpError } from "../../http.js";
  *       node_modules          junção para as dependências do motor
  *     execucoes/<id>.jsonl    o stream bruto de cada execução
  *     runbook.md              o runbook, gerado das fontes a cada execução
+ *     atual/<id>.txt          o projeto em que as ferramentas de cada execução agem
  *
  * O agente roda de `trabalho/`, e não da pasta do pacote: os caminhos que o
  * runbook cita (`projects/<slug>/`, `clientes/<pasta>/`) continuam valendo, e
@@ -37,13 +38,15 @@ export function caminhosDoMotor({ dataDir, dirMotor }) {
     runbook: path.join(dados, "runbook.md"),
     configuracoes: path.join(dados, "configuracoes-do-agente.json"),
     trava: path.join(dados, "rodando.lock"),
+    /** O projeto em que as ferramentas de cada execução agem: um arquivo por execução. */
+    atual: path.join(dados, "atual"),
   };
 }
 
 /** @typedef {ReturnType<typeof caminhosDoMotor>} Caminhos */
 
-/** Os cinco comandos do runbook: o protocolo do agente com o motor. */
-export const COMANDOS_DO_RUNBOOK = ["cliente", "new-project", "step", "tool", "report"];
+/** Os quatro comandos do runbook: o protocolo do agente com o motor. */
+export const COMANDOS_DO_RUNBOOK = ["cliente", "new-project", "step", "tool"];
 
 const barras = (caminho) => caminho.replace(/\\/g, "/");
 
@@ -138,21 +141,6 @@ export function projetosDoCliente(trabalho, pasta) {
     : [];
 }
 
-/**
- * As pastas de `projects/`, para achar o projeto que nasce durante uma geração por briefing avulso.
- * @param {string} trabalho
- * @returns {string[]}
- */
-export function pastasDeProjeto(trabalho) {
-  try {
-    return readdirSync(path.join(trabalho, "projects"), { withFileTypes: true })
-      .filter((item) => item.isDirectory())
-      .map((item) => item.name);
-  } catch {
-    return [];
-  }
-}
-
 /** O projeto do motor existe de fato quando a sessão dele foi criada. */
 export const temSessao = (trabalho, slug) =>
   existsSync(path.join(trabalho, "projects", slug, ".session", "session.json"));
@@ -161,9 +149,10 @@ const arquivoDoHistorico = (trabalho, slug) =>
   path.join(trabalho, "projects", slug, ".session", "headless.json");
 
 /**
- * As execuções do `claude -p` de um projeto, no arquivo que o relatório do
- * motor lê (`.session/headless.json`). É dele que sai a ESTIMATIVA DO CLAUDE
- * CODE — o terceiro rótulo de custo, nunca somado ao REAL nem ao SIMULADO.
+ * As execuções do `claude -p` de um projeto, no arquivo da sessão dele que o
+ * motor conhece (`.session/headless.json`): a sessão do Claude Code de cada
+ * uma, como terminou e a estimativa de custo que o Claude Code informou. É
+ * dele que sai a sessão que a execução seguinte retoma.
  *
  * @param {string} trabalho
  * @param {string} slug
@@ -211,8 +200,11 @@ export async function gravarNoHistorico(trabalho, slug, execucao) {
 }
 
 /**
- * A sessão do Claude Code a retomar em um ajuste ou continuação: a da última
- * execução do projeto que abriu ou usou uma.
+ * A sessão do Claude Code a retomar em um ajuste, uma continuação ou um
+ * refino: a da última execução do projeto que abriu ou usou uma, fora as de
+ * crítica. Quem critica é uma sessão que não escreveu o site; a dela fica no
+ * histórico e nunca passa a ser a sessão do site.
  */
 export const ultimaSessao = (trabalho, slug) =>
-  [...lerHistoricoDoProjeto(trabalho, slug)].reverse().find((item) => item.session_id)?.session_id ?? null;
+  [...lerHistoricoDoProjeto(trabalho, slug)].reverse().find((item) => item.session_id && item.tipo !== "criticar")
+    ?.session_id ?? null;

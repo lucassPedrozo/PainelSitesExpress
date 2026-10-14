@@ -8,9 +8,10 @@ import { flush, read } from "./db.js";
  * daí em diante segue o caminho de sempre (GitHub, área de aprovação, entrega,
  * domínio). Aqui fica o que é só do motor:
  *
- * - `projects`: por projeto do painel, a pasta de trabalho dele e um resumo do
- *   que há nela (briefing, site, última execução) — é o que o card mostra, sem
- *   o painel ter de perguntar ao motor a cada atualização da lista;
+ * - `projects`: por projeto do painel, a pasta de trabalho dele, o modelo e o
+ *   esforço que ele escolheu para as execuções e um resumo do que há na pasta
+ *   (briefing, site, última execução) — é o que o card mostra, sem o painel
+ *   ter de perguntar ao motor a cada atualização da lista;
  * - `queue`: os pedidos que esperam ou estavam rodando, para o painel reabrir
  *   sabendo o que havia;
  * - `runs`: cada execução do `claude -p`, com sessão, duração, situação e o
@@ -81,9 +82,14 @@ export async function ensureClaudeProject(projectId, { name, by = null }) {
     material: null,
     /** `{ state: "ok" | "refused" | "missing", errors, warnings, checkedAt }` */
     briefing: null,
+    /**
+     * O modelo e o esforço das execuções deste projeto. `null` em cada um é
+     * "o das Configurações" — e, sem nada lá, o que o motor espera.
+     */
+    options: { modelo: null, esforco: null },
     /** O projeto do motor — o site. Nasce durante a geração. */
     slug: null,
-    /** `{ awaitingApproval, openStage, delivered, checkedAt }` */
+    /** `{ awaitingApproval, openStage, delivered, situation, phase, round, rounds, next, checkedAt }` */
     site: null,
     /** `{ id, type, status, message, at, durationMs }` */
     lastRun: null,

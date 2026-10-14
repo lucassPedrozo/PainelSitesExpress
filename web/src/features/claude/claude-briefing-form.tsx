@@ -6,6 +6,7 @@ import type {
   BuildFile,
   ClaudeBriefingPlan,
   ClaudeMaterial,
+  ClaudeRunChoices,
   Project,
   StockSearchResult,
 } from "@/lib/api";
@@ -27,9 +28,11 @@ import { StockImagesSection } from "@/features/generate/stock-images-section";
 import { nextStockSelection, toggleStockPick, type StockPick } from "@/features/generate/stock-images";
 import { useStockSearch } from "@/features/generate/use-stock-search";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { RunChoicesFields } from "./claude-option-fields";
+import { choicesLine, choicesSentence } from "./claude-options";
 import { ConfirmClaudeDialog, HintWhenDisabled } from "./claude-shared";
 import { errorMessage, semPermissaoDeGerar } from "./claude-text";
-import { useClaudeRefresh } from "./use-claude";
+import { useClaudeOptions, useClaudeRefresh } from "./use-claude";
 
 /**
  * O primeiro passo da geração pelo Claude: o material do projeto que ele vai
@@ -40,6 +43,9 @@ import { useClaudeRefresh } from "./use-claude";
  * estruturado — que alguém revisa antes de o site ser gerado. "Conferir
  * pedido" é um ensaio: mostra o que seria copiado e o comando que rodaria, sem
  * gastar nada.
+ *
+ * O modelo e o esforço escolhidos aqui são os do projeto: valem para o
+ * briefing e para as execuções seguintes, e voltam a aparecer na revisão.
  */
 export function ClaudeBriefingForm({
   project,
@@ -100,9 +106,19 @@ function BriefingRequest({
   const [stock, setStock] = useState<Map<number, StockPick>>(() => new Map());
   const [tab, setTab] = useState<"files" | "stock">("files");
   const [query, setQuery] = useState("");
-  const [conferido, setConferido] = useState<{ plan: ClaudeBriefingPlan; command: string } | null>(null);
+  const opcoes = useClaudeOptions(project.id);
+  /** `null`: ninguém mexeu — vale o modelo e o esforço que o projeto tem gravados. */
+  const [escolhas, setEscolhas] = useState<ClaudeRunChoices | null>(null);
+  const [conferido, setConferido] = useState<{
+    plan: ClaudeBriefingPlan;
+    command: string;
+    escolhas: ClaudeRunChoices | null;
+  } | null>(null);
   const [busy, setBusy] = useState<"preview" | "request" | null>(null);
   const [confirming, setConfirming] = useState(false);
+
+  /** O modelo e o esforço que valem agora; `null` enquanto as opções do projeto não chegam. */
+  const atuais = escolhas ?? opcoes.data?.options ?? null;
 
   /** Mexer no pedido invalida a conferência anterior: ela era de outro conteúdo. */
   const changed = () => setConferido(null);
@@ -138,11 +154,14 @@ function BriefingRequest({
   const vazio = marcados.length === 0 && !texto.trim() && stockImages.length === 0 && !observacoes.trim();
   const podeConferir = !busy && excedido.length === 0 && !vazio;
 
+  // O modelo e o esforço só vão quando alguém mexeu neles: sem a chave, o
+  // servidor usa o que o projeto tem gravado.
   const corpo = () => ({
     fileIds: [...selected],
     texto,
     observacoes,
     stockImages,
+    ...escolhas,
   });
 
   const toggle = (file: BuildFile) => {
@@ -160,7 +179,7 @@ function BriefingRequest({
     setBusy("preview");
     try {
       const data = await previewClaudeBriefing(project.id, corpo());
-      setConferido({ plan: data.plan, command: data.command });
+      setConferido({ plan: data.plan, command: data.command, escolhas: atuais });
       toast.success("Pedido conferido", { description: "Nada foi copiado nem disparado." });
     } catch (err) {
       setConferido(null);
@@ -258,6 +277,24 @@ function BriefingRequest({
               não acessa a rede.
             </p>
           </div>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Modelo e esforço deste projeto</legend>
+            <RunChoicesFields
+              idPrefix="claude-pedido"
+              query={opcoes}
+              value={atuais}
+              disabled={!can("gerar")}
+              onChange={(next) => {
+                setEscolhas(next);
+                changed();
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Valem para o briefing e para as execuções seguintes do projeto; dá para trocar na revisão, antes
+              de gerar o site. A escolha é gravada quando o pedido entra na fila.
+            </p>
+          </fieldset>
         </section>
 
         <div className="flex min-h-0 min-w-0 flex-col">
@@ -352,7 +389,13 @@ function BriefingRequest({
       </div>
 
       <div className="shrink-0 space-y-3 border-t px-6 py-3">
-        {conferido && <PlanBox plan={conferido.plan} command={conferido.command} />}
+        {conferido && (
+          <PlanBox
+            plan={conferido.plan}
+            command={conferido.command}
+            choices={conferido.escolhas && opcoes.data ? choicesLine(conferido.escolhas, opcoes.data.defaults) : null}
+          />
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className={cn("text-xs tabular-nums text-muted-foreground", excedido.length > 0 && "text-destructive")}>
@@ -393,14 +436,28 @@ function BriefingRequest({
       >
         O painel copia {pluralize(marcados.length, "arquivo")}
         {stockImages.length > 0 && ` e ${pluralize(stockImages.length, "foto")} de banco`} para a pasta de
-        trabalho e põe o pedido na fila. O site só é gerado depois que alguém revisar o briefing.
+        trabalho e põe o pedido na fila
+        {atuais && opcoes.data && `, com ${choicesSentence(atuais, opcoes.data.defaults)}`}. O site só é gerado
+        depois que alguém revisar o briefing.
       </ConfirmClaudeDialog>
     </>
   );
 }
 
-/** O resultado do ensaio: o que seria copiado, a frase do pedido e o comando exato. */
-function PlanBox({ plan, command }: { plan: ClaudeBriefingPlan; command: string }) {
+/**
+ * O resultado do ensaio: o que seria copiado, a frase do pedido, o modelo e o
+ * esforço conferidos e o comando exato.
+ */
+function PlanBox({
+  plan,
+  command,
+  choices,
+}: {
+  plan: ClaudeBriefingPlan;
+  command: string;
+  /** "Modelo: … · Esforço: …"; `null` sem as opções do projeto em mãos. */
+  choices: string | null;
+}) {
   return (
     <div className="space-y-1.5 rounded-lg border border-dashed bg-muted/40 p-3 text-xs">
       <p className="font-medium">Conferido — nada foi copiado nem disparado</p>
@@ -418,6 +475,7 @@ function PlanBox({ plan, command }: { plan: ClaudeBriefingPlan; command: string 
       <p className="text-muted-foreground">
         Pedido que será digitado ao Claude: <span className="text-foreground">“{plan.phrase.split("\n")[0]}”</span>
       </p>
+      {choices && <p className="text-muted-foreground">{choices}</p>}
       <details className="text-muted-foreground">
         <summary className="cursor-pointer select-none hover:text-foreground">Comando que será executado</summary>
         <pre className="mt-1.5 max-h-40 overflow-auto rounded-md border bg-background p-2 font-mono text-2xs leading-relaxed break-all whitespace-pre-wrap">

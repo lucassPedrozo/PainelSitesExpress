@@ -162,6 +162,12 @@ describe("rotas do motor Claude com o pacote do motor de verdade", { skip: pular
     // A revisão vem inteira do motor: o briefing, a conferência e o que a tela deixa mudar.
     assert.deepEqual([d.review.existe, d.review.erros, d.review.briefing.empresa.nome], [true, [], "Brasa Viva"]);
     assert.ok(Array.isArray(d.review.avisos) && Array.isArray(d.review.skillsDisponiveis) && typeof d.review.maxSkills === "number");
+    // As opções do site, com as do pipeline (`null` é "o padrão") e os padrões que valem no lugar delas.
+    assert.deepEqual(Object.keys(d.review.opcoes).sort(), ["banco_de_imagens", "direcao_de_arte", "escolher_rota", "movimento", "multiplas_paginas", "observacoes", "referencias", "rodadas", "skills"]);
+    assert.deepEqual(
+      [typeof d.review.padroes.rodadas, typeof d.review.padroes.direcao_de_arte, typeof d.review.padroes.movimento, typeof d.review.padroes.escolher_rota],
+      ["number", "string", "string", "boolean"],
+    );
     assert.equal(d.review.arquivo, `clientes/${pasta}/briefing/briefing.json`, "caminho relativo à pasta de trabalho, nunca o da máquina");
 
     const chamada = chamadas().at(-1);
@@ -184,19 +190,40 @@ describe("rotas do motor Claude com o pacote do motor de verdade", { skip: pular
     const corrigido = await call(`/api/projects/${projectId}/claude/briefing`, { method: "PUT", json: { briefing: bom } });
     assert.deepEqual([corrigido.status, corrigido.body.review.erros], [200, []]);
 
-    const opcoes = await call(`/api/projects/${projectId}/claude/options`, {
-      method: "PUT",
-      json: { opcoes: { multiplas_paginas: true, banco_de_imagens: false, skills: [], observacoes: "destaque o delivery" } },
-    });
-    assert.deepEqual(opcoes.body.review.opcoes, { multiplas_paginas: true, banco_de_imagens: false, skills: [], observacoes: "destaque o delivery" });
-    const skillRuim = await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { opcoes: { skills: ["skill-que-nao-existe"] } } });
+    // As opções do site vão para o briefing pelo motor, que as devolve como gravou; as da execução ficam no painel.
+    const doSite = {
+      multiplas_paginas: true,
+      banco_de_imagens: false,
+      skills: [],
+      observacoes: "destaque o delivery",
+      rodadas: 3,
+      direcao_de_arte: "ousada",
+      movimento: null,
+      escolher_rota: null,
+      // O motor guarda cada link como um endereço completo (com a barra final).
+      referencias: { links: ["https://www.brasa-exemplo.com.br/"], notas: "o topo deles, com a foto da chapa" },
+    };
+    const opcoes = await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { modelo: "claude-fable-5-1", esforco: "max", site: doSite } });
+    assert.equal(opcoes.status, 200, JSON.stringify(opcoes.body));
+    assert.deepEqual(opcoes.body.site, doSite);
+    assert.deepEqual(opcoes.body.options, { modelo: "claude-fable-5-1", esforco: "max" });
+    // Os padrões são os do motor: nada está escolhido nas Configurações deste teste.
+    assert.deepEqual([opcoes.body.defaults.modelo, opcoes.body.defaults.esforco], ["claude-opus-5-5", "high"]);
+    assert.deepEqual(
+      [typeof opcoes.body.defaults.rodadas, typeof opcoes.body.defaults.direcao_de_arte, typeof opcoes.body.defaults.movimento, typeof opcoes.body.defaults.escolher_rota],
+      ["number", "string", "string", "boolean"],
+    );
+    assert.deepEqual((await call(`/api/projects/${projectId}/claude/options`)).body.site, doSite);
+    const skillRuim = await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { site: { skills: ["skill-que-nao-existe"] } } });
     assert.deepEqual([skillRuim.status, /Skill não encontrada/.test(skillRuim.body.error)], [409, true]);
+    // De volta ao que o motor espera, para o comando do teste seguinte.
+    assert.equal((await call(`/api/projects/${projectId}/claude/options`, { method: "PUT", json: { modelo: null, esforco: null } })).status, 200);
   });
 
   it("gerar: o projeto nasce na pasta de dados; etapa aberta é falha, com continuar e abortar", { timeout: 300_000 }, async () => {
     const ensaio = await call(`/api/projects/${projectId}/claude/generate/preview`, { method: "POST", json: {} });
     assert.deepEqual([ensaio.status, ensaio.body.plan.phrase, ensaio.body.plan.errors], [200, `gere o site do cliente ${pasta}`, []]);
-    assert.match(ensaio.body.command, /--effort xhigh/);
+    assert.match(ensaio.body.command, /--model claude-opus-5-5 --effort high /);
 
     controle.cenario = "cliente";
     const anterior = (await detalhe()).project.lastRun.id;
@@ -207,6 +234,15 @@ describe("rotas do motor Claude com o pacote do motor de verdade", { skip: pular
     assert.deepEqual([d.project.lastRun.type, d.project.lastRun.status, d.project.slug, d.project.site.openStage], ["cliente", "falha", pasta, "direcao"]);
     assert.match(d.project.lastRun.message, /etapa "direcao" aberta/);
     assert.deepEqual([d.site.slug, d.site.etapaAberta, d.site.etapas.map((etapa) => [etapa.etapa, etapa.modo, etapa.status])], [pasta, "direcao", [["direcao", "headless", "aberta"]]]);
+    // O ponto do pipeline e o passo seguinte vêm do motor: com a etapa aberta, o que há a fazer é continuar.
+    assert.deepEqual([d.site.entregue, d.site.proximo, d.site.pipeline.fase], [false, "continuar", "direcao"]);
+    assert.deepEqual([typeof d.site.pipeline.rodadas, typeof d.site.pipeline.rodada], ["number", "number"]);
+    // O resumo do card repete o que o motor disse, sem interpretar.
+    assert.deepEqual(
+      [d.project.site.delivered, d.project.site.next, d.project.site.phase, d.project.site.round, d.project.site.rounds],
+      [false, "continuar", "direcao", d.site.pipeline.rodada, d.site.pipeline.rodadas],
+    );
+    assert.deepEqual([d.site.critica, Array.isArray(d.site.rotas), "filme" in d.site, Array.isArray(d.site.telas)], [null, true, false, true]);
     assert.ok(fs.existsSync(path.join(servico.caminhos.trabalho, "projects", pasta, "src", "App.tsx")), "o site está na pasta de dados do painel");
     assert.equal(fs.existsSync(path.join(engineDir, "projects", pasta)), false, "e não na pasta do pacote");
     // Falhou: não vira site do projeto.
@@ -223,10 +259,9 @@ describe("rotas do motor Claude com o pacote do motor de verdade", { skip: pular
     d = await detalhe();
     assert.equal(d.project.site.openStage, null);
 
-    // As métricas do motor, por rótulo: a estimativa do Claude Code nunca entra na soma do custo.
-    const metricas = await call(`/api/projects/${projectId}/claude/metrics`);
-    assert.equal(metricas.status, 200, JSON.stringify(metricas.body));
-    assert.equal(metricas.body.slug, pasta);
-    assert.equal((await registro.listClaudeRuns({ projectId })).length, 2);
+    // As métricas por rótulo saíram do painel; de cada execução fica a estimativa do Claude Code.
+    assert.equal((await call(`/api/projects/${projectId}/claude/metrics`)).status, 404);
+    const execucoes = await registro.listClaudeRuns({ projectId });
+    assert.deepEqual(execucoes.map((run) => [run.tipo, run.modelo, run.esforco, run.total_cost_usd]), [["cliente", "claude-opus-5-5", "high", 0.4242], ["analisar", "claude-opus-5-5", "high", 0.4242]]);
   });
 });

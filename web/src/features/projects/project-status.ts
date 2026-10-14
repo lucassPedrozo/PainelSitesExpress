@@ -1,4 +1,4 @@
-import type { DevArea, Generation, Project } from "@/lib/api";
+import type { ClaudeSummary, DevArea, Generation, Project } from "@/lib/api";
 import { pluralize } from "@/lib/format";
 
 /**
@@ -16,6 +16,7 @@ export type ProjectStage =
   | "claude-interrupted"
   | "claude-failed"
   | "claude-approval"
+  | "claude-paused"
   | "live"
   | "dev-failed"
   | "delivered-broken"
@@ -48,6 +49,7 @@ export const stageOrder: ProjectStage[] = [
   "claude-interrupted",
   "claude-failed",
   "claude-approval",
+  "claude-paused",
   "live",
   "dev-failed",
   "delivered-broken",
@@ -77,6 +79,7 @@ export const stageLabels: Record<ProjectStage, string> = {
   "claude-interrupted": "Geração interrompida",
   "claude-failed": "Geração falhou",
   "claude-approval": "Direção para aprovar",
+  "claude-paused": "Site para continuar",
   live: "No ar",
   "dev-failed": "Prévia falhou",
   "delivered-broken": "Link entregue caiu",
@@ -125,11 +128,32 @@ export const claudeStageLabels: Record<string, string> = {
   direcao: "direção criativa",
   geracao: "geração",
   revisao: "revisão",
+  critica: "crítica",
+  refino: "refino",
   ajuste: "ajuste",
 };
 
 export const claudeStageLabel = (etapa: string | null | undefined) =>
   etapa ? (claudeStageLabels[etapa] ?? etapa) : null;
+
+/** "rodada 1 de 2" — `null` quando não se sabe em que rodada o site está. */
+export const claudeRoundLabel = (rodada: number | null | undefined, rodadas: number | null | undefined) =>
+  rodada && rodadas ? `rodada ${rodada} de ${rodadas}` : null;
+
+/**
+ * A rodada de um pedido de crítica ou de refino, pelo resumo do card. O resumo
+ * é refeito ao fim de cada execução, então diz a fase em que o site entrou —
+ * a do pedido que está na fila. Se ele fala de outra fase, a rodada não é dita.
+ */
+export const claudeRoundOf = (
+  tipo: "criticar" | "refinar",
+  site: ClaudeSummary["site"] | undefined,
+): string | null =>
+  site?.phase === (tipo === "criticar" ? "critica" : "refino") ? claudeRoundLabel(site.round, site.rounds) : null;
+
+/** "Em crítica · rodada 1 de 2", "Em refino": o selo e o andamento das rodadas. */
+export const claudeRoundTitle = (tipo: "criticar" | "refinar", site: ClaudeSummary["site"] | undefined) =>
+  [tipo === "criticar" ? "Em crítica" : "Em refino", claudeRoundOf(tipo, site)].filter(Boolean).join(" · ");
 
 /** A geração mais recente é a que vale; as antigas ficam no modal. */
 export const latestGeneration = (project: Project): Generation | undefined =>
@@ -203,7 +227,7 @@ export function projectStatus(project: Project): ProjectStatus {
       return {
         stage: "claude-approval",
         label: stageLabels["claude-approval"],
-        detail: "A direção criativa está pronta. O site só é gerado depois que alguém a aprovar.",
+        detail: "A direção criativa está pronta. O site só é gerado depois que alguém a aprovar ou escolher outra rota.",
         attention: true,
       };
     }
@@ -245,6 +269,24 @@ export function projectStatus(project: Project): ProjectStatus {
         detail: semBriefing
           ? "O Claude não entregou um briefing aceito. Veja o erro e peça de novo."
           : "A geração do site falhou. Veja o erro antes de pedir de novo.",
+        attention: true,
+      };
+    }
+    // O site ainda não foi entregue e não há nada na fila: a sequência parou
+    // no meio — a trava foi desligada, ou uma execução não fez o site andar.
+    // Sem isto o card voltaria a "Briefing para revisar", como se nada
+    // tivesse sido gerado.
+    if (claude.site?.next) {
+      const rodada = claudeRoundLabel(claude.site.round, claude.site.rounds);
+      return {
+        stage: "claude-paused",
+        label: stageLabels["claude-paused"],
+        detail:
+          claude.site.next === "criticar"
+            ? `A criação do site parou antes da crítica${rodada ? ` da ${rodada}` : ""}: ele está escrito e revisado. Continue para ele ser entregue.`
+            : claude.site.next === "refinar"
+              ? `A criação do site parou antes do refino${rodada ? ` da ${rodada}` : ""}: a crítica já apontou o que corrigir. Continue para ele ser entregue.`
+              : "A criação do site parou antes de terminar. Continue de onde parou.",
         attention: true,
       };
     }
@@ -332,30 +374,53 @@ export function projectStatus(project: Project): ProjectStatus {
 
   // Um pedido na fila do Claude, ou rodando: o painel acompanha sozinho.
   if (fila?.estado === "rodando") {
-    return fila.tipo === "analisar"
-      ? {
-          stage: "claude-briefing",
-          label: stageLabels["claude-briefing"],
-          detail: "O Claude está lendo o material e escrevendo o briefing. O painel acompanha e avisa aqui.",
-          attention: false,
-        }
-      : {
-          stage: "claude-building",
-          label: stageLabels["claude-building"],
-          detail:
-            fila.tipo === "ajuste"
-              ? "O Claude está aplicando o ajuste no site. O painel acompanha e avisa aqui."
-              : "O Claude está construindo o site. O painel acompanha e avisa aqui.",
-          attention: false,
-        };
+    if (fila.tipo === "analisar") {
+      return {
+        stage: "claude-briefing",
+        label: stageLabels["claude-briefing"],
+        detail: "O Claude está lendo o material e escrevendo o briefing. O painel acompanha e avisa aqui.",
+        attention: false,
+      };
+    }
+    // Nas rodadas o site ainda está sendo criado: o selo diz em qual delas, e
+    // o card não oferece o envio ao GitHub nem o link do cliente.
+    if (fila.tipo === "criticar" || fila.tipo === "refinar") {
+      return {
+        stage: "claude-building",
+        label: claudeRoundTitle(fila.tipo, claude?.site),
+        detail:
+          fila.tipo === "criticar"
+            ? "Uma conversa do Claude que não escreveu o site avalia o resultado e aponta o que refinar. O painel acompanha e avisa aqui."
+            : "O Claude está corrigindo no site o que a crítica apontou. O painel acompanha e avisa aqui.",
+        attention: false,
+      };
+    }
+    return {
+      stage: "claude-building",
+      label: stageLabels["claude-building"],
+      detail:
+        fila.tipo === "ajuste"
+          ? "O Claude está aplicando o ajuste no site. O painel acompanha e avisa aqui."
+          : "O Claude está construindo o site. O painel acompanha e avisa aqui.",
+      attention: false,
+    };
   }
   if (fila?.estado === "esperando") {
+    const vez = fila.posicao ? `: é o ${fila.posicao}º a rodar` : "";
+    if (fila.tipo === "criticar" || fila.tipo === "refinar") {
+      const rodada = claudeRoundOf(fila.tipo, claude?.site);
+      return {
+        stage: "claude-queued",
+        label: stageLabels["claude-queued"],
+        detail: `${fila.tipo === "criticar" ? "A crítica" : "O refino"}${rodada ? ` da ${rodada}` : ""} do site espera a vez na fila do Claude${vez}. Uma execução por vez.`,
+        attention: false,
+      };
+    }
     return {
       stage: "claude-queued",
       label: stageLabels["claude-queued"],
-      detail: fila.posicao
-        ? `Pedido na fila do Claude: é o ${fila.posicao}º a rodar. Uma execução por vez.`
-        : "Pedido na fila do Claude. Uma execução por vez.",
+      // O ajuste roda ao lado da criação de outro site; o que cria um site espera a criação anterior.
+      detail: `Pedido na fila do Claude${vez}.${fila.tipo === "ajuste" ? "" : " Uma execução por vez."}`,
       attention: false,
     };
   }
@@ -520,6 +585,7 @@ export const stageClass: Record<ProjectStage, string> = {
   "claude-interrupted": "border-warning/30 bg-warning/10 text-warning",
   "claude-failed": "border-destructive/30 bg-destructive/10 text-destructive",
   "claude-approval": "border-warning/30 bg-warning/10 text-warning",
+  "claude-paused": "border-warning/30 bg-warning/10 text-warning",
   "claude-building": "animate-pulse border-info/30 bg-info/10 text-info",
   "claude-briefing": "animate-pulse border-info/30 bg-info/10 text-info",
   "claude-queued": "border-info/30 bg-info/10 text-info",

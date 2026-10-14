@@ -56,7 +56,7 @@ describe("o claude roda com a assinatura, o pedido vai pelo stdin e tudo fica re
     assert.ok(c1.variaveis.some((v) => v.toUpperCase() === "PATH"));
     assert.deepEqual(
       [c1.marca, c1.modelo, c1.painel, c1.memoria],
-      ["1", "claude-sonnet-5-5", "1", "1"],
+      ["1", "claude-opus-5-5", "1", "1"],
       "marca do executor, modelo lançado, origem no painel e memória automática desligada",
     );
     assert.equal(c1.trabalho.toLowerCase(), b.caminhos.trabalho.toLowerCase());
@@ -72,7 +72,8 @@ describe("o claude roda com a assinatura, o pedido vai pelo stdin e tudo fica re
         depois(c1.args, "--setting-sources"),
         depois(c1.args, "--tools"),
       ],
-      ["stream-json", "claude-sonnet-5-5", "medium", "dontAsk", "none", "user", "Bash,Read,Edit,Write,Glob,Grep"],
+      // Sem nada escolhido no projeto nem nas Configurações: o modelo e o esforço que o motor espera.
+      ["stream-json", "claude-opus-5-5", "high", "dontAsk", "none", "user", "Bash,Read,Edit,Write,Glob,Grep"],
     );
     for (const flag of ["-p", "--verbose", "--strict-mcp-config", "--disable-slash-commands"]) {
       assert.ok(c1.args.includes(flag), `${flag} sempre presente`);
@@ -88,7 +89,6 @@ describe("o claude roda com a assinatura, o pedido vai pelo stdin e tudo fica re
       "Bash(npm run -s new-project *)",
       "Bash(npm run -s step *)",
       "Bash(npm run -s tool *)",
-      "Bash(npm run -s report *)",
     ]);
     assert.ok(!c1.args.some((arg) => /WebFetch/.test(arg)), "sem site citado, nenhum acesso à rede");
     const negadas = entre(c1.args, "--disallowedTools", "--strict-mcp-config");
@@ -111,6 +111,9 @@ describe("o claude roda com a assinatura, o pedido vai pelo stdin e tudo fica re
       [ultimo.id, ultimo.pedido, ultimo.session_id, ultimo.status, ultimo.total_cost_usd, ultimo.codigo_saida, ultimo.turnos, ultimo.retomou, ultimo.pid, ultimo.slug, ultimo.etapa],
       [r.id, "ajuste o site h: troque a descrição", "sessao-falsa-1", "sucesso", 0.4242, 0, 3, undefined, undefined, "h", "ajuste"],
     );
+    assert.deepEqual([ultimo.modelo, ultimo.esforco], ["claude-opus-5-5", "high"], "o modelo e o esforço com que a execução rodou");
+    // O estado do site no motor acompanha o resultado: é dele que o painel tira se há um passo seguinte.
+    assert.deepEqual([r.projeto.entregue, r.projeto.proximo], [true, null]);
     assert.ok(ultimo.duracao_ms >= 0 && /^\d{4}-\d\d-\d\dT/.test(ultimo.data));
 
     // O stream bruto fica em disco, fora da pasta que o agente enxerga.
@@ -173,6 +176,8 @@ describe("o claude roda com a assinatura, o pedido vai pelo stdin e tudo fica re
   it("continuar também retoma a sessão do projeto; sem sessão anterior, abre uma nova e avisa", async () => {
     b.estado.cenario = "ok";
     b.estado.projetos.h = { etapaAberta: null, entregue: false };
+    // Um esforço por chave do contrato, para ver qual delas o pedido usa.
+    b.estado.contrato.esforco = { criacao: "xhigh", ajuste: "medium", briefing: "low" };
     const antes = b.chamadas().length;
     await rodar({ tipo: "continuar", slug: "h" });
     const chamada = b.chamadas()[antes];
@@ -186,6 +191,110 @@ describe("o claude roda com a assinatura, o pedido vai pelo stdin e tudo fica re
     assert.ok(!b.chamadas().at(-1).args.includes("--resume"));
     assert.match(avisos.join("\n"), /"novo" não tem sessão anterior do Claude: abrindo uma sessão nova/);
     b.estado.projetos.h = {};
+    b.estado.contrato.esforco = { criacao: "high", ajuste: "high", briefing: "high" };
+  });
+});
+
+describe("crítica e refino: uma execução para cada, em sessões diferentes", () => {
+  it("a crítica abre sempre uma sessão nova, que nunca vira a do site; o refino retoma a de quem escreveu", async () => {
+    b.estado.cenario = "ok";
+    b.estado.contrato.esforco = { criacao: "xhigh", ajuste: "medium", briefing: "low" };
+    // O site foi escrito numa sessão: é ela que os refinos e os ajustes retomam.
+    b.projeto("s", { entregue: false, proximo: "criticar" });
+    await rodar({ tipo: "ajuste", slug: "s", pedido: "primeira versão" });
+    const antes = b.chamadas().length;
+
+    const critica = await rodar({ tipo: "criticar", slug: "s" });
+    const refino = await rodar({ tipo: "refinar", slug: "s" });
+    const outraCritica = await rodar({ tipo: "criticar", slug: "s" });
+    const outroRefino = await rodar({ tipo: "refinar", slug: "s" });
+    const [c1, c2, c3, c4] = b.chamadas().slice(antes);
+
+    assert.deepEqual([c1.entrada, c2.entrada], ["critique o site s", "refine o site s"], "as frases do runbook");
+    // Quem critica não escreveu o site: sem `--resume`, mesmo havendo a sessão do autor e a de uma crítica anterior.
+    assert.ok(!c1.args.includes("--resume") && !c3.args.includes("--resume"));
+    assert.deepEqual([critica.sessionId, critica.retomou, outraCritica.retomou], ["sessao-do-critico", undefined, undefined]);
+    // O refino volta à conversa do autor — e não à do crítico, que foi a última a rodar.
+    assert.deepEqual([depois(c2.args, "--resume"), depois(c4.args, "--resume")], ["sessao-falsa-1", "sessao-falsa-1"]);
+    assert.deepEqual([refino.retomou, outroRefino.retomou], ["sessao-falsa-1", "sessao-falsa-1"]);
+    // O histórico guarda as quatro, com a sessão de cada uma.
+    assert.deepEqual(
+      b.historico("s").slice(-4).map((execucao) => [execucao.tipo, execucao.session_id, execucao.retomou]),
+      [["criticar", "sessao-do-critico", undefined], ["refinar", "sessao-falsa-1", "sessao-falsa-1"], ["criticar", "sessao-do-critico", undefined], ["refinar", "sessao-falsa-1", "sessao-falsa-1"]],
+    );
+    // Um ajuste pedido depois da última crítica também retoma a sessão do autor.
+    await rodar({ tipo: "criticar", slug: "s" });
+    await rodar({ tipo: "ajuste", slug: "s", pedido: "troque o telefone" });
+    assert.equal(depois(b.chamadas().at(-1).args, "--resume"), "sessao-falsa-1");
+
+    // Criticar e refinar pensam como quem cria o site; sucesso continua sendo código 0 e validação passando.
+    assert.deepEqual([depois(c1.args, "--effort"), depois(c2.args, "--effort")], ["xhigh", "xhigh"]);
+    assert.deepEqual([critica.status, refino.status, b.estado.registros.at(-1).tipo], ["sucesso", "sucesso", "ajuste"]);
+    assert.deepEqual([critica.projeto.entregue, critica.projeto.proximo], [false, "criticar"], "o estado que o motor informou vai no resultado");
+    b.estado.contrato.esforco = { criacao: "high", ajuste: "high", briefing: "high" };
+  });
+
+  it("site que só tem sessão de crítica: o refino abre uma sessão nova e avisa, em vez de retomar a do crítico", async () => {
+    b.projeto("so-critica", { entregue: false });
+    await rodar({ tipo: "criticar", slug: "so-critica" });
+    const avisos = [];
+    await rodar({ tipo: "refinar", slug: "so-critica" }, { onEvento: (evento) => avisos.push(...evento.legiveis.map((l) => l.texto)) });
+    assert.ok(!b.chamadas().at(-1).args.includes("--resume"));
+    assert.match(avisos.join("\n"), /"so-critica" não tem sessão anterior do Claude: abrindo uma sessão nova/);
+  });
+});
+
+describe("o modelo e o esforço de cada execução", () => {
+  it("vale o que o projeto escolheu, senão o das Configurações, senão o que o motor espera", async () => {
+    b.estado.cenario = "ok";
+    b.estado.contrato.esforco = { criacao: "xhigh", ajuste: "medium", briefing: "low" };
+    const escolhido = async (pedido, doProjeto) => {
+      await rodar(pedido, doProjeto === undefined ? {} : { doProjeto: async () => doProjeto });
+      const chamada = b.chamadas().at(-1);
+      return [depois(chamada.args, "--model"), depois(chamada.args, "--effort"), chamada.modelo];
+    };
+    const ajuste = { tipo: "ajuste", slug: "h", pedido: "x" };
+
+    // 1. Nada escolhido: o modelo esperado e o esforço do contrato para o tipo do pedido.
+    assert.deepEqual(await escolhido(ajuste), ["claude-opus-5-5", "medium", "claude-opus-5-5"]);
+    assert.deepEqual(await escolhido({ tipo: "analisar", pasta: "loja-material" }, { modelo: null, esforco: null }), ["claude-opus-5-5", "low", "claude-opus-5-5"]);
+
+    // 2. As Configurações valem para todo pedido, de qualquer tipo.
+    b.estado.configurado = { modelo: "claude-sonnet-5-5", esforco: "high" };
+    assert.deepEqual(await escolhido(ajuste), ["claude-sonnet-5-5", "high", "claude-sonnet-5-5"]);
+    assert.deepEqual(await escolhido({ tipo: "criticar", slug: "h" }, { modelo: null, esforco: "" }), ["claude-sonnet-5-5", "high", "claude-sonnet-5-5"]);
+
+    // 3. O projeto vale mais — campo a campo: o que ele não escolheu continua vindo das Configurações.
+    assert.deepEqual(await escolhido(ajuste, { modelo: "claude-fable-5-1", esforco: "max" }), ["claude-fable-5-1", "max", "claude-fable-5-1"]);
+    assert.deepEqual(await escolhido(ajuste, { modelo: "claude-fable-5-1", esforco: null }), ["claude-fable-5-1", "high", "claude-fable-5-1"]);
+    assert.deepEqual(await escolhido({ tipo: "refinar", slug: "h" }, { modelo: null, esforco: "low" }), ["claude-sonnet-5-5", "low", "claude-sonnet-5-5"]);
+    const registro = b.estado.registros.at(-1);
+    assert.deepEqual([registro.tipo, registro.modelo, registro.esforco], ["refinar", "claude-sonnet-5-5", "low"]);
+
+    // Um nível que o claude não conhece não vira argumento dele: vale o seguinte da fila.
+    b.estado.configurado = { modelo: "", esforco: "ultra" };
+    assert.deepEqual(await escolhido(ajuste, { modelo: null, esforco: "--resume" }), ["claude-opus-5-5", "medium", "claude-opus-5-5"]);
+    // O que o projeto escolheu não pôde ser lido: a execução roda com o das Configurações.
+    b.estado.configurado = { modelo: "claude-sonnet-5-5", esforco: "" };
+    await rodar(ajuste, { doProjeto: async () => { throw new Error("banco fora do ar"); } });
+    assert.equal(depois(b.chamadas().at(-1).args, "--model"), "claude-sonnet-5-5");
+
+    b.estado.configurado = { modelo: "", esforco: "" };
+    b.estado.contrato.esforco = { criacao: "high", ajuste: "high", briefing: "high" };
+  });
+
+  it("o comando previsto segue a mesma ordem, e o teste do login fica com o modelo das Configurações", async () => {
+    b.estado.configurado = { modelo: "claude-sonnet-5-5", esforco: "medium" };
+    const doProjeto = { modelo: "claude-fable-5-1", esforco: "max" };
+    const global = await b.executor.comandoPrevisto();
+    assert.deepEqual([global.modelo, global.modeloEsperado, global.esforco, global.esforcoEsperado], ["claude-sonnet-5-5", "claude-opus-5-5", "medium", "high"]);
+    const doSite = await b.executor.comandoPrevisto({ tipo: "refinar", doProjeto });
+    assert.match(doSite.texto, /--model claude-fable-5-1 --effort max /);
+    assert.deepEqual([doSite.modelo, doSite.esforco], ["claude-fable-5-1", "max"]);
+
+    await b.executor.testarClaude();
+    assert.equal(depois(b.chamadas().at(-1).args, "--model"), "claude-sonnet-5-5", "o teste não é de nenhum projeto");
+    b.estado.configurado = { modelo: "", esforco: "" };
   });
 });
 
@@ -374,6 +483,37 @@ describe("uma execução por vez, e cancelamento em dois tempos", () => {
     b.estado.cenario = "ok";
   });
 
+  it("a fila pode pôr uma execução ao lado de outra: cada uma com o seu projeto atual, nunca no mesmo site", async () => {
+    b.estado.cenario = "lento";
+    const antes = b.chamadas().length;
+    const aoComecar = () => {
+      let comecou;
+      const pronto = new Promise((ok) => (comecou = ok));
+      return { pronto, deps: { aoLado: true, esperaCancelamentoMs: 300, onEvento: (evento) => evento.bruto !== undefined && comecou() } };
+    };
+    const [um, dois] = [aoComecar(), aoComecar()];
+    const primeira = b.executor.iniciarExecucao({ tipo: "ajuste", slug: "h", pedido: "demorado" }, um.deps);
+    await um.pronto;
+    const segunda = b.executor.iniciarExecucao({ tipo: "ajuste", slug: "s", pedido: "ao lado" }, dois.deps);
+    await dois.pronto;
+
+    const [c1, c2] = b.chamadas().slice(antes);
+    assert.ok(c1.atual && c2.atual && c1.atual !== c2.atual, "cada execução anota o projeto atual em um arquivo só dela");
+    assert.ok(c1.atual.startsWith(b.caminhos.atual) && !c1.atual.startsWith(b.caminhos.trabalho), "fora da pasta que o agente enxerga");
+    assert.equal(JSON.parse(fs.readFileSync(b.caminhos.trava, "utf8")).execucoes, 2);
+
+    await assert.rejects(b.executor.iniciarExecucao({ tipo: "ajuste", slug: "h", pedido: "no mesmo site" }, { aoLado: true }).promessa, (erro) => erro.status === 409);
+    await assert.rejects(rodar({ tipo: "ajuste", slug: "outro", pedido: "sem a fila" }), (erro) => erro.status === 409, "sem a fila decidir, continua uma por vez");
+
+    primeira.cancelar();
+    await primeira.promessa;
+    assert.equal(b.executor.execucaoEmAndamento()?.pid, process.pid, "a trava continua enquanto a outra roda");
+    segunda.cancelar();
+    await segunda.promessa;
+    assert.equal(b.executor.execucaoEmAndamento(), undefined, "a trava é solta com a última");
+    b.estado.cenario = "ok";
+  });
+
   it(
     "claude que não sai no primeiro sinal recebe o segundo",
     { skip: process.platform === "win32" && "no Windows não há sinais: o primeiro tempo já encerra a árvore" },
@@ -447,7 +587,7 @@ describe("conferências do Claude Code", () => {
   it("o comando previsto mostra o que seria disparado, sem disparar", async () => {
     const antes = b.chamadas().length;
     const previsto = await b.executor.comandoPrevisto();
-    assert.match(previsto.texto, /-p --output-format stream-json --verbose --model claude-sonnet-5-5 --effort xhigh --permission-mode dontAsk/);
+    assert.match(previsto.texto, /-p --output-format stream-json --verbose --model claude-opus-5-5 --effort high --permission-mode dontAsk/);
     assert.match(previsto.texto, /"Bash\(npm run -s step \*\)"/);
     assert.ok(!previsto.texto.toLowerCase().includes(b.raiz.toLowerCase()), "sem o caminho desta máquina");
     assert.equal(b.chamadas().length, antes);

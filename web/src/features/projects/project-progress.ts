@@ -1,6 +1,6 @@
-import type { AgentActivity, Project, RunProgress } from "@/lib/api";
+import type { AgentActivity, ClaudeSummary, Project, RunProgress } from "@/lib/api";
 import { pluralize } from "@/lib/format";
-import { devAreaOf, latestGeneration } from "./project-status";
+import { claudeRoundTitle, devAreaOf, latestGeneration } from "./project-status";
 
 /**
  * O andamento do que está em curso no projeto: a geração no Lovable ou uma
@@ -103,15 +103,20 @@ function runModel(
 
 const plural = pluralize;
 
+type ClaudePhase = [etapa: string, label: string];
+
 /** As etapas de cada pedido ao Claude, na ordem — o card mostra em qual está. */
-const CLAUDE_PHASES: Record<string, Array<[etapa: string, label: string]>> = {
+const CLAUDE_PHASES: Record<string, ClaudePhase[]> = {
   analisar: [["briefing", "Lendo o material e escrevendo o briefing"]],
   ajuste: [["ajuste", "Ajustando o site"]],
+  // O que a sessão que escreve o site faz, antes das rodadas.
   site: [
     ["direcao", "Direção criativa"],
     ["geracao", "Escrevendo o site"],
     ["revisao", "Revisando"],
   ],
+  criticar: [["critica", "Crítica"]],
+  refinar: [["refino", "Refino"]],
 };
 
 const CLAUDE_TITLES: Record<string, string> = {
@@ -120,26 +125,69 @@ const CLAUDE_TITLES: Record<string, string> = {
   site: "Gerando com o Claude",
 };
 
+/** O que cada rodada faz, para quem passa o mouse ou abre o projeto. */
+const CLAUDE_ROUND_STEPS = {
+  criticar: "Outra conversa do Claude avalia o site pronto",
+  refinar: "Quem escreveu o site corrige o que a crítica apontou",
+} as const;
+
+/**
+ * As etapas da criação de um site, do briefing à entrega: as três de quem o
+ * escreve e, por rodada, a crítica e o refino. Um site que acabou de ser
+ * pedido ainda não diz quantas rodadas terá: elas entram como uma etapa só.
+ * `atual` é a etapa em que o pedido está.
+ */
+function claudeSitePhases(
+  fila: NonNullable<ClaudeSummary["queue"]>,
+  site: ClaudeSummary["site"],
+): { etapas: ClaudePhase[]; atual: string | null } {
+  if (fila.tipo === "cliente") {
+    return { etapas: [...CLAUDE_PHASES.site, ["rodadas", "Crítica e refino"]], atual: fila.etapa };
+  }
+  const rodadas = site?.rounds ?? 0;
+  const etapas: ClaudePhase[] = [...CLAUDE_PHASES.site];
+  for (let rodada = 1; rodada <= rodadas; rodada += 1) {
+    etapas.push([`critica-${rodada}`, `Crítica ${rodada}`], [`refino-${rodada}`, `Refino ${rodada}`]);
+  }
+  if (fila.tipo !== "criticar" && fila.tipo !== "refinar") return { etapas, atual: fila.etapa };
+
+  const etapa = fila.tipo === "criticar" ? "critica" : "refino";
+  const atual = `${etapa}-${site?.round}`;
+  // Sem saber a rodada (o resumo é de antes das rodadas), sobra dizer só o que roda.
+  return site?.phase === etapa && etapas.some(([chave]) => chave === atual)
+    ? { etapas, atual }
+    : { etapas: CLAUDE_PHASES[fila.tipo], atual: etapa };
+}
+
 /** O pedido do projeto na fila do Claude: esperando a vez ou rodando. */
-function claudeModel(fila: NonNullable<NonNullable<Project["claude"]>["queue"]>): ProgressModel {
+function claudeModel(claude: ClaudeSummary, fila: NonNullable<ClaudeSummary["queue"]>): ProgressModel {
   const pedido = fila.tipo === "analisar" || fila.tipo === "ajuste" ? fila.tipo : "site";
-  const etapas = CLAUDE_PHASES[pedido];
+  const rodada = fila.tipo === "criticar" || fila.tipo === "refinar" ? fila.tipo : null;
+  const { etapas, atual: etapaAtual } =
+    pedido === "site" ? claudeSitePhases(fila, claude.site) : { etapas: CLAUDE_PHASES[pedido], atual: fila.etapa };
   const esperando = fila.estado === "esperando";
   // Antes de o claude abrir a primeira etapa, vale a primeira da lista.
-  const atual = Math.max(0, etapas.findIndex(([etapa]) => etapa === fila.etapa));
+  const atual = Math.max(0, etapas.findIndex(([etapa]) => etapa === etapaAtual));
   return {
     kind: "agent",
     title: esperando
       ? fila.posicao
         ? `Na fila do Claude · ${fila.posicao}º`
         : "Na fila do Claude"
-      : CLAUDE_TITLES[pedido],
+      : rodada
+        ? claudeRoundTitle(rodada, claude.site)
+        : CLAUDE_TITLES[pedido],
     startedAt: esperando ? fila.criadoEm : (fila.inicio ?? fila.criadoEm),
+    // Na fila, o que já foi feito continua feito: só a etapa da vez espera.
     phases: etapas.map(([, label], indice) => ({
       label,
-      state: esperando ? "todo" : indice < atual ? "done" : indice === atual ? "active" : "todo",
+      state: indice < atual ? "done" : indice === atual && !esperando ? "active" : "todo",
     })),
-    current: esperando ? "Esperando a execução anterior terminar" : etapas[atual][1],
+    current: esperando
+      ? "Esperando a execução anterior terminar"
+      : rodada
+        ? CLAUDE_ROUND_STEPS[rodada]
+        : etapas[atual][1],
     counts: null,
     waiting: false,
     queued: esperando,
@@ -165,7 +213,7 @@ export function progressOf(project: Project): ProgressModel | null {
   // A execução interrompida não está em curso: espera uma decisão, e é o
   // selo do card que diz isso.
   const fila = project.claude?.queue;
-  if (fila && fila.estado !== "interrompida") return claudeModel(fila);
+  if (project.claude && fila && fila.estado !== "interrompida") return claudeModel(project.claude, fila);
 
   const site = latestGeneration(project);
   if (site?.agentState === "running" || site?.agentState === "awaiting") {

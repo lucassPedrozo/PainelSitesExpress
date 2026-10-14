@@ -150,8 +150,13 @@ O arquivo `.env` na raiz define:
 | `LOVABLE_MAX_ATTACHMENT_BYTES` | Teto por anexo (padrão 64 MB)                              |
 | `GENERATION_ENGINE`       | O motor que vem marcado na tela de geração: `lovable` (padrão) ou `claude` |
 | `CLAUDE_ENABLE_GENERATION` | `1` libera o uso do Claude Code, que consome a assinatura (padrão `0`) |
-| `CLAUDE_HUMAN_APPROVAL`   | Aprovação da direção criativa: vazio usa o padrão do motor, `1` para e espera, `0` segue |
-| `CLAUDE_MODEL`            | Opcional: modelo do Claude Code; vazio usa o que o motor espera    |
+| `CLAUDE_MODEL`            | Opcional: modelo do Claude Code; vazio usa o que o motor espera (`claude-opus-5-5`) |
+| `CLAUDE_REASONING_EFFORT`           | Opcional: esforço de raciocínio (`low`, `medium`, `high`, `xhigh`, `max`); vazio usa o que o motor espera |
+| `CLAUDE_REVIEW_ROUNDS`    | Opcional: rodadas de crítica e refino depois da geração, de `1` a `4`; vazio usa o padrão do motor |
+| `CLAUDE_PARALLEL_ADJUSTMENTS` | Opcional: quantos ajustes rodam ao mesmo tempo, ao lado da criação de um site, de `0` (tudo em uma fila só) a `4`; vazio usa `2` |
+| `CLAUDE_ART_DIRECTION`    | Opcional: direção de arte dos sites (`sobria`, `autoral`, `ousada`); vazio usa o padrão do motor |
+| `CLAUDE_MOTION`           | Opcional: movimento dos sites (`discreto`, `expressivo`, `cinematografico`); vazio usa o padrão do motor |
+| `CLAUDE_HUMAN_APPROVAL`   | Escolha da rota criativa: vazio usa o padrão do motor, `1` para depois da direção e espera alguém escolher, `0` segue |
 | `CLAUDE_BIN` / `CLAUDE_BROWSER_PATH` | Opcionais: caminho do `claude` e do navegador das capturas, se o painel não os achar |
 | `PIXABAY_API_KEY`         | Chave do Pixabay para o banco de imagens na geração (vazia, a aba fica desligada) |
 | `GEMINI_API_KEY`          | Chave gratuita do Gemini (AI Studio) para o assistente da geração (vazia, o botão some) |
@@ -688,7 +693,7 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │       │       ├── environment.js  # o ambiente dos processos filhos, por lista de permissão
 │       │       ├── executor.js     # dispara, lê o stream, decide como terminou
 │       │       ├── guardian.js     # encerra o claude se o painel morrer
-│       │       ├── queue.js        # uma execução por vez; pausada depois de um reinício
+│       │       ├── queue.js        # a criação uma por vez, os ajustes ao lado; pausada depois de um reinício
 │       │       ├── stream.js       # linhas legíveis e o filtro do que vai à tela
 │       │       ├── workspace.js    # a pasta de trabalho, na pasta de dados
 │       │       ├── motor.js        # a conversa com o pacote do motor
@@ -1093,10 +1098,12 @@ um cliente falso; a primeira geração real vai gastar crédito do provedor.
 
 O segundo motor do painel é o **Claude Code desta máquina**, em modo não interativo
 (`claude -p`), pelo login da assinatura — sem chave de API. Ele lê o material do
-projeto, escreve o briefing e, depois de alguém revisar, escreve o site. O painel
-prepara a pasta de trabalho, digita o pedido, acompanha a execução, guarda o que
-aconteceu e manda o site validado ao GitHub, de onde ele segue pelo caminho de
-sempre: área de aprovação, link do cliente e domínio.
+projeto, escreve o briefing e, depois de alguém revisar, escreve o site. O site
+gerado não é entregue de imediato: passa por rodadas de **crítica**, feitas por uma
+sessão do Claude que não o escreveu, e de **refino**, feitas por quem o escreveu. O
+painel prepara a pasta de trabalho, digita cada pedido, põe na fila o passo seguinte,
+acompanha as execuções, guarda o que aconteceu e manda o site entregue ao GitHub, de
+onde ele segue pelo caminho de sempre: área de aprovação, link do cliente e domínio.
 
 Antes havia uma ferramenta à parte (o Joinvixable), com página, porta e fila próprias.
 Ela deixou de existir como servidor: o que era dela virou o **pacote do motor** e o
@@ -1119,8 +1126,8 @@ testes das rotas usam um motor de mentira e rodam em qualquer lugar.
 O servidor do painel é JavaScript e o motor é TypeScript rodado por `tsx`, então nada
 do motor é importado: cada pergunta é um processo filho (`engines/claude/motor.js`).
 As consultas respondem em JSON na última linha da saída (`scripts/consulta.ts`), e os
-comandos de sempre — validar, telas, filme — respondem pelo código de saída e pelo
-texto. Nada nesse arquivo dispara o Claude.
+comandos de sempre — validar e telas — respondem pelo código de saída e pelo texto.
+Nada nesse arquivo dispara o Claude.
 
 ### O fluxo, pelo card do projeto
 
@@ -1129,13 +1136,15 @@ texto. Nada nesse arquivo dispara o Claude.
 | **Gerar briefing** | A tela de geração, com o motor Claude marcado, mostra o texto das informações do site, as observações e os arquivos do projeto. *Conferir pedido* é o ensaio: mostra o que seria copiado, a frase e o comando. *Gerar briefing* copia o material marcado para a pasta de trabalho e põe o pedido na fila | Só o *Gerar briefing* |
 | **Revisar e gerar** | O briefing aparece no projeto, com o que a conferência do motor aceitou, avisou ou recusou. Dá para corrigir pelos campos ou pelo JSON e gravar, sem gastar. *Conferir* mostra o pedido; *Gerar site* enfileira | Só o *Gerar site* |
 | **Acompanhar** | O card mostra a etapa e o tempo; a aba **Claude** do projeto, o log ao vivo, com *Cancelar execução*. A **Fila do Claude**, na barra da lista, mostra o que roda, o que espera e o que um reinício interrompeu | Não |
-| **Aprovar a direção** | Com a aprovação ligada, a geração para em *aguardando aprovação*: a direção criativa e as fotos de banco propostas aparecem no projeto, e *Aprovar e gerar o site* segue | Sim, ao seguir |
-| **Receber o site** | Site validado: etapas, telas e filme, *Validar*, *Fotografar telas* e *Filmar abertura* (rodam nesta máquina, sem o Claude) e a linha do GitHub | Não |
-| **Ajustar** | *Pedir ajuste* retoma a sessão do site. Validado, o commit novo sai (sozinho, para quem pode publicar) e a área de aprovação publica de novo | Sim |
+| **Escolher a rota** | Com a parada ligada, a geração para em *aguardando aprovação* depois da direção criativa: a direção, as rotas propostas e as fotos de banco aparecem no projeto. *Aprovar e gerar o site* segue com a direção como está; escolher outra rota refaz a direção com ela e volta a esperar a aprovação, agora com a direção nova | Sim, ao seguir |
+| **Criticar e refinar** | Gerado e validado, o site entra em crítica: uma sessão nova do Claude, que não o escreveu, dá notas, aponta problemas e diz se o site está aprovado. Se não está, quem o escreveu é retomado para o refino, e a rodada seguinte começa por outra crítica. A sequência termina quando a crítica aprova ou as rodadas acabam. O painel põe cada passo na fila sozinho | Sim, cada execução |
+| **Receber o site** | Site entregue: etapas, a última crítica, telas, *Validar* e *Fotografar telas* (rodam nesta máquina, sem o Claude) e a linha do GitHub | Não |
+| **Ajustar** | *Pedir ajuste* retoma a sessão de quem escreveu o site. Validado, o commit novo sai (sozinho, para quem pode publicar) e a área de aprovação publica de novo | Sim |
 
 Gerar em lote é pôr vários pedidos na mesma fila: quem ainda não tem briefing pede o
 briefing, quem já tem um briefing aceito pede o site, e cada projeto que não pode
-entrar aparece com o motivo.
+entrar aparece com o motivo. Cada passo da sequência de um site entra no fim da fila:
+com vários sites em geração, as execuções de uns e de outros se alternam.
 
 Os selos e os grupos da vista "Fazer agora" que o motor acrescenta: *Geração
 interrompida*, *Geração falhou*, *Direção para aprovar*, *Gerando com o Claude*,
@@ -1154,8 +1163,8 @@ As rotas que disparam o `claude -p` respondem, nesta ordem, como as do Lovable:
 | --- | --- |
 | `403` | A chave de acesso não tem a permissão `gerar` |
 | `428` | Faltou `confirm: true` no corpo |
-| `409` | O projeto já tem um pedido rodando, esperando ou interrompido; há um teste do Claude em andamento; ou o motor recusou (briefing com pendência, etapa aberta, cliente que já tem site) |
-| `400` | O pedido não passa na conferência (arquivo de outro projeto, vídeo marcado) |
+| `409` | O projeto já tem um pedido rodando, esperando ou interrompido; há um teste do Claude em andamento; ou o motor recusou (briefing com pendência, etapa aberta, cliente que já tem site, site sem nada a continuar) |
+| `400` | O pedido não passa na conferência (arquivo de outro projeto, vídeo marcado, modelo ou esforço inválido, rota que não está entre as propostas) |
 | `423` | A trava está desligada |
 
 A trava é `CLAUDE_ENABLE_GENERATION` — desligada por padrão, separada da do Lovable e
@@ -1164,9 +1173,15 @@ funciona inteiro: plano, frase e comando, sem copiar nem enfileirar nada. Na tel
 toda ação que gasta passa por uma confirmação que diz que o Claude Code vai ser
 disparado e que consome a assinatura, e o botão repete isso.
 
+Quem pede a geração de um site autoriza a sequência inteira dele: a geração e as
+rodadas de crítica e refino. Os passos seguintes entram na fila sem outro clique, em
+nome de quem pediu. A trava é conferida de novo a cada passo — desligada no meio, a
+sequência para onde está, nada é entregue, e o card oferece *Continuar*, que pede a
+confirmação e a trava como qualquer ação que gasta.
+
 Depois de um reinício do painel a fila volta **pausada** e o que rodava aparece como
-*interrompido*: reabrir o painel nunca gasta sozinho. Retomar pede a mesma
-confirmação e a mesma trava.
+*interrompido*: reabrir o painel nunca gasta sozinho, e nenhuma sequência segue por
+conta própria. Retomar pede a mesma confirmação e a mesma trava.
 
 ### O executor (`server/src/engines/claude/`)
 
@@ -1176,13 +1191,13 @@ confirmação e a mesma trava.
 | `environment.js` | O ambiente dos processos filhos, por lista de permissão |
 | `executor.js` | Dispara o claude, digita o pedido pelo stdin, lê o stream, decide como terminou e registra |
 | `guardian.js` | Um processo pequeno entre o painel e o claude: se o painel morre sem aviso, encerra o claude com a árvore inteira |
-| `queue.js` | A fila: uma execução por vez, pausada depois de um reinício |
+| `queue.js` | A fila: a criação de um site uma de cada vez, os ajustes ao lado dela; pausada depois de um reinício |
 | `stream.js` | As linhas legíveis do `stream-json` e o filtro do que vai à tela |
 | `workspace.js` | A pasta de trabalho, dentro da pasta de dados |
 | `motor.js` | A conversa com o pacote do motor, por processos filhos |
 | `material.js` | O material do projeto (Drive ou painel) copiado para a pasta de trabalho |
 | `publish.js` | Os arquivos do site que vão ao GitHub e o que bloqueia o envio |
-| `service.js` | Junta tudo: travas, fila, resumo do card, envio ao GitHub |
+| `service.js` | Junta tudo: travas, fila, a sequência de cada site, as opções do projeto, resumo do card, envio ao GitHub |
 | `routes.js` | As rotas |
 
 As garantias do executor, cada uma com teste:
@@ -1191,7 +1206,7 @@ As garantias do executor, cada uma com teste:
   ambiente do claude, e a execução é interrompida se o próprio claude disser, no
   `system/init`, que achou uma (`apiKeySource`).
 - **Lista fechada.** Ferramentas `Bash`, `Read`, `Edit`, `Write`, `Glob` e `Grep`; no
-  Bash, só os `npm run -s cliente | new-project | step | tool | report` do runbook.
+  Bash, só os `npm run -s cliente | new-project | step | tool` do runbook.
   Modo `dontAsk` com `--permission-prompts none`: o que não está na lista é recusado.
   Sem servidores MCP (`--strict-mcp-config`), sem comandos de barra
   (`--disable-slash-commands`). Sem rede — a exceção é o `WebFetch` dos domínios
@@ -1201,21 +1216,59 @@ As garantias do executor, cada uma com teste:
 - **O runbook chega por arquivo.** O painel gera o runbook das fontes do motor a cada
   execução e o entrega em `--append-system-prompt-file`. As configurações vêm só da
   fonte `user` (`--setting-sources user`) mais o arquivo do painel (`--settings`).
-- **O pedido vai pelo stdin**, com uma das cinco frases do runbook (gerar o briefing,
-  gerar o site do cliente, gerar do briefing, ajustar, continuar).
-- **Uma execução por vez** nesta máquina, com trava em disco e fila.
+- **O pedido vai pelo stdin**, com uma das seis frases do runbook (gerar o briefing,
+  gerar o site do cliente, continuar, criticar, refinar, ajustar).
+- **O modelo e o esforço são resolvidos quando a execução começa**: valem os que o
+  projeto escolheu; sem escolha, os das Configurações; sem nada lá, o modelo que o
+  motor espera e o esforço que o contrato dele dá ao tipo do pedido (crítica e refino
+  usam o da criação). O ensaio mostra o comando pela mesma ordem, e *Testar Claude*
+  fica com o modelo das Configurações.
+- **A criação de um site roda uma de cada vez** nesta máquina, com trava em disco e fila: briefing, geração, continuação, crítica e refino. Cada site é comparado com os anteriores, e dois nascendo juntos não se enxergariam.
+- **Os ajustes rodam ao lado da criação**, até `CLAUDE_PARALLEL_ADJUSTMENTS` de uma vez (2 por padrão; `0` volta a uma fila só). Nunca duas execuções no mesmo site. Cada execução anota o projeto em que as ferramentas dela agem em um arquivo próprio (`<dados>/joinvixable/atual/<id>.txt`, passado em `JOINVIXABLE_ATUAL`), e uma não escreve no projeto da outra.
+- **O tipo do site muda depois de gerado.** No card do site, "Várias páginas" grava `multiplas_paginas` no briefing do projeto (e no do cliente) pela consulta `tipo-de-site`, sem usar o Claude. Ligado, o ajuste recebe as regras de páginas (`prompts/paginas-ajuste.md`) e a validação aceita as páginas que `content.json` listar; num site entregue elas não precisam mais ser as do design brief, então um ajuste cria, tira ou divide páginas. Desligar é recusado enquanto o site tiver outras páginas.
+- **O que é do mesmo build não é refeito.** As telas, as medições e a forma de um site ficam guardadas na sessão dele com o carimbo do `dist` (`telas.json`, `medidas.json`, `forma.json`) e valem enquanto o build for o mesmo; as capturas e as medições usam vários navegadores de uma vez (`navegadores_em_paralelo`, em `joinvixable/config/limits.json`). A validação que o painel pede depois de cada execução só refaz o build quando algum arquivo mudou desde a última que passou (`validacao.json`).
 - **Sucesso é código de saída 0 e a validação do motor passando.** *Aguardando
   aprovação* é um estado próprio, nem sucesso nem falha. Etapa que ficou aberta é
   falha, com *Continuar de onde parou* e *Encerrar etapa*.
-- **Ajuste e continuação retomam a sessão** do site (`--resume`) e recuam para uma
-  sessão nova quando ela sumiu.
+- **Ajuste, continuação e refino retomam a sessão de quem escreveu o site**
+  (`--resume`) e recuam para uma sessão nova quando ela sumiu.
+- **A crítica abre sempre uma sessão nova**, sem `--resume`, e a sessão dela nunca é a
+  que as execuções seguintes retomam: quem critica não viu o site nascer, e quem
+  refina não herda a conversa do crítico.
 - **Cancelamento em dois tempos** (interrompe; se não sair, encerra), com a árvore de
   processos inteira — no Windows, `taskkill /T /F`.
 - **Cada execução fica registrada**: sessão, duração, estado, mensagem e o stream
   bruto em disco.
-- **Custo em três rótulos**, nunca somados: `REAL` (API), `SIMULADO` (reconstruído das
-  chamadas) e `ESTIMATIVA DO CLAUDE CODE` (o `total_cost_usd` que o CLI informa; o
-  consumo de verdade sai da assinatura).
+- **O custo que aparece é a estimativa do Claude Code**: o `total_cost_usd` que o CLI
+  informa de cada execução, a preço de API. O consumo de verdade sai da assinatura, e
+  o número é sempre mostrado com esse rótulo.
+
+### A sequência de um site
+
+Uma geração não é uma execução só. O motor diz, em `estado`, onde o site está no
+pipeline (`pipeline`: a fase, a rodada e o total de rodadas), se ele foi entregue e
+qual é o pedido que o faz andar (`proximo`: `continuar`, `criticar`, `refinar` ou
+nenhum). O painel só segue o que o motor indica:
+
+1. Quando uma execução do projeto termina em **sucesso**, o painel olha o estado do
+   site. Se o motor o dá por **entregue**, a sequência acabou. Senão, e havendo um
+   `proximo`, esse pedido entra na fila para o mesmo projeto, com quem pediu e a
+   permissão de publicar do pedido que abriu a sequência.
+2. **Falha, cancelamento, interrupção e *aguardando aprovação* não encadeiam.** A
+   sequência também para com a trava desligada e quando o motor pede de novo um passo
+   que ela já deu no mesmo ponto do pipeline — uma execução que saiu sem erro e não fez
+   o site andar não é repetida sem alguém decidir.
+3. ***Continuar*** põe na fila o `proximo` do site, seja ele qual for, e é recusado
+   com a mensagem do motor quando não há nenhum (site entregue, direção esperando
+   alguém). Retomar uma execução interrompida faz o mesmo.
+4. **A entrega acontece uma vez, no fim**: só quando o motor dá o site por entregue ele
+   entra na lista de sites do projeto e vai ao GitHub. Entre a geração e a última
+   rodada de refino, nada sai desta máquina. Para um site gerado antes das rodadas de
+   crítica e refino, entregue continua sendo "revisão concluída".
+
+A crítica mais recente — a rodada, o veredito, as notas e os problemas apontados — e
+as rotas criativas propostas chegam à tela com o site, em `GET
+/api/projects/:id/claude`.
 
 ### O que o agente não vê
 
@@ -1233,12 +1286,12 @@ Lovable e do BetterLinks. Três barreiras separam isso do agente:
    linhas legíveis, com as pastas desta máquina trocadas por rótulos (`<pasta do
    motor>`, `<painel>`, `~`) e os segredos do painel apagados. O mesmo filtro passa
    pelas mensagens de recusa, pela revisão do briefing e pelo estado do site que o
-   motor devolve.
+   motor devolve — a direção criativa, as rotas e a crítica.
 
 ### A saída do modelo não é confiável
 
-- **O `dist` nunca é servido na origem do painel.** As telas e o filme são imagens
-  (só raster, conferidas pelo caminho real); o site abre na área de aprovação.
+- **O `dist` nunca é servido na origem do painel.** As telas são imagens (só raster,
+  conferidas pelo caminho real); o site abre na área de aprovação.
 - **A configuração do repositório vem do template**, não do projeto: `package.json`,
   lockfile, `vite.config`, `tsconfig`, `tailwind.config`, `postcss.config` e
   `index.html`. Do projeto vão `src/`, `public/`, `content.json` e `imagens.json`.
@@ -1251,11 +1304,12 @@ Lovable e do BetterLinks. Três barreiras separam isso do agente:
 - **A pasta de trabalho de cada projeto tem o nome que o painel escolhe**
   (`<domínio>-<4 hex>`), nunca um nome vindo do material.
 
-### Do site validado ao GitHub
+### Do site entregue ao GitHub
 
-Site validado entra na lista de sites do projeto (com `engine: "claude"`). Se quem
-pediu tem a permissão `publicar` e o GitHub está configurado, o painel cria o
-repositório na organização e envia sozinho; senão o card para em **Enviar ao GitHub**
+Site entregue — com a sequência de crítica e refino terminada — entra na lista de
+sites do projeto (com `engine: "claude"`). Se quem pediu a geração tem a permissão
+`publicar` e o GitHub está configurado, o painel cria o repositório na organização e
+envia sozinho; senão o card para em **Enviar ao GitHub**
 e o botão abre o plano do envio — o que vai, o que não vai e o que acontece depois.
 Com a área de aprovação configurada, o envio instala o workflow dela, e cada commit
 publica a prévia. Envio automático que falha não derruba a execução: o card guarda o
@@ -1264,8 +1318,9 @@ motivo e o site continua esperando.
 ### Assinatura Joinvix, em três camadas
 
 1. **No kit do site.** O template traz o componente travado
-   `src/componentes/AssinaturaJoinvix.tsx` e as duas logos em `public/joinvix/`; os
-   três rodapés da biblioteca já o usam como último elemento do `<footer>`.
+   `src/componentes/AssinaturaJoinvix.tsx` e as duas logos em `public/joinvix/`. O
+   rodapé é escrito para cada site, e as instruções do agente dizem onde a assinatura
+   fica: dentro do `<footer>`, depois da linha legal, sobre o fundo do próprio rodapé.
 2. **Na validação do motor.** Site que não usa o componente é recusado, e o build é
    conferido pelo mesmo sinal que a publicação procura.
 3. **No build de publicação.** O script `ensure-joinvix-signature.sh` dos workflows
@@ -1284,14 +1339,20 @@ motivo e o site continua esperando.
 ```
 
 `<dados>` é a pasta de dados do painel (`server/data`, ou `PANEL_DATA_DIR`). No
-`painel.json`, a chave `claude` guarda os projetos que passaram pelo motor, a fila e as
-últimas 300 execuções, com as gravações atômicas do resto do banco.
+`painel.json`, a chave `claude` guarda os projetos que passaram pelo motor — com o
+modelo e o esforço que cada um escolheu (`options`) e o ponto do pipeline em que o
+site está —, a fila e as últimas 300 execuções, com as gravações atômicas do resto do
+banco. As opções do site (páginas, banco de imagens, skills, observações, rodadas,
+direção de arte, movimento, escolha de rota e referências) não ficam no banco: moram
+no briefing, na pasta do cliente, e quem as grava e confere é o motor.
 
 ### O que vem da ferramenta antiga
 
-O motor não repete o estilo dos dois últimos sites, e sabe quais foram pelo histórico de
-layouts (`trabalho/.history/layouts.jsonl`). A pasta de trabalho nasce vazia, então o
-histórico do Joinvixable antigo é trazido uma vez:
+Cada site entregue fica no histórico de layouts (`trabalho/.history/layouts.jsonl`, com
+as telas de abertura em `trabalho/.history/telas/`): a rota de direção de arte, o
+conceito, as fontes, o sistema de design e a forma da página, medida no site construído.
+É contra ele que o site seguinte é comparado, no plano e depois de pronto. A pasta de
+trabalho nasce vazia, então o histórico do Joinvixable antigo é trazido uma vez:
 
 ```bash
 npm run motor:historico -- "<pasta do Joinvixable antigo>"
@@ -1325,19 +1386,39 @@ entram por aqui: o motor trabalha sobre o formato de projeto dele.
 
 ### Configurações e "Testar Claude"
 
-A seção **Motor Claude** de Configurações reúne a trava, a aprovação da direção
-criativa (padrão do motor, parar ou seguir), o modelo, o programa do Claude Code e o
+A seção **Motor Claude** de Configurações reúne a trava, o modelo, o esforço de
+raciocínio, as rodadas de crítica e refino, a direção de arte, o movimento, a escolha
+da rota criativa (padrão do motor, parar ou seguir), o programa do Claude Code e o
 navegador das capturas. Todas valem na hora. O programa e o navegador só aceitam o
 executável esperado (`claude`, Chrome, Edge ou Chromium), instalado nesta máquina e
 fora das pastas do painel — sem isso, quem configura o painel poderia apontar para um
 arquivo enviado como material e fazê-lo rodar aqui.
 
+O que cada escolha alcança:
+
+| Configuração | Vazia | Como chega à execução | Quem pode escolher outra |
+| --- | --- | --- | --- |
+| `CLAUDE_MODEL` | O modelo que o motor espera (`claude-opus-5-5`) | `--model` | Cada projeto (`options.modelo`) |
+| `CLAUDE_REASONING_EFFORT` | O esforço do contrato do motor para o tipo do pedido (`high`) | `--effort` | Cada projeto (`options.esforco`) |
+| `CLAUDE_REVIEW_ROUNDS` | As rodadas padrão do motor | `JOINVIXABLE_RODADAS` | Cada site, no briefing (`rodadas`) |
+| `CLAUDE_ART_DIRECTION` | A direção de arte padrão do motor | `JOINVIXABLE_DIRECAO_DE_ARTE` | Cada site, no briefing (`direcao_de_arte`) |
+| `CLAUDE_MOTION` | O movimento padrão do motor | `JOINVIXABLE_MOVIMENTO` | Cada site, no briefing (`movimento`) |
+| `CLAUDE_HUMAN_APPROVAL` | O padrão do motor | `JOINVIXABLE_APROVACAO_HUMANA` | Cada site, no briefing (`escolher_rota`) |
+
+As quatro variáveis `JOINVIXABLE_…` entram no ambiente dos processos do motor e no do
+agente só quando a configuração está preenchida; do ambiente do próprio painel nenhuma
+delas é herdada. O modelo é um texto livre, com a regra de sempre — só o id ou o
+apelido, nada que pareça outra opção do `claude` —, e a mesma regra vale para o modelo
+que um projeto escolhe. `GET /api/projects/:id/claude/options` devolve o que o projeto
+escolheu, o que vale no lugar do que ele não escolheu e as opções do site.
+
 A primeira linha da seção é o **estado nesta máquina**: pacote instalado, versão do
-Claude Code (`claude --version`), navegador encontrado, modelo em uso e o comando de
-uma geração. Nada disso dispara o Claude Code.
+Claude Code (`claude --version`), navegador encontrado, modelo e esforço em uso e o
+comando de uma geração. Nada disso dispara o Claude Code.
 
 **Testar Claude** é a exceção entre os testes da tela: faz uma pergunta mínima ao
-Claude Code de verdade, para conferir o login da assinatura, e consome um pouco dela.
+Claude Code de verdade, com o modelo das Configurações, para conferir o login da
+assinatura, e consome um pouco dela.
 Só roda no clique, depois da confirmação, com a trava ligada e sem nada em andamento
 — e responde 403, 428, 409 e 423 como as rotas que geram.
 
@@ -1352,32 +1433,35 @@ Só roda no clique, depois da confirmação, com a trava ligada e sem nada em an
 | `POST /api/claude/queue/interrupted/:itemId/resume` | Retoma uma execução interrompida — **gasta** |
 | `DELETE /api/claude/queue/interrupted/:itemId` | Descarta uma interrompida |
 | `DELETE /api/claude/queue/:itemId` | Tira da fila um pedido que ainda espera |
-| `GET /api/projects/:id/claude` | Briefing, revisão, site e execuções do projeto |
+| `GET /api/projects/:id/claude` | Briefing, revisão, site (com o pipeline, as rotas e a última crítica) e execuções do projeto |
 | `GET /api/projects/:id/claude/material` | O material do projeto, classificado |
-| `GET /api/projects/:id/claude/metrics` | Custo e qualidade do site, por rótulo |
 | `GET /api/projects/:id/claude/runs/:runId/log` | O log legível de uma execução |
-| `GET /api/projects/:id/claude/images/:tipo?path=` | Telas, filme, foto do material ou miniatura |
+| `GET /api/projects/:id/claude/images/:tipo?path=` | Telas, foto do material ou miniatura |
+| `GET /api/projects/:id/claude/options` | O modelo e o esforço do projeto, os padrões que valem no lugar deles e as opções do site |
+| `PUT /api/projects/:id/claude/options` | Grava o modelo e o esforço do projeto (`modelo`, `esforco`) e, em `site`, as opções do site — não gasta |
 | `POST /api/projects/:id/claude/briefing/preview` | Ensaio do briefing — não gasta |
 | `POST /api/projects/:id/claude/briefing` | Pede o briefing — **gasta** |
 | `PUT /api/projects/:id/claude/briefing` | Grava o briefing corrigido |
-| `PUT /api/projects/:id/claude/options` | Grava as opções do site |
 | `POST /api/projects/:id/claude/generate/preview` | Ensaio do site — não gasta |
-| `POST /api/projects/:id/claude/generate` | Pede o site — **gasta** |
+| `POST /api/projects/:id/claude/generate` | Pede o site — **gasta**. Em `opcoes`, as opções do site, gravadas no briefing antes de o pedido entrar na fila |
 | `POST /api/projects/:id/claude/adjust` | Pede um ajuste — **gasta**. Em `anexos`, as imagens que seguem com ele |
 | `PUT /api/projects/:id/claude/adjust/attachments` | Sobe uma imagem do próximo ajuste (corpo cru; PNG, JPG, WebP ou GIF, até 8 MB, seis por pedido). Fica em `.session/anexos/` do site, fora do que vai ao GitHub |
 | `DELETE /api/projects/:id/claude/adjust/attachments` | Tira uma imagem do rascunho |
-| `POST /api/projects/:id/claude/continue` | Continua de onde parou — **gasta** |
+| `POST /api/projects/:id/claude/continue` | Põe na fila o passo seguinte do site: continuar, criticar ou refinar — **gasta** |
 | `POST /api/projects/:id/claude/approve` | Aprova a direção e segue — **gasta** |
+| `POST /api/projects/:id/claude/route` | Escolhe outra rota criativa (`rota`: o número dela) e segue para a direção ser refeita — **gasta** |
 | `POST /api/projects/:id/claude/abort` | Encerra a etapa aberta |
 | `POST /api/projects/:id/claude/stock-photos/refuse` | Tira uma foto de banco da direção |
 | `GET /api/projects/:id/claude/repository` | O plano do envio ao GitHub |
 | `POST /api/projects/:id/claude/repository` | Envia ao GitHub — permissão `publicar` |
 | `POST /api/projects/:id/claude/validate` | Build e validação nesta máquina |
-| `POST /api/projects/:id/claude/captures/:tipo` | Fotografa as telas ou filma a abertura |
+| `POST /api/projects/:id/claude/captures/telas` | Fotografa as telas do site |
 | `GET /api/settings/claude` | O estado do motor nesta máquina — permissão `configurar` |
 | `POST /api/settings/check/claude` | "Testar Claude" — **gasta**, permissão `configurar` |
 
-As que mudam alguma coisa pedem a permissão `gerar`.
+As que mudam alguma coisa pedem a permissão `gerar`. Os pedidos que gastam e os dois
+ensaios aceitam `modelo` e `esforco` no corpo: nos pedidos, a escolha fica gravada no
+projeto quando o pedido entra na fila; nos ensaios, vale só para o comando mostrado.
 
 ### Como é testado
 
@@ -1385,8 +1469,12 @@ Nenhum teste chama o Claude de verdade. `CLAUDE_BIN` aponta para um claude falso
 (`engines/claude/fixtures/claude-falso.mjs`), que emite eventos `stream-json` de
 exemplo em vários cenários: sucesso, login que falhou, chave de API no lugar da
 assinatura, servidor MCP ou ferramenta fora do contrato, execução lenta, processo que
-não sai no primeiro sinal, sessão que sumiu. As rotas rodam na API de verdade —
-política de rede, sessão, permissões — com um motor de mentira; os testes que usam o
+não sai no primeiro sinal, sessão que sumiu, e o site que passa por crítica e refino —
+com a crítica que aprova antes do fim, o passo que falha e o passo que termina sem
+fazer o site andar. As rotas rodam na API de verdade — política de rede, sessão,
+permissões — com um motor de mentira (`fixtures/motor-falso.mjs`), que responde às
+mesmas consultas do pacote e deixa uma sequência inteira ser percorrida; os testes que
+usam o
 pacote de verdade (o contrato de permissões, o runbook, o site do template passando
 pelos scripts da área de aprovação) são pulados onde ele não está.
 
@@ -1827,11 +1915,12 @@ teste garantindo que os dois arquivos carreguem o marcador.
 
 **Motor Claude: a primeira execução real pelo painel.** Tudo o que está descrito na
 seção "Motor Claude" foi provado com o `claude` falso. Uma execução com o Claude Code
-de verdade ainda precisa confirmar quatro coisas que o falso não prova: que o login da
+de verdade ainda precisa confirmar cinco coisas que o falso não prova: que o login da
 assinatura é o que o CLI usa, que as permissões do contrato bastam para o agente
 trabalhar e barram o resto (inclusive com o perfil pessoal de quem roda, que entra
-pela fonte `user`), que o site sai com a assinatura Joinvix e que ele chega à área de
-aprovação.
+pela fonte `user`), que a sequência de crítica e refino se sustenta com sessões de
+verdade — uma nova a cada crítica, a do autor retomada a cada refino —, que o site sai
+com a assinatura Joinvix e que ele chega à área de aprovação.
 
 As duas primeiras têm uma ferramenta própria, a **execução-isca**:
 

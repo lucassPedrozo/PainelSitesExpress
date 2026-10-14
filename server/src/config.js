@@ -192,6 +192,8 @@ export const devAreaConfig = () => {
  */
 export const claudeConfig = () => {
   const aprovacao = (process.env.CLAUDE_HUMAN_APPROVAL ?? "").trim();
+  const rodadas = Number((process.env.CLAUDE_REVIEW_ROUNDS ?? "").trim() || NaN);
+  const ajustes = Number((process.env.CLAUDE_PARALLEL_ADJUSTMENTS ?? "").trim() || NaN);
   return {
     // Trava do gasto: enquanto for falso, o painel confere o pedido e mostra
     // o comando, mas nunca lança o `claude -p` — que consome a assinatura.
@@ -200,11 +202,26 @@ export const claudeConfig = () => {
     bin: (process.env.CLAUDE_BIN ?? "").trim(),
     /** Vazio: o modelo que o motor espera (`joinvixable/config/models.json`). */
     model: (process.env.CLAUDE_MODEL ?? "").trim(),
+    /** Esforço de raciocínio (`--effort`). Vazio: o que o motor espera para cada tipo de pedido. */
+    effort: (process.env.CLAUDE_REASONING_EFFORT ?? "").trim(),
     /** Chrome ou Edge das capturas. Vazio: o que o motor achar instalado. */
     browserPath: (process.env.CLAUDE_BROWSER_PATH ?? "").trim(),
     /**
-     * A direção criativa espera a aprovação de uma pessoa antes de o site ser
-     * gerado? `null`: o padrão do motor (`joinvixable/config/limits.json`).
+     * Quantas rodadas de crítica e refino o site recebe depois de gerado, de
+     * 1 a 4. `null`: o padrão do motor.
+     */
+    reviewRounds: Number.isInteger(rodadas) && rodadas >= 1 && rodadas <= 4 ? rodadas : null,
+    /**
+     * Quantos ajustes rodam ao mesmo tempo, ao lado da criação de um site.
+     * Zero: tudo em uma fila só, um de cada vez. `null`: o padrão do painel (2).
+     */
+    parallelAdjustments: Number.isInteger(ajustes) && ajustes >= 0 && ajustes <= 4 ? ajustes : null,
+    /** A direção de arte e o movimento dos sites. Vazio: o padrão do motor. */
+    artDirection: (process.env.CLAUDE_ART_DIRECTION ?? "").trim(),
+    motion: (process.env.CLAUDE_MOTION ?? "").trim(),
+    /**
+     * A geração para depois da direção criativa, para uma pessoa escolher
+     * entre as rotas propostas? `null`: o padrão do motor.
      */
     humanApproval: aprovacao === "1" ? true : aprovacao === "0" ? false : null,
     /** O pacote do motor: um repositório privado clonado nesta pasta. */

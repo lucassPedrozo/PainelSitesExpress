@@ -22,8 +22,26 @@ import path from "node:path";
  *   cancelamento_espera_ms: number,
  * }} Contrato
  * @typedef {{ bin: string, args: string[] }} Comando
- * @typedef {"cliente" | "briefing" | "analisar" | "ajuste" | "continuar"} TipoDePedido
+ * @typedef {"cliente" | "analisar" | "ajuste" | "continuar" | "criticar" | "refinar"} TipoDePedido
  */
+
+/** Os níveis que o `--effort` do Claude Code aceita, do mais raso ao mais fundo. */
+export const ESFORCOS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
+
+/**
+ * Id ou apelido de modelo do Claude Code: `claude-opus-5-5`, `opus`, `sonnet[1m]`.
+ * O modelo vira um argumento do claude: nada que pareça outra opção dele.
+ */
+export const MODELO_VALIDO = /^[a-z0-9][a-z0-9._:[\]-]{0,79}$/i;
+/** O que dizer a quem informou outra coisa no lugar do modelo. */
+export const MODELO_INVALIDO ="Use só o id ou o apelido do modelo (ex.: claude-opus-5-5, sonnet).";
+
+/** Os modelos que as telas oferecem. O campo aceita qualquer outro id válido. */
+export const MODELOS = Object.freeze([
+  { id: "claude-opus-5-5", rotulo: "Opus 5.5" },
+  { id: "claude-fable-5-1", rotulo: "Fable 5.1" },
+  { id: "claude-sonnet-5-5", rotulo: "Sonnet 5.5" },
+]);
 
 /**
  * `CLAUDE_BIN` troca o executável (instalação fora do PATH). Um arquivo
@@ -74,14 +92,28 @@ export function configuracoesDoAgente({ contrato, protegidos = [] }) {
   };
 }
 
+/**
+ * A chave de `esforco` do contrato para cada tipo de pedido. Os demais — criar
+ * o site, continuar, criticar e refinar — usam a da criação.
+ */
 const ESFORCO = { ajuste: "ajuste", analisar: "briefing" };
 
 /**
+ * O esforço que o motor espera para um tipo de pedido.
+ * @param {Contrato} contrato
+ * @param {TipoDePedido} [tipo]
+ * @returns {string}
+ */
+export const esforcoDoContrato = (contrato, tipo) => contrato.esforco[ESFORCO[tipo] ?? "criacao"];
+
+/**
  * @param {{
- *   contrato: Contrato, bin?: string, modelo: string, tipo?: TipoDePedido,
- *   resume?: string | null, sites?: string[], pasta?: string | null,
- *   runbook?: string | null, configuracoes?: string | null,
+ *   contrato: Contrato, bin?: string, modelo: string, esforco?: string | null,
+ *   tipo?: TipoDePedido, resume?: string | null, sites?: string[],
+ *   pasta?: string | null, runbook?: string | null, configuracoes?: string | null,
  * }} params
+ *   `esforco`: o que o projeto ou as Configurações escolheram; ausente, vale o
+ *   que o contrato do motor espera para o tipo do pedido.
  *   `sites`: domínios citados nas observações de um pedido de briefing — os
  *   únicos para os quais a leitura de páginas é liberada.
  *   `pasta`: a pasta do cliente, no pedido de briefing.
@@ -93,6 +125,7 @@ export function montarComando({
   contrato,
   bin,
   modelo,
+  esforco = null,
   tipo,
   resume = null,
   sites = [],
@@ -101,9 +134,6 @@ export function montarComando({
   configuracoes = null,
 }) {
   const { bin: executar, prefixo } = executavel(bin);
-  // O mesmo esforço que o modo API pede em config/models.json: sem a flag, o
-  // claude -p usa o padrão dele, mais raso.
-  const esforco = contrato.esforco[ESFORCO[tipo] ?? "criacao"];
   const doBriefing =
     tipo === "analisar" && pasta
       ? contrato.permitir_no_briefing.map((regra) => regra.replaceAll("{pasta}", pasta))
@@ -119,8 +149,9 @@ export function montarComando({
       "--verbose",
       "--model",
       modelo,
+      // Sempre com a flag: sem ela o claude -p usa o padrão dele, mais raso.
       "--effort",
-      esforco,
+      esforco || esforcoDoContrato(contrato, tipo),
       // Sem `--bare`: o modo bare não lê o login da assinatura.
       "--permission-mode",
       contrato.modo_de_permissao,

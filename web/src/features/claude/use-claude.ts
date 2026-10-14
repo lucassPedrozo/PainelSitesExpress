@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  claudeRunningItems,
   fetchClaudeEvents,
+  fetchClaudeOptions,
   fetchClaudeProject,
   fetchClaudeStatus,
   type ClaudeLogLine,
@@ -46,7 +48,7 @@ export function useClaudeStatus() {
 const queueSignature = (status: ClaudeStatus) =>
   [
     status.queue.paused ? "pausada" : "livre",
-    status.queue.running?.id ?? "",
+    claudeRunningItems(status.queue).map((item) => item.id).join("+"),
     status.queue.waiting.map((item) => item.id).join("+"),
     status.queue.interrupted.map((item) => item.id).join("+"),
   ].join("|");
@@ -84,6 +86,19 @@ export function useClaudeProject(projectId: string, enabled = true) {
 }
 
 /**
+ * O modelo e o esforço do projeto, o que vale no lugar do que ele não escolheu
+ * e as opções do site. Relido depois de cada ação, como o resto do motor: um
+ * pedido que entra na fila grava o modelo e o esforço que foram com ele.
+ */
+export function useClaudeOptions(projectId: string) {
+  return useQuery({
+    queryKey: queryKeys.claudeOptions(projectId),
+    queryFn: () => fetchClaudeOptions(projectId),
+    staleTime: 30_000,
+  });
+}
+
+/**
  * Depois de uma ação: relê o motor, o projeto nele e a lista de projetos — é
  * por ela que o selo e o próximo passo do card mudam.
  */
@@ -113,14 +128,14 @@ export function useClaudeLog(itemId: string | null, active: boolean) {
   const cursor = useRef("");
 
   const read = useCallback(async () => {
-    const data = await fetchClaudeEvents(cursor.current);
+    const data = await fetchClaudeEvents(cursor.current, itemId);
     cursor.current = data.cursor;
     const novas = data.events.flatMap((evento) => evento.legiveis);
     setOwner(data.item);
     setLines((atuais) =>
       data.reset ? novas.slice(-MAX_LOG_LINES) : novas.length ? [...atuais, ...novas].slice(-MAX_LOG_LINES) : atuais,
     );
-  }, []);
+  }, [itemId]);
 
   useEffect(() => {
     let parado = false;

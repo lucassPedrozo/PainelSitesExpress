@@ -101,6 +101,9 @@ export function SettingsView({ focusSection }: { focusSection?: string | null } 
       // A trava, o modelo e os programas do motor Claude valem na hora.
       void queryClient.invalidateQueries({ queryKey: queryKeys.claudeStatus });
       void queryClient.invalidateQueries({ queryKey: queryKeys.claudeDiagnostics });
+      // E os padrões dele são o que cada projeto mostra em "Padrão do painel (…)".
+      void queryClient.invalidateQueries({ queryKey: ["claude", "options"] });
+      void queryClient.invalidateQueries({ queryKey: ["claude", "project"] });
       setErrors({});
       toast.success(pluralize(resposta.saved.length, "configuração gravada", "configurações gravadas"), {
         description: resposta.restartRequired.length

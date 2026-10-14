@@ -32,6 +32,10 @@ const CHAVES_PUBLICAS = new Set([
   "PREVIEW_WATCH_INTERVAL_MS", "DEV_AREA_WATCH_INTERVAL_MS", "DEV_AREA_FTP_DIR",
   "DEV_AREA_FTP_PROTOCOL", "DEV_AREA_FTP_PORT", "GENERATION_ENGINE", "AI_PROVIDER",
   "AI_MODEL", "GEMINI_MODEL", "PANEL_DATA_DIR",
+  // As escolhas do motor Claude são palavras comuns ("medium", "autoral",
+  // "expressivo"): procuradas como segredo, apareceriam em metade do código.
+  "CLAUDE_ENABLE_GENERATION", "CLAUDE_HUMAN_APPROVAL", "CLAUDE_MODEL", "CLAUDE_REASONING_EFFORT",
+  "CLAUDE_REVIEW_ROUNDS", "CLAUDE_ART_DIRECTION", "CLAUDE_MOTION",
 ]);
 
 // Nos JSON locais, só os campos cujo caminho indica credencial. `redirect_uri` e

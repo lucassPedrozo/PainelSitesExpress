@@ -53,7 +53,21 @@ export const BRIEFING_GROUPS: BriefingGroup[] = [
       { path: "publico", label: "Público", placeholder: "Quem é o cliente do negócio" },
       { path: "sobre", label: "Sobre", multiline: true, placeholder: "A história do negócio, com datas e nomes" },
       { path: "tom_desejado", label: "Tom", placeholder: "Como o site deve falar" },
-      { path: "preferencias_visuais", label: "Visual", multiline: true, placeholder: "Cores e estilo; o que evitar" },
+      // O que a direção de arte lê para o site ter a cara deste negócio, e não a de um modelo.
+      {
+        path: "personalidade",
+        label: "Personalidade",
+        multiline: true,
+        placeholder: "Como a marca é, em traços concretos",
+      },
+      {
+        path: "mundo_visual",
+        label: "Mundo visual",
+        multiline: true,
+        placeholder: "O lugar, os materiais, as ferramentas e as cores do dia a dia do negócio",
+      },
+      { path: "preferencias_visuais", label: "Visual", multiline: true, placeholder: "Cores e estilo que o cliente pediu" },
+      { path: "evitar", label: "Evitar", multiline: true, placeholder: "O que o cliente não quer ver no site" },
     ],
   },
 ];

@@ -10,12 +10,13 @@ import {
   PackageX,
   PauseCircle,
   Play,
+  RotateCw,
   ScrollText,
   Square,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { ClaudeProjectDetail, ClaudeQueueItem, ClaudeRun, Project } from "@/lib/api";
+import type { ClaudeProjectDetail, ClaudeQueueItem, ClaudeRequestType, ClaudeRun, ClaudeSite, Project } from "@/lib/api";
 import {
   cancelClaudeRun,
   discardInterruptedClaudeRun,
@@ -43,14 +44,22 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyNotice } from "@/components/page-header";
 import { formatElapsed } from "@/features/projects/project-progress";
-import { claudeStageLabel } from "@/features/projects/project-status";
+import { claudeRoundLabel, claudeStageLabel } from "@/features/projects/project-status";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
 import { ClaudeAdoptNotice } from "./claude-adopt";
 import { ClaudeBriefingCard } from "./claude-briefing-card";
 import { ClaudeLog } from "./claude-log";
+import { effortLabel } from "./claude-options";
 import { ConfirmClaudeDialog, HintWhenDisabled, NoticeWithAction, RunStatusBadge } from "./claude-shared";
-import { ClaudeApprovalCard, ClaudeOpenStageCard, ClaudeSiteCard } from "./claude-site-card";
-import { errorMessage, formatDuration, formatEstimate, requestLabels, semPermissaoDeGerar } from "./claude-text";
+import { ClaudeApprovalCard, ClaudeContinueCard, ClaudeSiteCard } from "./claude-site-card";
+import {
+  errorMessage,
+  formatDuration,
+  formatEstimate,
+  requestLabels,
+  requestOrigin,
+  semPermissaoDeGerar,
+} from "./claude-text";
 import { useClaudeLog, useClaudeProject, useClaudeRefresh, useClaudeStatus } from "./use-claude";
 
 /**
@@ -110,6 +119,19 @@ export function ClaudePanel({
     );
   }
 
+  // O painel em uso troca a interface sem reiniciar o servidor. Entre uma coisa
+  // e outra, a resposta ainda é a de antes das rodadas — sem o andamento do
+  // site nem os padrões das opções —, e as telas abaixo não teriam o que mostrar.
+  if ((data.site && !data.site.pipeline) || (data.review && !data.review.padroes)) {
+    return (
+      <EmptyNotice
+        icon={<RotateCw />}
+        title="O painel precisa ser reiniciado"
+        description="A interface foi atualizada, e o servidor ainda roda a versão anterior do motor Claude. Reinicie o painel para ver este projeto aqui."
+      />
+    );
+  }
+
   const fila = data.project?.queue ?? null;
   const ocupado = Boolean(fila);
   const semFila = !fila;
@@ -147,15 +169,17 @@ export function ClaudePanel({
         />
       ) : (
         <>
-          {fila && <RunCard item={fila} />}
+          {fila && <RunCard item={fila} site={data.site} />}
 
           {semFila && data.site?.aguardandoAprovacao && (
             <ClaudeApprovalCard project={project} detail={data} busy={ocupado} />
           )}
-          {semFila && data.site?.etapaAberta && (
-            <ClaudeOpenStageCard project={project} detail={data} busy={ocupado} />
-          )}
+          {/* O erro vem antes do botão de continuar: primeiro o que houve, depois o que fazer. */}
           {semFila && <LastRunNotice detail={data} />}
+          {/* O site parou no meio — com a etapa aberta, ou com o passo seguinte fora da fila. */}
+          {semFila && data.site && !data.site.aguardandoAprovacao && (data.site.etapaAberta || data.site.proximo) && (
+            <ClaudeContinueCard project={project} detail={data} busy={ocupado} />
+          )}
 
           {/* Com o site criado, ele vem antes do briefing: é o que a pessoa
               abriu a aba para ver, e o briefing vira consulta. */}
@@ -196,16 +220,17 @@ export function ClaudePanel({
  * O pedido do projeto na fila
  * ------------------------------------------------------------------ */
 
-const runTitles: Record<string, string> = {
+const runTitles: Record<ClaudeRequestType, string> = {
   analisar: "Gerando o briefing",
   ajuste: "Ajustando o site",
   cliente: "Gerando o site",
-  briefing: "Gerando o site",
   continuar: "Continuando a geração",
+  criticar: "Criticando o site",
+  refinar: "Refinando o site",
 };
 
 /** O pedido deste projeto: esperando a vez, rodando (com o log) ou interrompido. */
-function RunCard({ item }: { item: ClaudeQueueItem }) {
+function RunCard({ item, site }: { item: ClaudeQueueItem; site: ClaudeSite | null }) {
   const { can } = usePermissions();
   const refresh = useClaudeRefresh();
   const now = useNow();
@@ -214,6 +239,12 @@ function RunCard({ item }: { item: ClaudeQueueItem }) {
   const [confirming, setConfirming] = useState<"cancel" | "resume" | "discard" | null>(null);
   const [working, setWorking] = useState(false);
   const podeGerar = can("gerar");
+  // Nas rodadas, o título diz qual: é o que separa esta crítica da anterior.
+  const rodada =
+    site && (item.tipo === "criticar" || item.tipo === "refinar")
+      ? claudeRoundLabel(site.pipeline.rodada, site.pipeline.rodadas)
+      : null;
+  const origem = requestOrigin(item);
 
   const agir = async (acao: () => Promise<unknown>, ok: string, falha: string) => {
     setWorking(true);
@@ -308,7 +339,7 @@ function RunCard({ item }: { item: ClaudeQueueItem }) {
         )}
         <h3 className="text-sm font-medium">
           {rodando
-            ? runTitles[item.tipo]
+            ? [runTitles[item.tipo], rodada].filter(Boolean).join(" · ")
             : item.posicao
               ? `Na fila do Claude · ${item.posicao}º a rodar`
               : "Na fila do Claude"}
@@ -346,7 +377,7 @@ function RunCard({ item }: { item: ClaudeQueueItem }) {
 
       <p className="text-xs text-muted-foreground">
         Pedido: <span className="text-foreground">“{item.frase.split("\n")[0]}”</span>
-        {item.por && ` · por ${item.por}`}
+        {origem && ` · ${origem}`}
       </p>
 
       {rodando && (
@@ -366,7 +397,7 @@ function RunCard({ item }: { item: ClaudeQueueItem }) {
             <AlertDialogCancel>Deixar rodando</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={() => void agir(() => cancelClaudeRun(), "Execução cancelada", "Não foi possível cancelar")}
+              onClick={() => void agir(() => cancelClaudeRun(item.id), "Execução cancelada", "Não foi possível cancelar")}
             >
               Cancelar execução
             </AlertDialogAction>
@@ -420,7 +451,7 @@ function PausedQueueNotice() {
         confirmLabel="Retomar e usar a assinatura"
         onConfirm={() => void retomar()}
       >
-        Os pedidos que esperavam voltam a rodar, um de cada vez.
+        Os pedidos que esperavam voltam a rodar, na ordem da fila.
       </ConfirmClaudeDialog>
     </>
   );
@@ -465,6 +496,8 @@ function RunsCard({ project, runs }: { project: Project; runs: ClaudeRun[] }) {
           const detalhes = [
             formatDuration(run.duracaoMs),
             run.turnos ? pluralize(run.turnos, "turno") : null,
+            run.modelo,
+            run.esforco ? `esforço ${effortLabel(run.esforco).toLowerCase()}` : null,
             formatEstimate(run.custoEstimadoUsd),
             run.retomou ? "retomou a sessão" : null,
             run.sessaoNovaPorFalha ? "sessão nova (a anterior não existia mais)" : null,

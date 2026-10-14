@@ -19,6 +19,7 @@ export type QueueKey =
   | "claude-failed"
   | "claude-resume"
   | "claude-approve"
+  | "claude-continue"
   | "claude-fix"
   | "claude-review"
   | "send"
@@ -60,6 +61,7 @@ export const QUEUE: QueueGroup[] = [
   { key: "claude-failed", label: "Geração pelo Claude falhou", short: "Geração falhou", tone: "destructive", stages: ["claude-failed"] },
   { key: "claude-resume", label: "Geração interrompida — retomar ou descartar", short: "Geração interrompida", tone: "warning", stages: ["claude-interrupted"] },
   { key: "claude-approve", label: "Aprovar a direção criativa", short: "Aprovar direção", tone: "warning", stages: ["claude-approval"] },
+  { key: "claude-continue", label: "Continuar a criação do site", short: "Continuar criação", tone: "warning", stages: ["claude-paused"] },
   { key: "send", label: "Enviar ao cliente", short: "Enviar ao cliente", tone: null, stages: ["ready"] },
   { key: "connect-github", label: "Conectar ao GitHub no Lovable", short: "Conectar ao GitHub", tone: "warning", stages: ["connect-github"] },
   { key: "link", label: "Criar ou conferir o link", short: "Criar o link", tone: "warning", stages: ["generated"] },

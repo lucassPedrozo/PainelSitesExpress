@@ -1,11 +1,15 @@
 import { EventEmitter } from "node:events";
 
 /**
- * A fila do motor Claude: uma execução por vez, as demais esperando.
- *
- * O claude consome a assinatura de uma pessoa, e o motor aponta um projeto
- * "atual" só — então a fila é uma, para o painel inteiro. Gerar em lote é pôr
+ * A fila do motor Claude: uma, para o painel inteiro. Gerar em lote é pôr
  * vários pedidos nela.
+ *
+ * A criação de um site (briefing, geração, continuação, crítica e refino)
+ * roda uma de cada vez: cada site é comparado com os anteriores, e dois
+ * nascendo juntos não se enxergariam. O ajuste de um site já entregue não
+ * depende de nenhum outro: roda ao lado da criação, e até `vagas` ajustes
+ * rodam ao mesmo tempo. Nunca duas execuções no mesmo site. Com `vagas` em
+ * zero, tudo volta a rodar um de cada vez.
  *
  * O que fica guardado é só o bastante para o painel reabrir sabendo o que
  * estava na fila e o que estava rodando. Depois de um reinício a fila volta
@@ -26,15 +30,23 @@ import { EventEmitter } from "node:events";
  *   extra?: Record<string, any>,
  * }} ItemDaFila `slug`, `sessionId` e `execucaoId` são preenchidos enquanto
  *   roda, assim que o executor descobre: servem para retomar o que foi
- *   interrompido. `extra` é do painel: o projeto e quem pediu.
+ *   interrompido. `extra` é do painel: o projeto, quem pediu e, na sequência
+ *   de um site, os passos que ela já deu.
  * @typedef {{ item: ItemDaFila, resultado?: ResultadoDaExecucao, erro?: string, status?: number }} FimDeItem
  * @typedef {{
- *   rodando: ItemDaFila | null, esperando: ItemDaFila[], interrompidas: ItemDaFila[],
- *   pausada: boolean, ultimo: FimDeItem | null,
- * }} EstadoDaFila
+ *   rodando: ItemDaFila | null, rodandoTodos: ItemDaFila[], esperando: ItemDaFila[],
+ *   interrompidas: ItemDaFila[], pausada: boolean, ultimo: FimDeItem | null,
+ * }} EstadoDaFila `rodando` é a execução principal: a da criação quando há
+ *   uma, senão o ajuste mais antigo. `rodandoTodos` traz todas.
  * @typedef {(pedido: Pedido, deps: { onEvento?: (evento: EventoDaExecucao) => void,
  *   extra?: Record<string, any> }) => Execucao} Iniciar
  */
+
+/** O site (ou, antes de ele existir, o cliente) em que um pedido mexe. */
+const alvoDe = (/** @type {ItemDaFila} */ item) =>
+  item.slug ?? ("slug" in item.pedido ? item.pedido.slug : `cliente:${item.pedido.pasta}`);
+
+const ehAjuste = (/** @type {ItemDaFila} */ item) => item.pedido.tipo === "ajuste";
 
 /**
  * Eventos: `mudou` (EstadoDaFila), `evento` (EventoDaExecucao e o item) e
@@ -45,29 +57,33 @@ export class Fila extends EventEmitter {
   #esperando = [];
   /** @type {ItemDaFila[]} */
   #interrompidas = [];
-  /** @type {{ item: ItemDaFila, exec: Execucao } | undefined} */
-  #atual;
+  /** As execuções em andamento, na ordem em que começaram. @type {Map<string, { item: ItemDaFila, exec: Execucao }>} */
+  #rodando = new Map();
   #pausada = false;
   /** @type {FimDeItem | null} */
   #ultimo = null;
   #seq = 0;
   #iniciar;
   #salvar;
-  #frase;
+  #vagas;
 
   /**
    * @param {{
    *   iniciar: Iniciar,
    *   salvos?: ItemDaFila[] | null,
    *   salvar?: (itens: ItemDaFila[]) => unknown,
+   *   vagas?: () => number,
    * }} opcoes
    *   `salvos`: os itens que estavam guardados quando o painel subiu.
    *   `salvar`: chamado a cada mudança, com tudo o que precisa sobreviver a um reinício.
+   *   `vagas`: quantos ajustes rodam ao mesmo tempo, lido a cada pedido que
+   *   pode começar. Zero: nada roda junto.
    */
-  constructor({ iniciar, salvos = null, salvar = () => undefined }) {
+  constructor({ iniciar, salvos = null, salvar = () => undefined, vagas = () => 0 }) {
     super();
     this.#iniciar = iniciar;
     this.#salvar = salvar;
+    this.#vagas = vagas;
     if (!Array.isArray(salvos) || salvos.length === 0) return;
 
     this.#interrompidas = salvos
@@ -81,8 +97,10 @@ export class Fila extends EventEmitter {
 
   /** @returns {EstadoDaFila} */
   estado() {
+    const rodando = [...this.#rodando.values()].map((atual) => atual.item);
     return {
-      rodando: this.#atual?.item ?? null,
+      rodando: rodando.find((item) => !ehAjuste(item)) ?? rodando[0] ?? null,
+      rodandoTodos: rodando,
       esperando: [...this.#esperando],
       interrompidas: [...this.#interrompidas],
       pausada: this.#pausada,
@@ -92,7 +110,7 @@ export class Fila extends EventEmitter {
 
   /** Todos os itens que a fila conhece agora — rodando, esperando e interrompidos. */
   itens() {
-    return [...(this.#atual ? [this.#atual.item] : []), ...this.#esperando, ...this.#interrompidas];
+    return [...[...this.#rodando.values()].map((atual) => atual.item), ...this.#esperando, ...this.#interrompidas];
   }
 
   /**
@@ -126,23 +144,28 @@ export class Fila extends EventEmitter {
     return item;
   }
 
-  /** Cancela a execução em andamento; a fila segue para o próximo quando o processo sair. */
-  cancelar() {
-    if (!this.#atual) return false;
-    this.#atual.exec.cancelar();
+  /**
+   * Cancela uma execução em andamento; a fila segue para o próximo quando o
+   * processo sair. Sem `id`, cancela a principal.
+   *
+   * @param {string} [id] o item da fila
+   */
+  cancelar(id) {
+    const atual = id ? this.#rodando.get(id) : this.#rodando.get(this.estado().rodando?.id ?? "");
+    if (!atual) return false;
+    atual.exec.cancelar();
     return true;
   }
 
   /**
-   * Encerramento do painel: nada mais começa, e a execução em andamento é
-   * cancelada e esperada, para ficar registrada.
+   * Encerramento do painel: nada mais começa, e as execuções em andamento são
+   * canceladas e esperadas, para ficarem registradas.
    */
   async parar() {
     this.#pausada = true;
-    const atual = this.#atual;
-    if (!atual) return;
-    atual.exec.cancelar();
-    await atual.exec.promessa.catch(() => undefined);
+    const rodando = [...this.#rodando.values()];
+    for (const atual of rodando) atual.exec.cancelar();
+    await Promise.all(rodando.map((atual) => atual.exec.promessa.catch(() => undefined)));
   }
 
   /** Libera a fila que voltou pausada de um reinício. */
@@ -183,10 +206,29 @@ export class Fila extends EventEmitter {
     this.emit("mudou", this.estado());
   }
 
+  /** O pedido pode começar agora, com o que já está rodando? */
+  #cabe(item) {
+    const rodando = [...this.#rodando.values()].map((atual) => atual.item);
+    if (rodando.length === 0) return true;
+    const vagas = Math.max(0, Math.floor(Number(this.#vagas()) || 0));
+    if (vagas === 0) return false;
+    if (rodando.some((outro) => alvoDe(outro) === alvoDe(item))) return false;
+    return ehAjuste(item)
+      ? rodando.filter(ehAjuste).length < vagas
+      : !rodando.some((outro) => !ehAjuste(outro));
+  }
+
+  /** Começa, na ordem de chegada, cada pedido que cabe ao lado do que já roda. */
   #processar() {
-    if (this.#atual || this.#pausada) return;
-    const item = this.#esperando.shift();
-    if (!item) return;
+    if (this.#pausada) return;
+    for (const item of [...this.#esperando]) {
+      if (!this.#cabe(item)) continue;
+      this.#esperando = this.#esperando.filter((outro) => outro !== item);
+      this.#comecar(item);
+    }
+  }
+
+  #comecar(item) {
     item.estado = "rodando";
     item.inicio = new Date().toISOString();
 
@@ -202,7 +244,7 @@ export class Fila extends EventEmitter {
       },
     });
     item.execucaoId = exec.id;
-    this.#atual = { item, exec };
+    this.#rodando.set(item.id, { item, exec });
     this.#mudou();
 
     exec.promessa
@@ -218,7 +260,7 @@ export class Fila extends EventEmitter {
         (/** @type {any} */ erro) => ({ item, erro: String(erro?.message ?? erro), status: Number(erro?.status) || 500 }),
       )
       .then((fim) => {
-        this.#atual = undefined;
+        this.#rodando.delete(item.id);
         this.#ultimo = fim;
         this.#mudou();
         this.emit("fim", fim);

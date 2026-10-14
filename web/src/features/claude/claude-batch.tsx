@@ -194,11 +194,16 @@ export function ClaudeBatchContent({
         <li>
           <span className="font-medium">3. A sua vez</span>
           <span className="block text-muted-foreground">
-            Cada briefing espera a sua revisão antes de virar site, e cada site validado espera o envio ao
-            GitHub.
+            Cada briefing espera a sua revisão antes de virar site. O site passa sozinho pela crítica e pelo
+            refino e, entregue, espera o envio ao GitHub.
           </span>
         </li>
       </ol>
+
+      <p className="text-xs text-muted-foreground">
+        O lote não escolhe modelo, esforço nem opções do site: cada projeto usa o que tem gravado e, no que não
+        escolheu, o padrão das Configurações.
+      </p>
 
       {status.data && !status.data.generation.enabled && (
         <Alert variant="warning">

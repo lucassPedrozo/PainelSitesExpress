@@ -103,11 +103,12 @@ try {
   fs.writeFileSync(caminhos.configuracoes, `${JSON.stringify(configuracoesDoAgente({ contrato, protegidos }), null, 2)}\n`);
 
   // O comando de um ajuste: as mesmas permissões de uma geração, com o esforço
-  // menor (a isca não precisa de raciocínio longo, e gasta menos).
+  // mínimo (a isca não precisa de raciocínio longo, e gasta menos).
   comando = montarComando({
     contrato,
     bin: base.CLAUDE_BIN,
     modelo,
+    esforco: "low",
     tipo: "ajuste",
     runbook: caminhos.runbook,
     configuracoes: caminhos.configuracoes,

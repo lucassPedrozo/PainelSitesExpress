@@ -165,3 +165,98 @@ describe("fila do motor Claude", () => {
     assert.equal(f.iniciadas.length, 1);
   });
 });
+
+describe("ajustes ao lado da criação", () => {
+  /** Um executor de mentira em que cada execução é do site do próprio pedido. */
+  function executorPorSite() {
+    const iniciadas = [];
+    const iniciar = (pedidoDaVez) => {
+      let terminar;
+      const promessa = new Promise((ok) => {
+        terminar = (status = "sucesso") =>
+          ok({ id: "x", status, pedido: fraseDe(pedidoDaVez), slug: pedidoDaVez.slug, codigoSaida: 0, duracaoMs: 1, custoEstimadoUsd: null, mensagem: "ok", sinais: [], log: "" });
+      });
+      const execucao = { pedido: pedidoDaVez, terminar, cancelada: false };
+      iniciadas.push(execucao);
+      return {
+        id: `exec-${iniciadas.length}`,
+        promessa,
+        cancelar: () => {
+          execucao.cancelada = true;
+          terminar("cancelada");
+        },
+        slug: pedidoDaVez.slug,
+        sessionId: undefined,
+      };
+    };
+    return { iniciar, iniciadas };
+  }
+  const ajuste = (slug) => ({ tipo: "ajuste", slug, pedido: "troque o telefone" });
+  const por = (fila, pedidoDaVez) => fila.adicionar(pedidoDaVez, { frase: fraseDe(pedidoDaVez) });
+  const frases = (itens) => itens.map((item) => item.frase);
+
+  it("o ajuste não espera a criação de outro site, e a criação continua uma de cada vez", async () => {
+    const a = executorPorSite();
+    const fila = new Fila({ iniciar: a.iniciar, vagas: () => 2 });
+    por(fila, { tipo: "criticar", slug: "novo" });
+    por(fila, { tipo: "refinar", slug: "outro" });
+    por(fila, ajuste("a"));
+    por(fila, ajuste("b"));
+    por(fila, ajuste("c"));
+
+    assert.deepEqual(frases(fila.estado().rodandoTodos), ["critique o site novo", "ajuste o site a: troque o telefone", "ajuste o site b: troque o telefone"]);
+    assert.equal(fila.estado().rodando.frase, "critique o site novo", "a principal é a da criação");
+    assert.deepEqual(frases(fila.estado().esperando), ["refine o site outro", "ajuste o site c: troque o telefone"], "a segunda criação e o terceiro ajuste esperam");
+
+    // Um ajuste termina: entra o que esperava a vaga, e a criação seguinte continua esperando a dela.
+    let fim = proximoFim(fila);
+    a.iniciadas[1].terminar();
+    await fim;
+    assert.deepEqual(frases(fila.estado().rodandoTodos), ["critique o site novo", "ajuste o site b: troque o telefone", "ajuste o site c: troque o telefone"]);
+    assert.deepEqual(frases(fila.estado().esperando), ["refine o site outro"]);
+
+    fim = proximoFim(fila);
+    a.iniciadas[0].terminar();
+    await fim;
+    assert.equal(fila.estado().rodando.frase, "refine o site outro", "a criação seguinte entra quando a anterior sai");
+    assert.equal(fila.itens().length, 3);
+  });
+
+  it("nunca duas execuções no mesmo site; cancelar é por item, e parar encerra todas", async () => {
+    const a = executorPorSite();
+    const fila = new Fila({ iniciar: a.iniciar, vagas: () => 3 });
+    por(fila, { tipo: "refinar", slug: "a" });
+    const mesmoSite = por(fila, ajuste("a"));
+    const outro = por(fila, ajuste("b"));
+
+    assert.deepEqual(frases(fila.estado().rodandoTodos), ["refine o site a", "ajuste o site b: troque o telefone"]);
+    assert.deepEqual(fila.estado().esperando.map((item) => item.id), [mesmoSite.id], "o ajuste do site em refino espera o refino");
+
+    assert.equal(fila.cancelar("nao-existe"), false);
+    assert.equal(fila.cancelar(mesmoSite.id), false, "o que espera é removido, não cancelado");
+    const fim = proximoFim(fila);
+    assert.equal(fila.cancelar(outro.id), true);
+    assert.equal((await fim).resultado.status, "cancelada");
+    assert.deepEqual([a.iniciadas[0].cancelada, a.iniciadas[1].cancelada], [false, true], "só a que foi pedida");
+
+    por(fila, ajuste("c"));
+    assert.equal(fila.estado().rodandoTodos.length, 2);
+    await fila.parar();
+    assert.deepEqual(a.iniciadas.map((e) => e.cancelada), [true, true, true], "o encerramento do painel cancela todas");
+    assert.equal(fila.estado().rodandoTodos.length, 0);
+    assert.deepEqual(fila.estado().esperando.map((item) => item.id), [mesmoSite.id], "e nada mais começa");
+  });
+
+  it("sem vagas, tudo roda um de cada vez", async () => {
+    const a = executorPorSite();
+    const fila = new Fila({ iniciar: a.iniciar });
+    por(fila, { tipo: "criticar", slug: "novo" });
+    por(fila, ajuste("a"));
+    por(fila, ajuste("b"));
+    assert.deepEqual([fila.estado().rodandoTodos.length, fila.estado().esperando.length], [1, 2]);
+    const fim = proximoFim(fila);
+    a.iniciadas[0].terminar();
+    await fim;
+    assert.deepEqual(frases(fila.estado().rodandoTodos), ["ajuste o site a: troque o telefone"]);
+  });
+});

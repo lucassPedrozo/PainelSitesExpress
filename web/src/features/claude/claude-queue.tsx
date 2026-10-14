@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { ClaudeQueueItem, ClaudeStatus, Project } from "@/lib/api";
 import {
   cancelClaudeRun,
+  claudeRunningItems,
   discardInterruptedClaudeRun,
   removeClaudeQueueItem,
   resumeClaudeQueue,
@@ -28,14 +29,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyNotice } from "@/components/page-header";
 import { formatElapsed } from "@/features/projects/project-progress";
-import { claudeStageLabel } from "@/features/projects/project-status";
+import { claudeRoundOf, claudeStageLabel } from "@/features/projects/project-status";
 import { ConfirmClaudeDialog, HintWhenDisabled, NoticeWithAction, RunStatusBadge } from "./claude-shared";
-import { errorMessage, requestLabels, semPermissaoDeGerar } from "./claude-text";
+import { errorMessage, requestLabels, requestOrigin, semPermissaoDeGerar } from "./claude-text";
 import { useClaudeQueueSync, useClaudeRefresh, useClaudeStatus } from "./use-claude";
 
 /**
  * A fila do Claude, do painel inteiro: o que roda agora, o que espera a vez e
- * o que um reinício interrompeu. Uma execução por vez — a assinatura é uma só.
+ * o que um reinício interrompeu. A criação de um site roda uma de cada vez; os
+ * ajustes de sites já entregues rodam ao lado dela.
  *
  * O botão só aparece onde o motor está instalado, e leva o número de pedidos
  * pendentes: é ele que diz, de qualquer ponto da lista, que há algo rodando.
@@ -54,7 +56,7 @@ export function ClaudeQueueButton({
   if (!status.data?.installed) return null;
 
   const fila = status.data.queue;
-  const pendentes = (fila.running ? 1 : 0) + fila.waiting.length + fila.interrupted.length;
+  const pendentes = claudeRunningItems(fila).length + fila.waiting.length + fila.interrupted.length;
   const atencao = fila.paused || fila.interrupted.length > 0;
 
   return (
@@ -87,8 +89,8 @@ export function ClaudeQueueButton({
           <DialogHeader>
             <DialogTitle className="text-base">Fila do Claude</DialogTitle>
             <DialogDescription>
-              Uma execução por vez, na ordem em que os pedidos chegaram. Fechar esta janela ou o navegador
-              não interrompe nada.
+              A criação de um site roda uma de cada vez, na ordem em que os pedidos chegaram; os ajustes
+              rodam ao lado dela. Fechar esta janela ou o navegador não interrompe nada.
             </DialogDescription>
           </DialogHeader>
           <QueueBody
@@ -129,6 +131,19 @@ function ItemName({
   );
 }
 
+/** "Crítica · rodada 1 de 2": o pedido, com a rodada quando o card do projeto a conhece. */
+const pedidoDe = (item: ClaudeQueueItem, project: Project | undefined) => {
+  const rodada =
+    item.tipo === "criticar" || item.tipo === "refinar" ? claudeRoundOf(item.tipo, project?.claude?.site) : null;
+  return rodada ? `${requestLabels[item.tipo]} · ${rodada}` : requestLabels[item.tipo];
+};
+
+/** " · por Ana", " · seguiu sozinho, do pedido de Ana": quem pôs o pedido na fila, para a linha dele. */
+const origemDe = (item: ClaudeQueueItem) => {
+  const origem = requestOrigin(item);
+  return origem ? ` · ${origem}` : null;
+};
+
 function QueueBody({
   status,
   projects,
@@ -144,7 +159,7 @@ function QueueBody({
   const porId = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const [working, setWorking] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<
-    { kind: "cancel" | "resume-queue" } | { kind: "resume" | "discard"; item: ClaudeQueueItem } | null
+    { kind: "resume-queue" } | { kind: "cancel" | "resume" | "discard"; item: ClaudeQueueItem } | null
   >(null);
 
   const fila = status.queue;
@@ -168,7 +183,8 @@ function QueueBody({
   /** O projeto de um pedido, para o nome e para abri-lo. */
   const projetoDe = (item: ClaudeQueueItem) => (item.projectId ? porId.get(item.projectId) : undefined);
 
-  const vazia = !fila.running && fila.waiting.length === 0 && fila.interrupted.length === 0;
+  const rodando = claudeRunningItems(fila);
+  const vazia = rodando.length === 0 && fila.waiting.length === 0 && fila.interrupted.length === 0;
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
@@ -206,38 +222,50 @@ function QueueBody({
         <EmptyNotice
           icon={<Bot />}
           title="Nada na fila"
-          description="Os pedidos de briefing, de site e de ajuste aparecem aqui enquanto esperam ou rodam."
+          description="Os pedidos de briefing, de site e de ajuste aparecem aqui enquanto esperam ou rodam — e também as críticas e os refinos, que o painel põe na fila sozinho."
         />
       )}
 
-      {fila.running && (
+      {rodando.length > 0 && (
         <section aria-labelledby="fila-rodando" className="space-y-2">
           <h3 id="fila-rodando" className="text-xs font-medium text-muted-foreground">
-            Rodando agora
+            Rodando agora{rodando.length > 1 && ` · ${rodando.length}`}
           </h3>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-info/30 bg-info/5 px-3 py-2">
-            <Loader2 className="size-4 shrink-0 animate-spin text-info" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <ItemName item={fila.running} project={projetoDe(fila.running)} onOpen={onOpenProject} />
-              <p className="truncate text-xs text-muted-foreground">
-                {requestLabels[fila.running.tipo]}
-                {fila.running.etapa && ` · ${claudeStageLabel(fila.running.etapa)}`}
-                {fila.running.inicio && ` · há ${formatElapsed(now - Date.parse(fila.running.inicio))}`}
-                {fila.running.por && ` · por ${fila.running.por}`}
-              </p>
-            </div>
-            <HintWhenDisabled reason={semPermissao}>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!podeGerar || working !== null}
-                onClick={() => setConfirming({ kind: "cancel" })}
+          {/* Os ajustes rodam ao lado da criação de um site: pode haver mais de uma execução. */}
+          <ul className="space-y-2">
+            {rodando.map((item) => (
+              <li
+                key={item.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-info/30 bg-info/5 px-3 py-2"
               >
-                {working === "cancel" ? <Loader2 className="animate-spin" /> : <Square />}
-                Cancelar
-              </Button>
-            </HintWhenDisabled>
-          </div>
+                <Loader2 className="size-4 shrink-0 animate-spin text-info" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <ItemName item={item} project={projetoDe(item)} onOpen={onOpenProject} />
+                  <p className="truncate text-xs text-muted-foreground">
+                    {pedidoDe(item, projetoDe(item))}
+                    {/* A crítica e o refino já dizem a etapa no nome do pedido. */}
+                    {item.etapa &&
+                      item.tipo !== "criticar" &&
+                      item.tipo !== "refinar" &&
+                      ` · ${claudeStageLabel(item.etapa)}`}
+                    {item.inicio && ` · há ${formatElapsed(now - Date.parse(item.inicio))}`}
+                    {origemDe(item)}
+                  </p>
+                </div>
+                <HintWhenDisabled reason={semPermissao}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!podeGerar || working !== null}
+                    onClick={() => setConfirming({ kind: "cancel", item })}
+                  >
+                    {working === item.id ? <Loader2 className="animate-spin" /> : <Square />}
+                    Cancelar
+                  </Button>
+                </HintWhenDisabled>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
@@ -253,8 +281,8 @@ function QueueBody({
                 <div className="min-w-0 flex-1">
                   <ItemName item={item} project={projetoDe(item)} onOpen={onOpenProject} />
                   <p className="truncate text-xs text-muted-foreground">
-                    {requestLabels[item.tipo]}
-                    {item.por && ` · por ${item.por}`}
+                    {pedidoDe(item, projetoDe(item))}
+                    {origemDe(item)}
                   </p>
                 </div>
                 <HintWhenDisabled reason={semPermissao}>
@@ -293,8 +321,8 @@ function QueueBody({
                 <div className="min-w-0 flex-1">
                   <ItemName item={item} project={projetoDe(item)} onOpen={onOpenProject} />
                   <p className="truncate text-xs text-muted-foreground">
-                    {requestLabels[item.tipo]}
-                    {item.por && ` · por ${item.por}`}
+                    {pedidoDe(item, projetoDe(item))}
+                    {origemDe(item)}
                   </p>
                 </div>
                 <HintWhenDisabled reason={semPermissao}>
@@ -338,14 +366,18 @@ function QueueBody({
             <AlertDialogTitle>Cancelar a execução do Claude?</AlertDialogTitle>
             <AlertDialogDescription>
               O Claude é interrompido agora, e o que ele já escreveu fica como está. O próximo pedido da fila
-              começa em seguida.
+              que couber começa em seguida.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Deixar rodando</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={() => void agir("cancel", () => cancelClaudeRun(), "Execução cancelada", "Não foi possível cancelar")}
+              onClick={() => {
+                if (confirming?.kind !== "cancel") return;
+                const { item } = confirming;
+                void agir(item.id, () => cancelClaudeRun(item.id), "Execução cancelada", "Não foi possível cancelar");
+              }}
             >
               Cancelar execução
             </AlertDialogAction>
@@ -385,7 +417,7 @@ function QueueBody({
           void agir("resume-queue", () => resumeClaudeQueue(), "Fila do Claude retomada", "Não foi possível retomar a fila")
         }
       >
-        {pluralize(fila.waiting.length, "pedido volta", "pedidos voltam")} a rodar, um de cada vez.
+        {pluralize(fila.waiting.length, "pedido volta", "pedidos voltam")} a rodar, na ordem da fila.
       </ConfirmClaudeDialog>
 
       <ConfirmClaudeDialog

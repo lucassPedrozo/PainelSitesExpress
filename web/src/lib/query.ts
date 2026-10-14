@@ -28,6 +28,7 @@ export const queryKeys = {
   claudeStatus: ["claude", "status"],
   claudeProject: (projectId: string) => ["claude", "project", projectId],
   claudeMaterial: (projectId: string) => ["claude", "material", projectId],
+  claudeOptions: (projectId: string) => ["claude", "options", projectId],
   claudePushPlan: (projectId: string) => ["claude", "push-plan", projectId],
   claudeAdoptPlan: (projectId: string) => ["claude", "adopt-plan", projectId],
   lovableStatus: ["lovable", "status"],

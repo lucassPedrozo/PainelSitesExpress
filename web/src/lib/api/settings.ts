@@ -97,6 +97,8 @@ export type ClaudeDiagnostics = {
   /** Do navegador, só o nome do programa. */
   browser: { found: boolean; name: string | null; custom: boolean } | null;
   model: { effective: string; expected: string; custom: boolean } | null;
+  /** O esforço de raciocínio de uma geração: o que vale e o que o motor espera. */
+  effort: { effective: string; expected: string; custom: boolean } | null;
   /** A geração para e espera a aprovação da direção criativa? */
   humanApproval: { enabled: boolean; custom: boolean } | null;
   /** O comando de uma geração, já sem os caminhos desta máquina. */

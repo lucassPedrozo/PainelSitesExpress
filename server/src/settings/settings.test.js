@@ -23,6 +23,11 @@ const chaves = [
   "CLAUDE_ENABLE_GENERATION",
   "CLAUDE_HUMAN_APPROVAL",
   "CLAUDE_MODEL",
+  "CLAUDE_REASONING_EFFORT",
+  "CLAUDE_REVIEW_ROUNDS",
+  "CLAUDE_PARALLEL_ADJUSTMENTS",
+  "CLAUDE_ART_DIRECTION",
+  "CLAUDE_MOTION",
 ];
 let salvo = {};
 
@@ -133,7 +138,19 @@ describe("Motor Claude", () => {
   it("a trava vem desligada, é só liga e desliga e vale sem reiniciar", () => {
     delete process.env.CLAUDE_ENABLE_GENERATION;
     assert.equal(claudeConfig().enableGeneration, false);
-    for (const chave of ["CLAUDE_ENABLE_GENERATION", "CLAUDE_HUMAN_APPROVAL", "CLAUDE_MODEL", "CLAUDE_BIN", "CLAUDE_BROWSER_PATH"]) {
+    for (const chave of [
+      "CLAUDE_ENABLE_GENERATION",
+      "CLAUDE_HUMAN_APPROVAL",
+      "CLAUDE_MODEL",
+      "CLAUDE_REASONING_EFFORT",
+      "CLAUDE_REVIEW_ROUNDS",
+      "CLAUDE_PARALLEL_ADJUSTMENTS",
+      "CLAUDE_ART_DIRECTION",
+      "CLAUDE_MOTION",
+      "CLAUDE_BIN",
+      "CLAUDE_BROWSER_PATH",
+    ]) {
+      assert.ok(SETTING_FIELDS.has(chave), `${chave} está na tela de Configurações`);
       assert.equal(Boolean(SETTING_FIELDS.get(chave)?.restart), false, chave);
     }
     assert.deepEqual(validateSettings({ CLAUDE_ENABLE_GENERATION: true }), { ok: true, values: { CLAUDE_ENABLE_GENERATION: "1" } });
@@ -152,13 +169,49 @@ describe("Motor Claude", () => {
     }
   });
 
-  it("a aprovação da direção criativa tem três posições, e o modelo é só um id", () => {
+  it("a escolha da rota criativa tem três posições, e o modelo é só um id", () => {
     for (const valor of ["", "1", "0"]) assert.equal(recusa("CLAUDE_HUMAN_APPROVAL", valor), null, JSON.stringify(valor));
     assert.match(recusa("CLAUDE_HUMAN_APPROVAL", "sim"), /Opção inválida/);
     for (const valor of ["claude-opus-5-5", "sonnet", "opus[1m]", ""]) assert.equal(recusa("CLAUDE_MODEL", valor), null, valor);
     // O modelo vira um argumento do claude: nada que pareça outra opção dele.
     for (const valor of ["--dangerously-skip-permissions", "opus --resume x", "modelo;rm"]) {
       assert.match(recusa("CLAUDE_MODEL", valor), /id ou o apelido do modelo/, valor);
+    }
+  });
+
+  it("esforço, rodadas, direção de arte e movimento: listas fechadas, com o vazio deixando a escolha com o motor", () => {
+    const aceitos = {
+      CLAUDE_REASONING_EFFORT: ["", "low", "medium", "high", "xhigh", "max"],
+      CLAUDE_REVIEW_ROUNDS: ["", "1", "2", "3", "4"],
+      CLAUDE_ART_DIRECTION: ["", "sobria", "autoral", "ousada"],
+      CLAUDE_MOTION: ["", "discreto", "expressivo", "cinematografico"],
+    };
+    for (const [chave, valores] of Object.entries(aceitos)) {
+      assert.deepEqual(SETTING_FIELDS.get(chave).options.map((opcao) => opcao.value), valores, chave);
+      for (const valor of valores) assert.equal(recusa(chave, valor), null, `${chave}=${valor}`);
+    }
+    // O esforço vira um argumento do claude, e as outras três seguem para o motor: nada fora da lista entra.
+    for (const [chave, valor] of [["CLAUDE_REASONING_EFFORT", "ultra"], ["CLAUDE_REASONING_EFFORT", "--resume"], ["CLAUDE_REVIEW_ROUNDS", "5"], ["CLAUDE_REVIEW_ROUNDS", "0"], ["CLAUDE_ART_DIRECTION", "neutra"], ["CLAUDE_MOTION", "cinematográfico"]]) {
+      assert.match(recusa(chave, valor), /Opção inválida/, `${chave}=${valor}`);
+    }
+
+    const pasta = mkdtempSync(path.join(tmpdir(), "painel-env-"));
+    try {
+      const arquivo = path.join(pasta, ".env");
+      writeSettings({ CLAUDE_REASONING_EFFORT: "max", CLAUDE_REVIEW_ROUNDS: "3", CLAUDE_ART_DIRECTION: "ousada", CLAUDE_MOTION: "cinematografico" }, arquivo);
+      const escolhido = claudeConfig();
+      assert.deepEqual([escolhido.effort, escolhido.reviewRounds, escolhido.artDirection, escolhido.motion], ["max", 3, "ousada", "cinematografico"]);
+      // Vale na hora: apagar devolve cada escolha ao motor.
+      writeSettings({ CLAUDE_REASONING_EFFORT: "", CLAUDE_REVIEW_ROUNDS: "", CLAUDE_ART_DIRECTION: "", CLAUDE_MOTION: "" }, arquivo);
+      const padrao = claudeConfig();
+      assert.deepEqual([padrao.effort, padrao.reviewRounds, padrao.artDirection, padrao.motion], ["", null, "", ""]);
+      // Um `.env` editado à mão com um número de rodadas que o motor não aceita vale como vazio.
+      for (const valor of ["0", "5", "2.5", "duas"]) {
+        process.env.CLAUDE_REVIEW_ROUNDS = valor;
+        assert.equal(claudeConfig().reviewRounds, null, valor);
+      }
+    } finally {
+      rmSync(pasta, { recursive: true, force: true });
     }
   });
 

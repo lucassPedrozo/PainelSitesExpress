@@ -41,6 +41,7 @@ const item = (over: Partial<ClaudeQueueItem> = {}): ClaudeQueueItem => ({
   slug: null,
   execucaoId: "e1",
   etapa: null,
+  encadeado: false,
   posicao: null,
   ...over,
 });
@@ -78,9 +79,29 @@ const site = (over: Partial<NonNullable<ClaudeSummary["site"]>> = {}): NonNullab
   openStage: null,
   delivered: true,
   situation: "entregue",
+  phase: "entregue",
+  round: 2,
+  rounds: 2,
+  next: null,
   checkedAt: "2026-10-07T13:00:00.000Z",
   ...over,
 });
+
+/** O site no meio das rodadas: escrito e revisado, ainda não entregue. */
+const naRodada = (
+  phase: "critica" | "refino",
+  round: number,
+  over: Partial<NonNullable<ClaudeSummary["site"]>> = {},
+) =>
+  site({
+    delivered: false,
+    situation: phase === "critica" ? "em crítica" : "em refino",
+    phase,
+    round,
+    rounds: 2,
+    next: phase === "critica" ? "criticar" : "refinar",
+    ...over,
+  });
 
 const siteDoClaude = (over: Partial<Generation> = {}): Generation =>
   ({
@@ -286,9 +307,119 @@ describe("motor Claude — o selo e o próximo passo de cada situação", () => 
     expect(progressOf(ajustando)?.title).toBe("Ajustando com o Claude");
   });
 
+  it("nas rodadas de crítica e refino o site ainda está sendo criado: o selo diz a rodada", () => {
+    const criticando = projeto({
+      claude: claude({ briefing: briefing("ok"), slug: "s", site: naRodada("critica", 1), queue: item({ tipo: "criticar", encadeado: true }) }),
+    });
+    expect(etapaE(criticando)).toEqual(["claude-building", "Acompanhar", false]);
+    expect(projectStatus(criticando).label).toBe("Em crítica · rodada 1 de 2");
+    expect(projectStatus(criticando).detail).toMatch(/não escreveu o site/);
+
+    const refinando = projeto({
+      claude: claude({ briefing: briefing("ok"), slug: "s", site: naRodada("refino", 2), queue: item({ tipo: "refinar", encadeado: true }) }),
+    });
+    expect(projectStatus(refinando).label).toBe("Em refino · rodada 2 de 2");
+    expect(progressOf(refinando)).toMatchObject({ title: "Em refino · rodada 2 de 2" });
+
+    // Resumo gravado antes das rodadas (sem fase): o selo diz o que roda, sem inventar a rodada.
+    const semFase = projeto({
+      claude: claude({ site: site({ delivered: false, phase: null, round: null, rounds: null }), queue: item({ tipo: "criticar" }) }),
+    });
+    expect(projectStatus(semFase).label).toBe("Em crítica");
+    const andamento = progressOf(semFase);
+    expect(andamento?.kind === "agent" && andamento.phases.map((fase) => [fase.label, fase.state])).toEqual([["Crítica", "active"]]);
+
+    // Esperando a vez, o card diz o que espera; e nada disso parece pronto para o GitHub ou para o cliente.
+    const naFila = projeto({
+      claude: claude({ briefing: briefing("ok"), site: naRodada("refino", 1), queue: item({ tipo: "refinar", estado: "esperando", posicao: 2, encadeado: true }) }),
+    });
+    expect(etapaE(naFila)).toEqual(["claude-queued", "Acompanhar", false]);
+    expect(projectStatus(naFila).detail).toBe("O refino da rodada 1 de 2 do site espera a vez na fila do Claude: é o 2º a rodar. Uma execução por vez.");
+    for (const p of [criticando, refinando, naFila]) {
+      expect(["to-github", "ready", "generated", "claude-brief-ready"]).not.toContain(projectStatus(p).stage);
+    }
+  });
+
+  it("o andamento das rodadas: o que já foi feito, a rodada da vez e as que faltam", () => {
+    const fases = (p: Project) => {
+      const andamento = progressOf(p);
+      return andamento?.kind === "agent" ? andamento.phases.map((fase) => `${fase.label}:${fase.state}`) : null;
+    };
+    const criticando = projeto({ claude: claude({ site: naRodada("critica", 1), queue: item({ tipo: "criticar" }) }) });
+    expect(fases(criticando)).toEqual([
+      "Direção criativa:done",
+      "Escrevendo o site:done",
+      "Revisando:done",
+      "Crítica 1:active",
+      "Refino 1:todo",
+      "Crítica 2:todo",
+      "Refino 2:todo",
+    ]);
+    expect(progressOf(criticando)).toMatchObject({ current: "Outra conversa do Claude avalia o site pronto" });
+
+    // Na fila, o que já foi feito continua feito; só a etapa da vez espera.
+    const refinoNaFila = projeto({
+      claude: claude({ site: naRodada("refino", 2), queue: item({ tipo: "refinar", estado: "esperando", posicao: 1 }) }),
+    });
+    expect(fases(refinoNaFila)).toEqual([
+      "Direção criativa:done",
+      "Escrevendo o site:done",
+      "Revisando:done",
+      "Crítica 1:done",
+      "Refino 1:done",
+      "Crítica 2:done",
+      "Refino 2:todo",
+    ]);
+    expect(progressOf(refinoNaFila)).toMatchObject({ title: "Na fila do Claude · 1º", queued: true });
+
+    // Continuando a criação de um site com rodadas: elas aparecem pela frente.
+    const continuando = projeto({
+      claude: claude({ site: site({ delivered: false, phase: "geracao", round: 0, rounds: 1, next: "continuar" }), queue: item({ tipo: "continuar", etapa: "geracao" }) }),
+    });
+    expect(fases(continuando)).toEqual([
+      "Direção criativa:done",
+      "Escrevendo o site:active",
+      "Revisando:todo",
+      "Crítica 1:todo",
+      "Refino 1:todo",
+    ]);
+  });
+
+  it("a sequência que parou no meio pede alguém: o card diz o que falta e o passo é Continuar", () => {
+    const antesDaCritica = projeto({ claude: claude({ briefing: briefing("ok"), slug: "s", site: naRodada("critica", 1), lastRun: ultima() }) });
+    expect(etapaE(antesDaCritica)).toEqual(["claude-paused", "Continuar", true]);
+    expect(nextStep(antesDaCritica).kind).toBe("claude");
+    expect(projectStatus(antesDaCritica).label).toBe("Site para continuar");
+    expect(projectStatus(antesDaCritica).detail).toBe(
+      "A criação do site parou antes da crítica da rodada 1 de 2: ele está escrito e revisado. Continue para ele ser entregue.",
+    );
+
+    const antesDoRefino = projeto({ claude: claude({ briefing: briefing("ok"), slug: "s", site: naRodada("refino", 2), lastRun: ultima({ type: "criticar" }) }) });
+    expect(projectStatus(antesDoRefino).detail).toBe(
+      "A criação do site parou antes do refino da rodada 2 de 2: a crítica já apontou o que corrigir. Continue para ele ser entregue.",
+    );
+
+    const noMeio = projeto({
+      claude: claude({ briefing: briefing("ok"), slug: "s", site: site({ delivered: false, phase: "revisao", round: 0, next: "continuar" }), lastRun: ultima({ status: "cancelada" }) }),
+    });
+    expect(etapaE(noMeio)).toEqual(["claude-paused", "Continuar", true]);
+    expect(projectStatus(noMeio).detail).toMatch(/parou antes de terminar/);
+
+    // A execução que falhou sem deixar site entregue continua sendo "falhou": primeiro o erro.
+    const criticaFalhou = projeto({
+      claude: claude({ briefing: briefing("ok"), slug: "s", site: naRodada("critica", 1), lastRun: ultima({ type: "criticar", status: "falha" }) }),
+    });
+    expect(etapaE(criticaFalhou)).toEqual(["claude-failed", "Ver erro", true]);
+
+    // Entregue (nada pela frente) e resumo de antes das rodadas (sem `next`): nada de "parada".
+    expect(projectStatus(projeto({ claude: claude({ briefing: briefing("ok"), site: site() }) })).stage).toBe("claude-brief-ready");
+    const antigo = { ...site({ delivered: false }), next: undefined } as unknown as NonNullable<ClaudeSummary["site"]>;
+    expect(projectStatus(projeto({ claude: claude({ briefing: briefing("ok"), site: antigo }) })).stage).toBe("claude-brief-ready");
+  });
+
   it("toda etapa nova tem rótulo, cor e lugar na ordem", () => {
     const novas = stageOrder.filter((stage) => stage.startsWith("claude-"));
-    expect(novas).toHaveLength(8);
+    expect(novas).toHaveLength(9);
     for (const stage of novas) {
       expect(stageLabels[stage]).toBeTruthy();
       expect(stageClass[stage]).toBeTruthy();
@@ -308,10 +439,12 @@ describe("motor Claude — andamento, fila de trabalho e avisos", () => {
     expect(escrevendo?.kind === "agent" && escrevendo.phases.map((fase) => fase.state)).toEqual(["active"]);
 
     const gerando = progressOf(projeto({ claude: claude({ queue: item({ etapa: "geracao" }) }) }));
+    // O site novo ainda não diz quantas rodadas terá: elas entram como uma etapa só.
     expect(gerando?.kind === "agent" && gerando.phases.map((fase) => [fase.label, fase.state])).toEqual([
       ["Direção criativa", "done"],
       ["Escrevendo o site", "active"],
       ["Revisando", "todo"],
+      ["Crítica e refino", "todo"],
     ]);
     expect(gerando).toMatchObject({ title: "Gerando com o Claude", current: "Escrevendo o site" });
     // Antes de o claude abrir a primeira etapa, vale a primeira.
@@ -332,14 +465,18 @@ describe("motor Claude — andamento, fila de trabalho e avisos", () => {
       projeto({ id: "e", claude: claude({ site: site({ awaitingApproval: true }) }) }),
       projeto({ id: "f", claude: claude({ site: site({ openStage: "revisao" }) }) }),
       projeto({ id: "g", claude: claude({ queue: item({ estado: "esperando" }) }) }),
+      // Nas rodadas: rodando é andamento; parado no meio é de quem manda continuar.
+      projeto({ id: "h", claude: claude({ briefing: briefing("ok"), site: naRodada("critica", 1), queue: item({ tipo: "criticar", encadeado: true }) }) }),
+      projeto({ id: "i", claude: claude({ briefing: briefing("ok"), site: naRodada("refino", 1) }) }),
     ];
     expect(groupByNextStep(projetos).map((grupo) => [grupo.key, grupo.items.map((p) => p.id)])).toEqual([
       ["claude-failed", ["f"]],
       ["claude-resume", ["d"]],
       ["claude-approve", ["e"]],
+      ["claude-continue", ["i"]],
       ["claude-fix", ["b"]],
       ["claude-review", ["a"]],
-      ["in-progress", ["c", "g"]],
+      ["in-progress", ["c", "g", "h"]],
     ]);
     expect(projetos.some(isDone)).toBe(false);
   });
@@ -363,6 +500,17 @@ describe("motor Claude — andamento, fila de trabalho e avisos", () => {
     expect(aviso(de("claude-building"), projeto({ claude: claude({ site: site() }), generations: [siteDoClaude()] }))).toEqual([
       ["Site pronto: cliente.com.br", "success"],
     ]);
+    // A sequência parou no meio das rodadas: alguém precisa mandar continuar.
+    expect(
+      aviso(de("claude-building"), projeto({ claude: claude({ briefing: briefing("ok"), site: naRodada("critica", 1) }) })),
+    ).toEqual([["Site para continuar: cliente.com.br", "warning"]]);
+    // De uma rodada para a outra o site continua sendo criado: nada a avisar.
+    expect(
+      aviso(
+        de("claude-building"),
+        projeto({ claude: claude({ site: naRodada("refino", 1), queue: item({ tipo: "refinar", encadeado: true }) }) }),
+      ),
+    ).toEqual([]);
     // Da fila para a execução não é novidade; e o que já estava assim também não.
     expect(aviso(de("claude-queued"), projeto({ claude: claude({ queue: item() }) }))).toEqual([]);
     expect(aviso(de("claude-building"), projeto({ claude: claude({ queue: item() }) }))).toEqual([]);

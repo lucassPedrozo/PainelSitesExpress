@@ -28,7 +28,8 @@ export type NextStep =
   | { kind: "push-site"; label: string }
   /**
    * Abre o projeto na aba do Claude — é lá que se acompanha a execução,
-   * revisa o briefing, aprova a direção, vê o erro ou retoma o que parou.
+   * revisa o briefing, aprova a direção ou escolhe outra rota, vê o erro,
+   * continua a sequência que parou ou retoma o que um reinício interrompeu.
    */
   | { kind: "claude"; label: string }
   /** Manda ao GitHub o site que o Claude gerou e validou. */
@@ -76,6 +77,10 @@ export function nextStep(project: Project): NextStep {
       return { kind: "claude", label: "Ver erro" };
     case "claude-approval":
       return { kind: "claude", label: "Aprovar direção" };
+    case "claude-paused":
+      // O que roda — a continuação, a crítica ou o refino — está escrito no
+      // botão e na confirmação da aba do Claude.
+      return { kind: "claude", label: "Continuar" };
     case "claude-building":
     case "claude-briefing":
     case "claude-queued":

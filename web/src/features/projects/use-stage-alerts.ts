@@ -56,6 +56,9 @@ export function stageAlerts(
         alerts.push({ projectId: project.id, title: `${oQue} falhou: ${nome}`, body: detail, tone: "error" });
       } else if (stage === "claude-approval") {
         alerts.push({ projectId: project.id, title: `Direção para aprovar: ${nome}`, body: detail, tone: "warning" });
+      } else if (stage === "claude-paused") {
+        // A sequência não seguiu sozinha: o site espera alguém mandar continuar.
+        alerts.push({ projectId: project.id, title: `Site para continuar: ${nome}`, body: detail, tone: "warning" });
       } else if (stage === "claude-brief-refused") {
         alerts.push({ projectId: project.id, title: `Briefing recusado: ${nome}`, body: detail, tone: "warning" });
       } else if (stage === "claude-brief-ready") {

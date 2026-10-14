@@ -1,12 +1,16 @@
 // Binário `claude` de mentira para os testes do motor Claude: emite eventos stream-json de exemplo e nunca
 // fala com a Anthropic. O executor chega aqui por CLAUDE_BIN.
 //   CLAUDE_FALSO_CENARIO   ok (padrão) | auth | sem-sessao | lento | teimoso | chave | mcp | plugin | ferramenta
-//                          | modo | vaza | briefing-simples | site | cliente | briefing | briefing-ruim
+//                          | modo | vaza | briefing-simples | site | pipeline | cliente | briefing | briefing-ruim
 //   CLAUDE_FALSO_REGISTRO  arquivo que recebe, por chamada, uma linha JSON com os argumentos, o stdin e o ambiente visto
 //   CLAUDE_FALSO_PASTA     pasta do cliente que os cenários "cliente" e "briefing" usam
 //   CLAUDE_FALSO_BRIEFING  briefing pronto que o cenário "briefing" grava na pasta do cliente
 //   CLAUDE_FALSO_PID       arquivo que recebe o pid deste processo (para o teste do órfão)
-//   CLAUDE_FALSO_ATRASO_MS quanto o cenário "ok" espera antes de responder
+//   CLAUDE_FALSO_ATRASO_MS quanto os cenários "ok" e "pipeline" esperam antes de responder
+//   No cenário "pipeline" (o site que passa por crítica e refino; o pedido digitado diz qual é o passo):
+//   CLAUDE_FALSO_APROVA_NA rodada em que a crítica aprova o site (vazio: nunca aprova, e todas as rodadas acontecem)
+//   CLAUDE_FALSO_EMPACA    criticar | refinar: esse passo termina sem erro e sem fazer o pipeline andar
+//   CLAUDE_FALSO_FALHA_NO  criticar | refinar: esse passo termina com erro
 import { spawnSync } from 'node:child_process'
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -38,6 +42,14 @@ if (process.env.CLAUDE_FALSO_REGISTRO) {
     modelo: process.env.JOINVIXABLE_HEADLESS_MODELO ?? null,
     painel: process.env.JOINVIXABLE_PAINEL ?? null,
     trabalho: process.env.JOINVIXABLE_TRABALHO ?? null,
+    atual: process.env.JOINVIXABLE_ATUAL ?? null,
+    // O que as Configurações do painel dizem do pipeline: só chega o que está preenchido.
+    pipeline: {
+      rodadas: process.env.JOINVIXABLE_RODADAS ?? null,
+      direcaoDeArte: process.env.JOINVIXABLE_DIRECAO_DE_ARTE ?? null,
+      movimento: process.env.JOINVIXABLE_MOVIMENTO ?? null,
+      aprovacao: process.env.JOINVIXABLE_APROVACAO_HUMANA ?? null,
+    },
     memoria: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY ?? null,
     runbook: depois('--append-system-prompt-file') ? readFileSync(depois('--append-system-prompt-file'), 'utf8').slice(0, 200) : null,
     configuracoes: depois('--settings') ? JSON.parse(readFileSync(depois('--settings'), 'utf8')) : null,
@@ -48,7 +60,9 @@ const espera = (ms) => new Promise((ok) => setTimeout(ok, ms))
 const escrever = (dados) => new Promise((ok) => process.stdout.write(dados, ok))
 const linha = (ev) => JSON.stringify(ev) + '\n'
 
-const sessao = resume ?? (cenario === 'sem-sessao' ? 'sessao-nova-depois-da-falha' : 'sessao-falsa-1')
+// Quem critica é outra conversa: uma sessão nova abre com o id dela, e não com o de quem escreveu o site.
+const sessaoNova = cenario === 'sem-sessao' ? 'sessao-nova-depois-da-falha' : /^critique o site /.test(entrada) ? 'sessao-do-critico' : 'sessao-falsa-1'
+const sessao = resume ?? sessaoNova
 // O `system/init` conta o que o claude de verdade diria ter aberto: é isso que o executor confere contra o contrato.
 const inicio = (extra = {}) => ({
   type: 'system',
@@ -118,7 +132,7 @@ if (cenario === 'lento' || cenario === 'teimoso') {
   // O teimoso não sai no primeiro sinal: é ele que prova o segundo tempo do cancelamento.
   if (cenario === 'teimoso') process.on('SIGINT', () => {})
   await escrever(linha(inicio()))
-  await escrever(linha(bash('t1', 'npm run -s step -- start ajuste lento "pedido" --modelo=claude-sonnet-5-5')))
+  await escrever(linha(bash('t1', 'npm run -s step -- start ajuste lento "pedido" --modelo=claude-opus-5-5')))
   // Fica trabalhando até ser cancelado.
   await espera(120_000)
   process.exit(0)
@@ -164,9 +178,57 @@ if (cenario === 'briefing-simples') {
   process.exit(0)
 }
 
-if (cenario === 'site') {
+/**
+ * O pipeline de um site, no arquivo que o motor de mentira lê (`.session/pipeline.json`): quantas rodadas de crítica e
+ * refino ele tem, em qual está, a fase e a última crítica. É o que o agente de verdade deixa na sessão do projeto.
+ */
+const arquivoDoPipeline = (slug) => join(process.cwd(), 'projects', slug, '.session', 'pipeline.json')
+const lerPipeline = (slug) => JSON.parse(readFileSync(arquivoDoPipeline(slug), 'utf8'))
+const gravarPipeline = (slug, pipeline) => writeFileSync(arquivoDoPipeline(slug), JSON.stringify(pipeline, null, 2))
+
+if (cenario === 'pipeline' && Number(process.env.CLAUDE_FALSO_ATRASO_MS) > 0) await espera(Number(process.env.CLAUDE_FALSO_ATRASO_MS))
+const passo = cenario === 'pipeline' ? /^(critique|refine) o site (\S+)/.exec(entrada) : null
+if (passo) {
+  // Uma execução por passo: a crítica, de uma sessão que não escreveu o site, ou o refino, de quem escreveu.
+  const [, verbo, slug] = passo
+  const tipo = verbo === 'critique' ? 'criticar' : 'refinar'
+  const etapa = tipo === 'criticar' ? 'critica' : 'refino'
+  const pipeline = lerPipeline(slug)
+  await escrever(linha(inicio()))
+  await escrever(linha(bash('t1', `npm run -s step -- start ${etapa} ${slug} --modelo=${depois('--model')}`)))
+  await escrever(linha(retorno('t1', `[etapa ${etapa} aberta para "${slug}" | rodada ${pipeline.rodada} de ${pipeline.rodadas}]`)))
+  if (process.env.CLAUDE_FALSO_FALHA_NO === tipo) {
+    await escrever(linha(fim({ subtype: 'error_during_execution', is_error: true, result: `Não consegui terminar a etapa de ${etapa}.` })))
+    process.exit(1)
+  }
+  if (process.env.CLAUDE_FALSO_EMPACA !== tipo) {
+    if (tipo === 'criticar') {
+      const aprovado = Number(process.env.CLAUDE_FALSO_APROVA_NA) > 0 && pipeline.rodada >= Number(process.env.CLAUDE_FALSO_APROVA_NA)
+      pipeline.critica = {
+        rodada: pipeline.rodada,
+        veredito: aprovado ? 'aprovado' : 'refinar',
+        resumo: aprovado ? 'O site tem cara própria e está pronto para o cliente.' : 'A abertura é a de um template: falta uma ideia que seja deste cliente.',
+        notas: aprovado ? { identidade: 9, hierarquia: 8, movimento: 8 } : { identidade: 5, hierarquia: 7, movimento: 6 },
+        // O crítico cita o arquivo pelo caminho desta máquina: a tela não pode mostrá-lo assim.
+        problemas: aprovado ? [] : [{ gravidade: 'grave', onde: join(process.cwd(), 'projects', slug, 'src', 'App.tsx'), problema: 'O topo repete a estrutura de sempre.', correcao: 'Abrir com a foto do balcão e o título sobre ela.' }],
+      }
+      pipeline.fase = aprovado ? 'entregue' : 'refino'
+    } else if (pipeline.rodada < pipeline.rodadas) {
+      pipeline.rodada += 1
+      pipeline.fase = 'critica'
+    } else {
+      pipeline.fase = 'entregue'
+    }
+    gravarPipeline(slug, pipeline)
+  }
+  await escrever(linha(fim({ result: tipo === 'criticar' ? `Crítica da rodada ${pipeline.critica?.rodada ?? pipeline.rodada} registrada.` : 'Refino feito e validado.' })))
+  process.exit(0)
+}
+
+if (cenario === 'site' || (cenario === 'pipeline' && /^gere o site do cliente /.test(entrada))) {
   // O agente cria o projeto do cliente e entrega o site, sem o pacote do motor: grava só o que o executor procura —
-  // o registro do cliente e a sessão do projeto. A pasta vem do pedido digitado, como o agente de verdade a lê.
+  // o registro do cliente e a sessão do projeto. A pasta vem do pedido digitado, como o agente de verdade a lê. No
+  // cenário "pipeline" a geração não é o fim: o site sai dela esperando a primeira crítica.
   const pasta = /gere o site do cliente (\S+)/.exec(entrada)?.[1]
   const refeito = /--refazer/.test(entrada)
   const slug = `${pasta}${refeito ? '-2' : ''}`
@@ -179,12 +241,20 @@ if (cenario === 'site') {
   }
   mkdirSync(join(process.cwd(), 'projects', slug, '.session'), { recursive: true })
   writeFileSync(join(process.cwd(), 'projects', slug, '.session', 'session.json'), '{}')
+  if (cenario === 'pipeline') {
+    // As rodadas são as que o painel passou pelo ambiente; sem nada lá, as duas do padrão do motor.
+    gravarPipeline(slug, { rodadas: Number(process.env.JOINVIXABLE_RODADAS) || 2, rodada: 1, fase: 'critica', critica: null })
+    // O mínimo de um site do motor, para o envio ao GitHub ter o que mandar quando a sequência terminar.
+    mkdirSync(join(process.cwd(), 'projects', slug, 'src'), { recursive: true })
+    writeFileSync(join(process.cwd(), 'projects', slug, 'src', 'main.tsx'), "import './App'\n")
+    writeFileSync(join(process.cwd(), 'projects', slug, 'content.json'), JSON.stringify({ site: { titulo: pasta } }))
+  }
   mkdirSync(dirname(registro), { recursive: true })
   writeFileSync(registro, JSON.stringify({ projetos: [...projetos, { slug, briefing: 'briefing/briefing.json', criado_em: new Date().toISOString() }] }))
   await escrever(linha(inicio()))
   await escrever(linha(bash('t1', `npm run -s cliente -- ${pasta}`)))
   await escrever(linha(retorno('t1', `PROJETO_CRIADO=${slug}`)))
-  await escrever(linha(bash('t2', `npm run -s step -- start geracao ${slug} --modelo=claude-sonnet-5-5`)))
+  await escrever(linha(bash('t2', `npm run -s step -- start geracao ${slug} --modelo=claude-opus-5-5`)))
   await escrever(linha(retorno('t2', `[etapa geracao aberta para "${slug}" | limite: 60 chamadas de ferramenta]`)))
   await escrever(linha(fim({ result: 'Site entregue e validado.' })))
   process.exit(0)
@@ -211,7 +281,7 @@ if (Number(process.env.CLAUDE_FALSO_ATRASO_MS) > 0) await espera(Number(process.
 const bytes = Buffer.from(
   [
     inicio(),
-    bash('t1', 'npm run -s step -- start ajuste h "troque a descrição" --modelo=claude-sonnet-5-5'),
+    bash('t1', 'npm run -s step -- start ajuste h "troque a descrição" --modelo=claude-opus-5-5'),
     retorno('t1', '[etapa ajuste aberta para "h" | limite: 20 chamadas de ferramenta]'),
     bash('t2', 'npm run -s tool -- edit_file <<\'EOF\'\n{"path": "content.json", "old_string": "a", "new_string": "ação"}\nEOF'),
     retorno('t2', 'content.json alterado.'),

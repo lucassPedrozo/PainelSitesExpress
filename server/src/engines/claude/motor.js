@@ -9,8 +9,8 @@ import { HttpError } from "../../http.js";
  * O motor é TypeScript rodado por `tsx`; o servidor do painel é JavaScript e
  * sobe sem transpilador. Então nada do motor é importado aqui: cada pergunta
  * é um processo filho. As consultas respondem em JSON (`scripts/consulta.ts`),
- * e os comandos de sempre — validar, telas, filme — respondem pelo código de
- * saída e pelo texto.
+ * e os comandos de sempre — validar, telas — respondem pelo código de saída e
+ * pelo texto.
  *
  * Nada neste arquivo dispara o Claude. Quem dispara o `claude -p` é o
  * executor (`executor.js`).
@@ -140,7 +140,12 @@ export function criarMotor({ dirMotor, ambiente, log = (linha) => console.error(
     estado: () => estadoDoPacote(dirMotor),
     consulta,
 
-    /** O contrato de permissões do `claude -p`, o modelo esperado e os fatos do ambiente do motor. */
+    /**
+     * O contrato de permissões do `claude -p`, o modelo esperado, os padrões do
+     * pipeline (`padroes`: rodadas, direção de arte, movimento e escolha de
+     * rota, já com o que o painel passou pelo ambiente) e os fatos do ambiente
+     * do motor.
+     */
     ambiente: () => consulta(["ambiente"]),
 
     /**
@@ -165,14 +170,16 @@ export function criarMotor({ dirMotor, ambiente, log = (linha) => console.error(
       return { frase, sites: Array.isArray(sites) ? sites : [] };
     },
 
-    /** @param {string} slug */
+    /**
+     * Onde o site parou e o que vem depois: `proximo` é o pedido que faz o
+     * pipeline andar (continuar, criticar ou refinar), ou `null`.
+     * @param {string} slug
+     */
     estadoDoProjeto: (slug) => consulta(["estado", slug]),
     /** @param {string} pasta */
     conferirBriefing: (pasta) => consulta(["conferir", pasta]),
     /** @param {string} pasta */
     revisao: (pasta) => consulta(["revisao", pasta]),
-    /** @param {string} pasta */
-    material: (pasta) => consulta(["material", pasta]),
     /** @param {string} pasta @param {object} opcoes */
     gravarOpcoes: (pasta, opcoes) => consulta(["opcoes", pasta], opcoes),
     /**
@@ -180,18 +187,27 @@ export function criarMotor({ dirMotor, ambiente, log = (linha) => console.error(
      * @param {string} pasta @param {object} briefing
      */
     gravarBriefing: (pasta, briefing) => consulta(["briefing", pasta], briefing),
-    /** @param {string} nome */
-    modeloDeBriefing: (nome) => consulta(["modelo", nome]),
     /** @param {string} slug */
     projeto: (slug) => consulta(["projeto", slug]),
     /** @param {string} slug */
     aprovar: (slug) => consulta(["aprovar", slug]),
+    /**
+     * Troca a rota criativa enquanto a direção espera aprovação: a escolhida
+     * fica registrada, e a direção é refeita com ela na execução seguinte.
+     * @param {string} slug @param {number} n
+     */
+    rota: (slug, n) => consulta(["rota", slug, String(n)]),
     /** @param {string} slug @param {string} [motivo] */
     abortar: (slug, motivo = "") => consulta(["abortar", slug, ...(motivo.trim() ? [motivo.trim()] : [])]),
     /** @param {string} slug @param {string} ref */
     recusarFoto: (slug, ref) => consulta(["recusar-foto", slug, ref]),
-    /** @param {string} [slug] */
-    metricas: (slug) => consulta(slug ? ["metricas", slug] : ["metricas"]),
+    /**
+     * O site já gerado passa a aceitar várias páginas, ou volta a ser de página
+     * única. O briefing do cliente acompanha o do projeto.
+     * @param {string} slug @param {boolean} variasPaginas @param {string} pasta
+     */
+    tipoDoSite: (slug, variasPaginas, pasta) =>
+      consulta(["tipo-de-site", slug, variasPaginas ? "paginas" : "unica", pasta]),
 
     /**
      * Grava o runbook — o mesmo texto do AGENTS.md, gerado das fontes na hora —
@@ -219,17 +235,6 @@ export function criarMotor({ dirMotor, ambiente, log = (linha) => console.error(
       const { codigo, saida, erro } = await rodar("telas", [slug]);
       if (codigo !== 0) {
         throw new RecusaDoMotor((erro || saida).trim().split("\n").pop() || "Não foi possível fotografar o site.");
-      }
-    },
-
-    /**
-     * Filma a abertura da página numa tira de quadros.
-     * @param {string} slug
-     */
-    filme: async (slug) => {
-      const { codigo, saida, erro } = await rodar("filme", [slug]);
-      if (codigo !== 0) {
-        throw new RecusaDoMotor((erro || saida).trim().split("\n").pop() || "Não foi possível filmar o site.");
       }
     },
   };

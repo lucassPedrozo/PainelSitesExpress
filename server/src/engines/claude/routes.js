@@ -73,12 +73,15 @@ claudeRouter.get("/claude/status", async (_req, res) => {
  * repete a consulta: não há conexão aberta, e nada se perde ao reconectar.
  */
 claudeRouter.get("/claude/events", async (req, res) => {
-  res.json(await servicoClaude().eventos(req.query.cursor));
+  res.json(await servicoClaude().eventos(req.query.cursor, req.query.item));
 });
 
-/** Cancela a execução em andamento. Não gasta: interrompe o gasto. */
-claudeRouter.post("/claude/queue/cancel", podeGerar, async (_req, res) => {
-  res.json(await servicoClaude().cancelar());
+/**
+ * Cancela uma execução em andamento — a de `?item=`, ou a principal. Não
+ * gasta: interrompe o gasto.
+ */
+claudeRouter.post("/claude/queue/cancel", podeGerar, async (req, res) => {
+  res.json(await servicoClaude().cancelar(req.query.item));
 });
 
 /** Libera a fila que voltou pausada de um reinício. CONSOME A ASSINATURA. */
@@ -119,20 +122,15 @@ claudeRouter.get("/projects/:id/claude/material", async (req, res) => {
   res.json(await servicoClaude().material(id(req), { refresh: req.query.refresh === "1" }));
 });
 
-/** Custo e qualidade do site, por rótulo. */
-claudeRouter.get("/projects/:id/claude/metrics", async (req, res) => {
-  res.json(await servicoClaude().metricas(id(req)));
-});
-
 /** O log legível de uma execução. */
 claudeRouter.get("/projects/:id/claude/runs/:runId/log", async (req, res) => {
   res.json(await servicoClaude().log(id(req), req.params.runId));
 });
 
 /**
- * Uma imagem da pasta de trabalho: tela ou quadro do filme do site, foto do
- * material do cliente, miniatura de foto de banco proposta. Só imagem, com o
- * tipo fixado pela extensão — o site gerado nunca é servido por aqui.
+ * Uma imagem da pasta de trabalho: tela do site, foto do material do cliente,
+ * miniatura de foto de banco proposta. Só imagem, com o tipo fixado pela
+ * extensão — o site gerado nunca é servido por aqui.
  */
 claudeRouter.get("/projects/:id/claude/images/:tipo", async (req, res) => {
   const { arquivo, contentType } = await servicoClaude().imagem(
@@ -165,16 +163,27 @@ claudeRouter.put("/projects/:id/claude/briefing", podeGerar, async (req, res) =>
   res.json(await servicoClaude().gravarBriefing(id(req), req.body?.briefing, autor(req).quem));
 });
 
-/** Grava as opções do site no briefing. */
+/**
+ * As opções do projeto: o modelo e o esforço das execuções dele, o que vale
+ * no lugar do que ele não escolheu e as opções do site. Só lê.
+ */
+claudeRouter.get("/projects/:id/claude/options", async (req, res) => {
+  res.json(await servicoClaude().opcoes(id(req)));
+});
+
+/**
+ * Grava as opções do projeto: `modelo` e `esforco` no banco do painel, `site`
+ * no briefing, pelo motor. Não gasta; o que não vem no corpo fica como está.
+ */
 claudeRouter.put("/projects/:id/claude/options", podeGerar, async (req, res) => {
-  res.json(await servicoClaude().gravarOpcoes(id(req), req.body?.opcoes));
+  res.json(await servicoClaude().gravarOpcoes(id(req), req.body, autor(req).quem));
 });
 
 /* ----- site -------------------------------------------------------- */
 
 /** Ensaio da geração: a conferência do briefing e o comando. Não gasta. */
 claudeRouter.post("/projects/:id/claude/generate/preview", podeGerar, async (req, res) => {
-  res.json(await servicoClaude().ensaiarSite(id(req), { refazer: req.body?.refazer === true }));
+  res.json(await servicoClaude().ensaiarSite(id(req), req.body ?? {}));
 });
 
 /** Gera o site a partir do briefing. CONSOME A ASSINATURA. */
@@ -211,9 +220,12 @@ claudeRouter.delete("/projects/:id/claude/adjust/attachments", podeGerar, async 
   res.status(204).end();
 });
 
-/** Continua um site que parou com etapa aberta. CONSOME A ASSINATURA. */
+/**
+ * "Continuar": põe na fila o passo que o motor indica para o site — continuar
+ * uma etapa aberta, criticar ou refinar. CONSOME A ASSINATURA.
+ */
 claudeRouter.post("/projects/:id/claude/continue", podeGerar, confirmado, async (req, res) => {
-  res.status(201).json(await servicoClaude().pedirContinuacao(id(req), autor(req)));
+  res.status(201).json(await servicoClaude().pedirContinuacao(id(req), req.body ?? {}, autor(req)));
 });
 
 /** Aprova a direção criativa e segue para a geração. CONSOME A ASSINATURA. */
@@ -221,9 +233,25 @@ claudeRouter.post("/projects/:id/claude/approve", podeGerar, confirmado, async (
   res.status(201).json(await servicoClaude().aprovar(id(req), autor(req)));
 });
 
+/**
+ * Escolhe outra rota criativa entre as propostas (`rota`: o número dela) e
+ * segue para a direção ser refeita com ela. CONSOME A ASSINATURA.
+ */
+claudeRouter.post("/projects/:id/claude/route", podeGerar, confirmado, async (req, res) => {
+  res.status(201).json(await servicoClaude().escolherRota(id(req), req.body?.rota, autor(req)));
+});
+
 /** Fecha como falha a etapa que ficou aberta. */
 claudeRouter.post("/projects/:id/claude/abort", podeGerar, async (req, res) => {
   res.json(await servicoClaude().abortar(id(req), req.body?.motivo));
+});
+
+/**
+ * O site já gerado passa a aceitar várias páginas, ou volta a ser de página
+ * única. Não usa o Claude: só muda o que o próximo ajuste pode fazer.
+ */
+claudeRouter.put("/projects/:id/claude/site/type", podeGerar, async (req, res) => {
+  res.json(await servicoClaude().mudarTipoDoSite(id(req), req.body ?? {}));
 });
 
 /** Recusa uma foto de banco proposta, antes de aprovar a direção. */
@@ -270,7 +298,7 @@ claudeRouter.post("/projects/:id/claude/validate", podeGerar, async (req, res) =
   res.json(await servicoClaude().validar(id(req)));
 });
 
-/** Fotografa (`telas`) ou filma (`filme`) o site. Não usa o Claude. */
+/** Fotografa o site (`telas`, o único tipo de captura). Não usa o Claude. */
 claudeRouter.post("/projects/:id/claude/captures/:tipo", podeGerar, async (req, res) => {
   res.json(await servicoClaude().capturar(id(req), req.params.tipo));
 });

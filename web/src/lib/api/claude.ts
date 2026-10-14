@@ -13,8 +13,28 @@ import { get, request, send } from "./http";
  * português — `tipo`, `estado`, `erros`. Não é traduzido no caminho.
  */
 
-/** O pedido que o painel digita ao claude, no lugar de uma pessoa. */
-export type ClaudeRequestType = "analisar" | "cliente" | "ajuste" | "continuar" | "briefing";
+/**
+ * O pedido que o painel digita ao claude, no lugar de uma pessoa. `criticar` e
+ * `refinar` são as rodadas depois do site escrito: quem critica é uma sessão
+ * que não o escreveu, e quem refina é a que escreveu.
+ */
+export type ClaudeRequestType = "analisar" | "cliente" | "ajuste" | "continuar" | "criticar" | "refinar";
+
+/** Os níveis do `--effort` do Claude Code, do mais raso ao mais fundo. */
+export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+/** Onde o site está, do briefing à entrega. */
+export type ClaudePipelinePhase =
+  | "direcao"
+  | "aprovacao"
+  | "geracao"
+  | "revisao"
+  | "critica"
+  | "refino"
+  | "entregue";
+
+/** O pedido que faz o site andar — o que "Continuar" põe na fila. */
+export type ClaudeNextStep = "continuar" | "criticar" | "refinar";
 
 /** Como uma execução terminou — ou `rodando`, enquanto não terminou. */
 export type ClaudeRunStatus =
@@ -39,8 +59,10 @@ export type ClaudeQueueItem = {
   por: string | null;
   slug: string | null;
   execucaoId: string | null;
-  /** A etapa do motor em que a execução está (direção, geração, revisão, ajuste). */
+  /** A etapa do motor em que a execução está (direção, geração, revisão, crítica, refino, ajuste). */
   etapa: string | null;
+  /** O painel pôs na fila sozinho, na sequência de outra execução do mesmo site. */
+  encadeado: boolean;
   /** Só no resumo do projeto: 1 é o próximo a rodar. */
   posicao?: number | null;
 };
@@ -71,8 +93,16 @@ export type ClaudeSummary = {
     awaitingApproval: boolean;
     /** Etapa que ficou aberta: a execução terminou no meio dela. */
     openStage: string | null;
+    /** O site passou por tudo: geração, revisão e as rodadas de crítica e refino. */
     delivered: boolean;
     situation: string | null;
+    /** `null` nos resumos gravados antes das rodadas, até o card ser refeito. */
+    phase: ClaudePipelinePhase | null;
+    /** A rodada de crítica e refino em que o site está, de quantas. */
+    round: number | null;
+    rounds: number | null;
+    /** O que "Continuar" poria na fila; `null` quando não há o que continuar. */
+    next: ClaudeNextStep | null;
     checkedAt: string;
   } | null;
   lastRun: {
@@ -110,7 +140,13 @@ export type ClaudeStatus = {
   queue: {
     /** Voltou pausada de um reinício: nada roda até alguém retomar. */
     paused: boolean;
+    /** A execução principal: a da criação de um site quando há uma, senão o ajuste mais antigo. */
     running: ClaudeQueueItem | null;
+    /**
+     * Todas as execuções em andamento: a principal e os ajustes que rodam ao
+     * lado dela. Ausente em um servidor de antes dos ajustes em paralelo.
+     */
+    runningAll?: ClaudeQueueItem[];
     waiting: ClaudeQueueItem[];
     interrupted: ClaudeQueueItem[];
     last: { item: ClaudeQueueItem; status: ClaudeRunStatus; mensagem: string | null } | null;
@@ -153,6 +189,8 @@ export type ClaudeRun = {
   pedido: string;
   status: ClaudeRunStatus;
   modelo: string | null;
+  /** O nível de esforço com que a execução rodou. */
+  esforco: string | null;
   etapa: string | null;
   etapaAberta: string | null;
   duracaoMs: number | null;
@@ -171,12 +209,50 @@ export type ClaudeRun = {
   slug: string | null;
 };
 
-/** As opções do site, gravadas no próprio briefing. */
+/**
+ * As opções do site, gravadas no próprio briefing. Nas de criação (rodadas,
+ * direção de arte, movimento, rota), `null` é "o padrão do painel".
+ */
 export type ClaudeSiteOptions = {
   multiplas_paginas: boolean;
   banco_de_imagens: boolean;
   skills: string[];
   observacoes: string;
+  /** Rodadas de crítica e refino depois do site escrito. */
+  rodadas: number | null;
+  /** `sobria`, `autoral` ou `ousada`. */
+  direcao_de_arte: string | null;
+  /** `discreto`, `expressivo` ou `cinematografico`. */
+  movimento: string | null;
+  /** A criação para depois da direção criativa, para alguém escolher a rota. */
+  escolher_rota: boolean | null;
+  /** Sites que servem de norte: até 5 links, só de sites públicos, e o que olhar neles. */
+  referencias: { links: string[]; notas: string };
+};
+
+/** O que vale para o site que não escolheu: as Configurações ou, sem elas, o motor. */
+export type ClaudeSiteDefaults = {
+  rodadas: number;
+  direcao_de_arte: string;
+  movimento: string;
+  escolher_rota: boolean;
+};
+
+/** O modelo e o esforço das execuções de um projeto; `null` é "o padrão do painel". */
+export type ClaudeRunChoices = { modelo: string | null; esforco: ClaudeEffort | null };
+
+/** As opções de um projeto, com o que vale no lugar do que ele não escolheu. */
+export type ClaudeOptions = {
+  options: ClaudeRunChoices;
+  defaults: ClaudeSiteDefaults & {
+    modelo: string;
+    esforco: string;
+    /** Os modelos que a tela oferece; o servidor aceita outro id válido. */
+    modelos: Array<{ id: string; rotulo: string }>;
+    esforcos: ClaudeEffort[];
+  };
+  /** As opções do site; `null` enquanto não há briefing. */
+  site: ClaudeSiteOptions | null;
 };
 
 /** O briefing do motor. Só os campos que a tela edita têm tipo; o resto passa adiante. */
@@ -196,7 +272,10 @@ export type ClaudeBriefing = {
     instagram?: string;
   };
   tom_desejado?: string;
+  personalidade?: string;
+  mundo_visual?: string;
   preferencias_visuais?: string;
+  evitar?: string;
   imagens?: Array<{ arquivo?: string; descricao?: string }>;
   [campo: string]: unknown;
 };
@@ -221,12 +300,17 @@ export type ClaudeReview = {
   skillsDisponiveis: string[];
   maxSkills: number;
   bancos: string[];
+  padroes: ClaudeSiteDefaults;
+  /** Alguém escolhe a rota deste cliente? A opção dele ou, sem ela, o padrão. */
   aprovacaoHumana: boolean;
 };
 
 export type ClaudeStage = {
   n: number;
+  /** `direcao`, `geracao`, `revisao`, `critica`, `refino` ou `ajuste`. */
   etapa: string;
+  /** Só na crítica e no refino: a rodada a que a etapa pertence. */
+  rodada: number | null;
   modo: string;
   modelo: string;
   status: "aberta" | "concluida" | "falhou";
@@ -240,13 +324,40 @@ export type ClaudeStage = {
   motivoFalha: string | null;
 };
 
-/** O site no motor: etapas, capturas e, esperando aprovação, a direção criativa. */
+/** O parecer de uma rodada de crítica: quem o escreve é uma sessão que não escreveu o site. */
+export type ClaudeCritique = {
+  rodada: number;
+  veredito: "refinar" | "aprovado";
+  resumo: string;
+  /** De 0 a 10 por critério; a partir de 8 o critério não pede mais trabalho. */
+  notas: Record<string, number>;
+  problemas: Array<{
+    gravidade: "grave" | "media" | "leve";
+    /** A seção e, se for o caso, a largura em que aparece. */
+    onde: string;
+    problema: string;
+    correcao: string;
+  }>;
+};
+
+/** Uma das rotas que a direção criativa considerou. */
+export type ClaudeRoute = { n: number; nome: string; ideia: string; escolhida: boolean };
+
+/** O site no motor: etapas, rodadas, capturas e, esperando aprovação, a direção criativa. */
 export type ClaudeSite = {
   slug: string;
   situacao: string;
   etapaAberta: string | null;
   aguardandoAprovacao: boolean;
   entregue: boolean;
+  /** Quantas rodadas o site tem, em qual está e em que fase. */
+  pipeline: { rodadas: number; rodada: number; fase: ClaudePipelinePhase };
+  /** O que "Continuar" poria na fila; `null` quando não há o que continuar. */
+  proximo: ClaudeNextStep | null;
+  /** O parecer da rodada mais recente; `null` antes da primeira crítica. */
+  critica: ClaudeCritique | null;
+  /** As rotas da direção criativa: a escolhida e as que alguém pode pedir no lugar. */
+  rotas: ClaudeRoute[];
   /** O resumo da direção criativa, enquanto ela espera aprovação. */
   brief: string | null;
   fotosPropostas: Array<{
@@ -261,7 +372,13 @@ export type ClaudeSite = {
   temDist: boolean;
   /** Nomes dos arquivos das capturas, para `claudeImageUrl`. */
   telas: string[];
-  filme: string[];
+  /**
+   * O site aceita várias páginas: um ajuste pode criar, tirar ou dividir
+   * páginas. Ausente em um motor de antes de o painel deixar mudar isso.
+   */
+  multiplasPaginas?: boolean;
+  /** As páginas que o site tem hoje além da inicial (os nomes dos arquivos, sem `.html`). */
+  paginas?: string[];
 };
 
 export type ClaudeProjectDetail = {
@@ -329,17 +446,40 @@ export type ClaudeBriefingInput = {
   stockImages?: StockSelection[];
 };
 
-const base = (projectId: string) => `/api/projects/${projectId}/claude`;
+/**
+ * O modelo e o esforço que acompanham um pedido. Chave ausente deixa como está
+ * no projeto; `null` volta ao padrão do painel. Num pedido que gasta, o que
+ * veio é gravado no projeto quando ele entra na fila; num ensaio, vale só para
+ * o comando mostrado.
+ */
+export type ClaudeRequestChoices = Partial<ClaudeRunChoices>;
+
+const base =(projectId: string) => `/api/projects/${projectId}/claude`;
 
 /* ---- o motor e a fila ------------------------------------------------- */
 
 export const fetchClaudeStatus = () => get<ClaudeStatus>("/api/claude/status");
 
-export const fetchClaudeEvents = (cursor: string) =>
-  get<ClaudeEvents>(`/api/claude/events?cursor=${encodeURIComponent(cursor)}`);
+/** O que roda agora na fila, da principal aos ajustes ao lado dela. */
+export const claudeRunningItems = (queue: ClaudeStatus["queue"]): ClaudeQueueItem[] =>
+  queue.runningAll ?? (queue.running ? [queue.running] : []);
 
-/** Cancela a execução em andamento. Não gasta: interrompe o gasto. */
-export const cancelClaudeRun = () => send<{ cancelled: boolean }>("POST", "/api/claude/queue/cancel", {});
+/** @param itemId o pedido da fila cujo log a tela quer; sem ele, o da execução principal */
+export const fetchClaudeEvents = (cursor: string, itemId?: string | null) =>
+  get<ClaudeEvents>(
+    `/api/claude/events?cursor=${encodeURIComponent(cursor)}${itemId ? `&item=${encodeURIComponent(itemId)}` : ""}`,
+  );
+
+/**
+ * Cancela uma execução em andamento — a do pedido dado, ou a principal. Não
+ * gasta: interrompe o gasto.
+ */
+export const cancelClaudeRun = (itemId?: string) =>
+  send<{ cancelled: boolean }>(
+    "POST",
+    `/api/claude/queue/cancel${itemId ? `?item=${encodeURIComponent(itemId)}` : ""}`,
+    {},
+  );
 
 /** Libera a fila pausada. CONSOME A ASSINATURA do Claude Code. */
 export const resumeClaudeQueue = () =>
@@ -374,10 +514,10 @@ export const fetchClaudeRunLog = (projectId: string, runId: string) =>
     `${base(projectId)}/runs/${encodeURIComponent(runId)}/log`,
   );
 
-/** Tela ou quadro do filme do site, foto do material ou miniatura de foto proposta. */
+/** Tela do site, foto do material ou miniatura de foto proposta. */
 export const claudeImageUrl = (
   projectId: string,
-  tipo: "telas" | "filme" | "material" | "miniatura",
+  tipo: "telas" | "material" | "miniatura",
   caminho: string,
   versao?: string | number,
 ) =>
@@ -386,7 +526,7 @@ export const claudeImageUrl = (
   }`;
 
 /** Ensaio: o que seria copiado e o comando que rodaria. Não gasta. */
-export const previewClaudeBriefing = (projectId: string, body: ClaudeBriefingInput) =>
+export const previewClaudeBriefing = (projectId: string, body: ClaudeBriefingInput & ClaudeRequestChoices) =>
   send<{ dryRun: true; plan: ClaudeBriefingPlan; command: string; generation: ClaudeGate }>(
     "POST",
     `${base(projectId)}/briefing/preview`,
@@ -394,7 +534,7 @@ export const previewClaudeBriefing = (projectId: string, body: ClaudeBriefingInp
   );
 
 /** Copia o material e pede o briefing. CONSOME A ASSINATURA do Claude Code. */
-export const requestClaudeBriefing = (projectId: string, body: ClaudeBriefingInput) =>
+export const requestClaudeBriefing = (projectId: string, body: ClaudeBriefingInput & ClaudeRequestChoices) =>
   send<{
     item: ClaudeQueueItem;
     plan: ClaudeBriefingPlan;
@@ -405,30 +545,57 @@ export const requestClaudeBriefing = (projectId: string, body: ClaudeBriefingInp
 export const saveClaudeBriefing = (projectId: string, briefing: ClaudeBriefing) =>
   send<{ review: ClaudeReview }>("PUT", `${base(projectId)}/briefing`, { briefing });
 
-export const saveClaudeOptions = (projectId: string, opcoes: ClaudeSiteOptions) =>
-  send<{ review: ClaudeReview }>("PUT", `${base(projectId)}/options`, { opcoes });
+/** O modelo e o esforço do projeto, os padrões e as opções do site. Só lê. */
+export const fetchClaudeOptions = (projectId: string) => get<ClaudeOptions>(`${base(projectId)}/options`);
+
+/**
+ * Grava as opções do projeto: o modelo e o esforço das próximas execuções e,
+ * em `site`, as opções do site (vão para o briefing). Não gasta. O servidor
+ * recusa `site` com um pedido do projeto em andamento, ou sem briefing.
+ */
+export const saveClaudeOptions = (
+  projectId: string,
+  body: ClaudeRequestChoices & { site?: Partial<ClaudeSiteOptions> },
+) => send<ClaudeOptions>("PUT", `${base(projectId)}/options`, body);
 
 /** Ensaio da geração do site. Não gasta. */
-export const previewClaudeSite = (projectId: string, refazer = false) =>
+export const previewClaudeSite = (
+  projectId: string,
+  body: { refazer?: boolean } & ClaudeRequestChoices = {},
+) =>
   send<{ dryRun: true; plan: ClaudeSitePlan; command: string; generation: ClaudeGate }>(
     "POST",
     `${base(projectId)}/generate/preview`,
-    { refazer },
+    body,
   );
 
-/** Gera o site a partir do briefing. CONSOME A ASSINATURA. */
+/**
+ * Gera o site a partir do briefing. CONSOME A ASSINATURA — nesta execução e
+ * nas que o painel põe na fila sozinho depois dela, até o site ser entregue.
+ */
 export const generateClaudeSite = (
   projectId: string,
-  body: { refazer?: boolean; opcoes?: ClaudeSiteOptions } = {},
+  body: { refazer?: boolean; opcoes?: Partial<ClaudeSiteOptions> } & ClaudeRequestChoices = {},
 ) => send<{ item: ClaudeQueueItem }>("POST", `${base(projectId)}/generate`, { ...body, confirm: true });
+
+/**
+ * O site já gerado passa a aceitar várias páginas, ou volta a ser de página
+ * única. Não usa o Claude: muda o que o próximo ajuste pode fazer.
+ */
+export const setClaudeSiteType = (projectId: string, multiplasPaginas: boolean) =>
+  send<{ multiplasPaginas: boolean; paginas: string[] }>("PUT", `${base(projectId)}/site/type`, {
+    multiplas_paginas: multiplasPaginas,
+  });
 
 /** Pede um ajuste no site gerado. CONSOME A ASSINATURA. */
 export const adjustClaudeSite = (
   projectId: string,
   pedido: string,
   anexos?: ClaudeAdjustAttachments,
+  escolhas: ClaudeRequestChoices = {},
 ) =>
   send<{ item: ClaudeQueueItem }>("POST", `${base(projectId)}/adjust`, {
+    ...escolhas,
     pedido,
     confirm: true,
     ...(anexos ? { anexos } : {}),
@@ -456,9 +623,12 @@ export const uploadClaudeAttachment = (projectId: string, file: File, draft?: st
 export const removeClaudeAttachment = (projectId: string, draft: string, file: string) =>
   send<null>("DELETE", attachmentsUrl(projectId, { draft, file }));
 
-/** Continua um site que parou com etapa aberta. CONSOME A ASSINATURA. */
-export const continueClaudeSite = (projectId: string) =>
-  send<{ item: ClaudeQueueItem }>("POST", `${base(projectId)}/continue`, { confirm: true });
+/**
+ * Põe na fila o passo que o site espera: a continuação de uma etapa aberta, a
+ * crítica ou o refino — `item.tipo` diz qual. CONSOME A ASSINATURA.
+ */
+export const continueClaudeSite = (projectId: string, escolhas: ClaudeRequestChoices = {}) =>
+  send<{ item: ClaudeQueueItem }>("POST", `${base(projectId)}/continue`, { ...escolhas, confirm: true });
 
 /** Aprova a direção criativa e segue para a geração. CONSOME A ASSINATURA. */
 export const approveClaudeDirection = (projectId: string) =>
@@ -467,6 +637,16 @@ export const approveClaudeDirection = (projectId: string) =>
     `${base(projectId)}/approve`,
     { confirm: true },
   );
+
+/**
+ * Troca a rota criativa por outra das propostas (`rota`: o número dela): a
+ * direção é refeita com ela na execução que entra na fila. CONSOME A ASSINATURA.
+ */
+export const chooseClaudeRoute = (projectId: string, rota: number) =>
+  send<{ site: ClaudeSite; item: ClaudeQueueItem }>("POST", `${base(projectId)}/route`, {
+    rota,
+    confirm: true,
+  });
 
 /** Fecha como falha a etapa que ficou aberta. Não gasta. */
 export const abortClaudeStage = (projectId: string, motivo = "") =>
@@ -479,9 +659,9 @@ export const refuseClaudeStockPhoto = (projectId: string, ref: string) =>
 export const validateClaudeSite = (projectId: string) =>
   send<{ ok: boolean; texto: string }>("POST", `${base(projectId)}/validate`, {});
 
-/** Fotografa (`telas`) ou filma (`filme`) o site. Não usa o Claude. */
-export const captureClaudeSite = (projectId: string, tipo: "telas" | "filme") =>
-  send<{ telas?: string[]; filme?: string[] }>("POST", `${base(projectId)}/captures/${tipo}`, {});
+/** Fotografa as telas do site, no desktop e no celular. Não usa o Claude. */
+export const captureClaudeSite = (projectId: string) =>
+  send<{ telas: string[] }>("POST", `${base(projectId)}/captures/telas`, {});
 
 /* ---- o site a caminho do GitHub --------------------------------------- */
 

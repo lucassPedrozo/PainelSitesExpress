@@ -59,13 +59,28 @@ const rodar = (nome, cwd, env = {}) => {
 function criarProjeto() {
   const dirProjeto = path.join(raiz, "trabalho", "projects", "cliente-teste");
   fs.cpSync(path.join(dirMotor, "template"), dirProjeto, { recursive: true });
-  const rodape = JSON.parse(fs.readFileSync(path.join(dirMotor, "sections", "rodape-colunas", "meta.json"), "utf8")).exemplo;
+  // O rodapé é de cada site (a biblioteca do motor só tem mecânicas): este é o mínimo que um site entrega, com a
+  // assinatura Joinvix dentro do <footer>, depois da linha legal.
+  const rodape = { marca: "Conta Simples MEI", legal: "© 2026 Conta Simples MEI. Vitória, ES." };
   escrever(dirProjeto, {
-    "src/sections/RodapeColunas.tsx": fs.readFileSync(path.join(dirMotor, "sections", "rodape-colunas", "Section.tsx"), "utf8"),
+    "src/sections/Rodape.tsx": [
+      "import AssinaturaJoinvix from '../componentes/AssinaturaJoinvix'",
+      "",
+      "export default function Rodape({ data }: { data: { marca: string; legal: string } }) {",
+      "  return (",
+      '    <footer className="bg-escuro px-6 py-10 text-claro">',
+      '      <p className="font-titulos text-p2">{data.marca}</p>',
+      '      <p className="mt-2 text-pm">{data.legal}</p>',
+      "      <AssinaturaJoinvix />",
+      "    </footer>",
+      "  )",
+      "}",
+      "",
+    ].join("\n"),
     "src/App.tsx": [
       "import content from '../content.json'",
       "import { paginaAtual } from '@/lib/paginas'",
-      "import RodapeColunas from './sections/RodapeColunas'",
+      "import Rodape from './sections/Rodape'",
       "",
       "export default function App() {",
       "  const pagina = paginaAtual()",
@@ -76,7 +91,7 @@ function criarProjeto() {
       '        <a href={pagina === \'servicos\' ? \'index.html\' : \'servicos.html\'}>{content.site.outra}</a>',
       '        <div id="sobre" /><div id="servicos" /><div id="contato" />',
       "      </main>",
-      "      <RodapeColunas data={content.rodape} />",
+      "      <Rodape data={content.rodape} />",
       "    </>",
       "  )",
       "}",

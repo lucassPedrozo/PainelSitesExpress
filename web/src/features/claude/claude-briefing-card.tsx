@@ -1,8 +1,21 @@
 import { useState } from "react";
 import { Bot, CircleAlert, FileSearch, ImageOff, Loader2, Save, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import type { ClaudeBriefing, ClaudeProjectDetail, ClaudeSiteOptions, ClaudeSitePlan, Project } from "@/lib/api";
-import { claudeImageUrl, generateClaudeSite, previewClaudeSite, saveClaudeBriefing } from "@/lib/api";
+import type {
+  ClaudeBriefing,
+  ClaudeProjectDetail,
+  ClaudeRunChoices,
+  ClaudeSiteDefaults,
+  ClaudeSitePlan,
+  Project,
+} from "@/lib/api";
+import {
+  claudeImageUrl,
+  generateClaudeSite,
+  previewClaudeSite,
+  saveClaudeBriefing,
+  saveClaudeOptions,
+} from "@/lib/api";
 import { formatDateTime, pluralize } from "@/lib/format";
 import { usePermissions } from "@/lib/permissions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -13,18 +26,36 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { cn } from "@/lib/utils";
 import { BriefingEditor } from "./briefing-editor";
 import { sameBriefing } from "./briefing-fields";
+import { OptionSelect, RunChoicesFields } from "./claude-option-fields";
+import {
+  ART_DIRECTIONS,
+  MAX_LINKS,
+  MAX_NOTAS,
+  MOTIONS,
+  REFERENCES_HELP,
+  RODADAS,
+  ROUNDS_HELP,
+  ROUTE_CHOICES,
+  choicesLine,
+  choicesSentence,
+  levelHelp,
+  levelLabel,
+  roundsLabel,
+  routeChoiceHelp,
+  routeChoiceValue,
+  sameChoices,
+  sameSiteOptions,
+  siteOptionsDraft,
+  siteOptionsPayload,
+  siteOptionsProblem,
+  type SiteOptionsDraft,
+} from "./claude-options";
 import { ConfirmClaudeDialog, HintWhenDisabled } from "./claude-shared";
 import { errorMessage, semPermissaoDeGerar } from "./claude-text";
-import { useClaudeRefresh } from "./use-claude";
-
-const OPCOES_PADRAO: ClaudeSiteOptions = {
-  multiplas_paginas: false,
-  banco_de_imagens: true,
-  skills: [],
-  observacoes: "",
-};
+import { useClaudeOptions, useClaudeRefresh } from "./use-claude";
 
 /**
  * A revisão antes de gerar o site: o que a conferência do motor diz do
@@ -51,14 +82,37 @@ export function ClaudeBriefingCard({
 
   const [rascunho, setRascunho] = useState<ClaudeBriefing>(() => gravado ?? {});
   const [jsonInvalido, setJsonInvalido] = useState<string | null>(null);
-  const [opcoes, setOpcoes] = useState<ClaudeSiteOptions>(() => review.opcoes ?? OPCOES_PADRAO);
-  const [working, setWorking] = useState<"save" | "preview" | "generate" | null>(null);
-  const [conferido, setConferido] = useState<{ plan: ClaudeSitePlan; command: string } | null>(null);
+  const [opcoes, setOpcoes] = useState<SiteOptionsDraft>(() => siteOptionsDraft(review.opcoes));
+  const opcoesDoProjeto = useClaudeOptions(project.id);
+  /** `null`: ninguém mexeu — vale o modelo e o esforço que o projeto tem gravados. */
+  const [escolhas, setEscolhas] = useState<ClaudeRunChoices | null>(null);
+  const [working, setWorking] = useState<"save" | "options" | "preview" | "generate" | null>(null);
+  const [conferido, setConferido] = useState<{
+    plan: ClaudeSitePlan;
+    command: string;
+    escolhas: ClaudeRunChoices | null;
+  } | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   const mudou = !sameBriefing(rascunho, gravado);
   const jaTemSite = review.projetos.length > 0;
   const semPermissao = !can("gerar");
+
+  /** O modelo e o esforço que valem agora; `null` enquanto as opções do projeto não chegam. */
+  const escolhasGravadas = opcoesDoProjeto.data?.options ?? null;
+  const atuais = escolhas ?? escolhasGravadas;
+  // O que vale para o que o site não escolheu. Os do briefing servem enquanto
+  // os do projeto não chegam: são os mesmos.
+  const padroes: ClaudeSiteDefaults = opcoesDoProjeto.data?.defaults ?? review.padroes;
+  const rodadas = opcoes.rodadas ?? padroes.rodadas;
+  const escolherRota = opcoes.escolher_rota ?? padroes.escolher_rota;
+
+  const opcoesMudaram =
+    !sameSiteOptions(opcoes, siteOptionsDraft(review.opcoes)) ||
+    Boolean(escolhas && escolhasGravadas && !sameChoices(escolhas, escolhasGravadas));
+  const problemaDasOpcoes = siteOptionsProblem(opcoes);
+
+  const mudarOpcoes = (patch: Partial<SiteOptionsDraft>) => setOpcoes((atual) => ({ ...atual, ...patch }));
 
   const salvar = async () => {
     setWorking("save");
@@ -79,11 +133,28 @@ export function ClaudeBriefingCard({
     }
   };
 
+  /** Guarda as opções sem gerar nada: é por aqui que se troca o modelo de um site já gerado. */
+  const gravarOpcoes = async () => {
+    setWorking("options");
+    try {
+      await saveClaudeOptions(project.id, { ...escolhas, site: siteOptionsPayload(opcoes) });
+      await refresh();
+      setEscolhas(null);
+      toast.success("Opções gravadas", { description: "Nada foi disparado." });
+    } catch (err) {
+      toast.error("Não foi possível gravar as opções", { description: errorMessage(err) });
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  // O modelo e o esforço só vão quando alguém mexeu neles: sem a chave, o
+  // servidor usa o que o projeto tem gravado.
   const conferir = async () => {
     setWorking("preview");
     try {
-      const data = await previewClaudeSite(project.id, jaTemSite);
-      setConferido({ plan: data.plan, command: data.command });
+      const data = await previewClaudeSite(project.id, { refazer: jaTemSite, ...escolhas });
+      setConferido({ plan: data.plan, command: data.command, escolhas: atuais });
     } catch (err) {
       setConferido(null);
       toast.error("A conferência apontou um problema", { description: errorMessage(err) });
@@ -96,7 +167,7 @@ export function ClaudeBriefingCard({
     requestNotificationPermission();
     setWorking("generate");
     try {
-      await generateClaudeSite(project.id, { refazer: jaTemSite, opcoes });
+      await generateClaudeSite(project.id, { refazer: jaTemSite, opcoes: siteOptionsPayload(opcoes), ...escolhas });
       await refresh();
       toast.success("Geração na fila do Claude", { description: "O card mostra o andamento." });
     } catch (err) {
@@ -126,9 +197,11 @@ export function ClaudeBriefingCard({
             ? "Grave o briefing antes de gerar."
             : review.erros.length > 0
               ? "A conferência ainda aponta pendências no briefing."
-              : !detail.generation.enabled
-                ? "A geração pelo Claude está desligada neste painel."
-                : null;
+              : problemaDasOpcoes
+                ? problemaDasOpcoes
+                : !detail.generation.enabled
+                  ? "A geração pelo Claude está desligada neste painel."
+                  : null;
 
   const toggleSkill = (skill: string, marcada: boolean) =>
     setOpcoes((atual) => ({
@@ -274,13 +347,70 @@ export function ClaudeBriefingCard({
       )}
 
       {review.existe && (
-        <fieldset className="space-y-3 rounded-lg border p-3" disabled={busy || semPermissao}>
+        <fieldset className="space-y-4 rounded-lg border p-3" disabled={busy || semPermissao}>
           <legend className="px-1 text-xs font-medium text-muted-foreground">Opções do site</legend>
+
+          {/* Quem escreve e quanto pensa: o que mais pesa no resultado e no consumo. */}
+          <RunChoicesFields
+            idPrefix="claude-opcoes"
+            query={opcoesDoProjeto}
+            value={atuais}
+            disabled={busy || semPermissao}
+            onChange={(next) => {
+              setEscolhas(next);
+              // O comando conferido era de outro modelo ou de outro esforço.
+              setConferido(null);
+            }}
+          />
+
+          <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+            <OptionSelect
+              id="claude-opcoes-rodadas"
+              label="Rodadas de crítica e refino"
+              value={opcoes.rodadas === null ? null : String(opcoes.rodadas)}
+              onChange={(valor) => mudarOpcoes({ rodadas: valor === null ? null : Number(valor) })}
+              defaultText={roundsLabel(padroes.rodadas)}
+              options={RODADAS.map((numero) => ({ value: String(numero), label: roundsLabel(numero) }))}
+              help={ROUNDS_HELP}
+              disabled={busy || semPermissao}
+            />
+            <OptionSelect
+              id="claude-opcoes-rota"
+              label="Escolher a rota antes de gerar"
+              value={routeChoiceValue(opcoes.escolher_rota)}
+              onChange={(valor) => mudarOpcoes({ escolher_rota: valor === null ? null : valor === "sim" })}
+              defaultText={padroes.escolher_rota ? "sim" : "não"}
+              options={ROUTE_CHOICES}
+              help={routeChoiceHelp(escolherRota)}
+              disabled={busy || semPermissao}
+            />
+            <OptionSelect
+              id="claude-opcoes-direcao"
+              label="Direção de arte"
+              value={opcoes.direcao_de_arte}
+              onChange={(valor) => mudarOpcoes({ direcao_de_arte: valor })}
+              defaultText={levelLabel(ART_DIRECTIONS, padroes.direcao_de_arte)}
+              options={ART_DIRECTIONS}
+              help={levelHelp(ART_DIRECTIONS, opcoes.direcao_de_arte, padroes.direcao_de_arte)}
+              disabled={busy || semPermissao}
+            />
+            <OptionSelect
+              id="claude-opcoes-movimento"
+              label="Movimento"
+              value={opcoes.movimento}
+              onChange={(valor) => mudarOpcoes({ movimento: valor })}
+              defaultText={levelLabel(MOTIONS, padroes.movimento)}
+              options={MOTIONS}
+              help={levelHelp(MOTIONS, opcoes.movimento, padroes.movimento)}
+              disabled={busy || semPermissao}
+            />
+          </div>
+
           <div className="flex flex-wrap gap-x-8 gap-y-3">
             <label className="flex items-center gap-2 text-sm">
               <Switch
                 checked={opcoes.multiplas_paginas}
-                onCheckedChange={(valor) => setOpcoes((atual) => ({ ...atual, multiplas_paginas: valor }))}
+                onCheckedChange={(valor) => mudarOpcoes({ multiplas_paginas: valor })}
               />
               Várias páginas
             </label>
@@ -294,7 +424,7 @@ export function ClaudeBriefingCard({
             >
               <Switch
                 checked={opcoes.banco_de_imagens}
-                onCheckedChange={(valor) => setOpcoes((atual) => ({ ...atual, banco_de_imagens: valor }))}
+                onCheckedChange={(valor) => mudarOpcoes({ banco_de_imagens: valor })}
               />
               Completar com fotos de banco
             </label>
@@ -323,6 +453,48 @@ export function ClaudeBriefingCard({
             </div>
           )}
 
+          <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1">
+              <Label htmlFor="claude-opcoes-referencias" className="text-xs">
+                Referências · um endereço por linha, até {MAX_LINKS}
+              </Label>
+              <Textarea
+                id="claude-opcoes-referencias"
+                rows={3}
+                value={opcoes.links}
+                spellCheck={false}
+                aria-invalid={siteOptionsPayload(opcoes).referencias.links.length > MAX_LINKS}
+                onChange={(event) => mudarOpcoes({ links: event.target.value })}
+                placeholder="https://site-que-o-cliente-admira.com.br"
+                className="max-h-40 resize-y text-sm leading-relaxed"
+              />
+              <p className="text-xs text-muted-foreground">{REFERENCES_HELP} Só entram sites públicos da internet.</p>
+            </div>
+            <div className="min-w-0 space-y-1">
+              <Label htmlFor="claude-opcoes-notas" className="text-xs">
+                O que olhar nas referências
+              </Label>
+              <Textarea
+                id="claude-opcoes-notas"
+                rows={3}
+                value={opcoes.notas}
+                aria-invalid={opcoes.notas.trim().length > MAX_NOTAS}
+                onChange={(event) => mudarOpcoes({ notas: event.target.value })}
+                placeholder="O que vale em cada uma, ou o que evitar: “a tipografia da primeira”, “nada do menu da segunda”."
+                className="max-h-40 resize-y text-sm leading-relaxed"
+              />
+              <p
+                className={cn(
+                  "text-xs tabular-nums text-muted-foreground",
+                  opcoes.notas.trim().length > MAX_NOTAS && "text-destructive",
+                )}
+              >
+                {opcoes.notas.trim().length.toLocaleString("pt-BR")} de {MAX_NOTAS.toLocaleString("pt-BR")} caracteres
+              </p>
+            </div>
+          </div>
+          {problemaDasOpcoes && <p className="text-xs text-destructive">{problemaDasOpcoes}</p>}
+
           <div className="space-y-1">
             <Label htmlFor="claude-opcoes-observacoes" className="text-xs">
               Observações para a criação
@@ -331,15 +503,32 @@ export function ClaudeBriefingCard({
               id="claude-opcoes-observacoes"
               rows={2}
               value={opcoes.observacoes}
-              onChange={(event) => setOpcoes((atual) => ({ ...atual, observacoes: event.target.value }))}
-              placeholder="O que o briefing não diz: seções a destacar, o que evitar, referências."
+              onChange={(event) => mudarOpcoes({ observacoes: event.target.value })}
+              placeholder="O que o briefing não diz: seções a destacar, o que evitar."
               className="max-h-40 resize-y text-sm leading-relaxed"
             />
           </div>
-          <p className="text-xs text-muted-foreground">
-            As opções são gravadas no briefing quando o site entra na fila.
-            {review.aprovacaoHumana &&
-              " A direção criativa vai esperar a aprovação de uma pessoa antes de o site ser escrito."}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <HintWhenDisabled reason={mudou ? "Grave o briefing antes de gravar as opções." : problemaDasOpcoes}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!opcoesMudaram || mudou || Boolean(problemaDasOpcoes) || working !== null}
+                onClick={() => void gravarOpcoes()}
+                title="Guarda as opções no projeto. Não usa o Claude."
+              >
+                {working === "options" ? <Loader2 className="animate-spin" /> : <Save />}
+                Gravar opções
+              </Button>
+            </HintWhenDisabled>
+            {opcoesMudaram && <span className="text-xs text-muted-foreground">Opções ainda não gravadas.</span>}
+          </div>
+          <p className="max-w-prose text-xs text-muted-foreground">
+            As opções seguem com o pedido de gerar; “Gravar opções” as guarda antes, sem usar o Claude. O modelo
+            e o esforço valem para as próximas execuções do projeto, ajustes incluídos; as outras, para o próximo
+            site gerado.
           </p>
         </fieldset>
       )}
@@ -350,6 +539,9 @@ export function ClaudeBriefingCard({
           <p className="text-muted-foreground">
             Pedido que será digitado ao Claude: <span className="text-foreground">“{conferido.plan.phrase}”</span>
           </p>
+          {conferido.escolhas && opcoesDoProjeto.data && (
+            <p className="text-muted-foreground">{choicesLine(conferido.escolhas, opcoesDoProjeto.data.defaults)}</p>
+          )}
           <details className="text-muted-foreground">
             <summary className="cursor-pointer select-none hover:text-foreground">Comando que será executado</summary>
             <pre className="mt-1.5 max-h-40 overflow-auto rounded-md border bg-background p-2 font-mono text-2xs leading-relaxed break-all whitespace-pre-wrap">
@@ -401,9 +593,12 @@ export function ClaudeBriefingCard({
         {jaTemSite
           ? "O site que já existe continua como está, e um novo é criado a partir deste briefing."
           : "O Claude define a direção criativa, escreve o site e revisa o resultado."}{" "}
-        {review.aprovacaoHumana
-          ? "A geração para depois da direção criativa e espera a sua aprovação."
-          : "O painel acompanha e avisa quando terminar."}
+        Depois o site passa por até {roundsLabel(rodadas)} de crítica e refino, cada passo numa execução que o
+        painel põe na fila sozinho: esta confirmação vale para a sequência inteira
+        {atuais && opcoesDoProjeto.data && `, com ${choicesSentence(atuais, opcoesDoProjeto.data.defaults)}`}.{" "}
+        {escolherRota
+          ? "Antes de o site ser escrito, a criação para na direção criativa e espera você aprovar a rota ou escolher outra."
+          : "O painel acompanha e avisa quando o site for entregue."}
       </ConfirmClaudeDialog>
     </section>
   );

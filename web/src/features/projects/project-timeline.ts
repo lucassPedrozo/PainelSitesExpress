@@ -94,8 +94,9 @@ function generationEvents(site: Generation, index: number): EventInput[] {
       by: site.linkedBy ?? null,
     });
   } else if (site.engine === "claude") {
-    // O site do Claude só entra na lista depois de gerado e validado: não há
-    // "construção" a acompanhar depois, como no Lovable.
+    // O site do Claude só entra na lista depois de entregue — gerado, validado
+    // e passado pelas rodadas de crítica e refino: não há "construção" a
+    // acompanhar depois, como no Lovable.
     events.push({
       key: `${key}-generated`,
       at: site.createdAt,

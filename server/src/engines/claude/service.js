@@ -23,6 +23,7 @@ import { repoNameOf } from "../../../../shared/lovable-repo.js";
 import { isLocalProjectId } from "../../store/local-projects.js";
 import { copiarSiteAdotado, sitesDoMotorNoProjeto } from "./adopt.js";
 import { conferirAnexos, gravarPendente, guardarAnexo, removerAnexo } from "./attachments.js";
+import { ESFORCOS, MODELO_INVALIDO, MODELO_VALIDO, MODELOS } from "./command.js";
 import { ambienteDoFilho } from "./environment.js";
 import { criarExecutor } from "./executor.js";
 import { copiarMaterial, pacoteDoMaterial, planoDoMaterial } from "./material.js";
@@ -35,18 +36,26 @@ import { caminhosDoMotor } from "./workspace.js";
  * O motor Claude dentro do painel: liga o pacote do motor, o executor do
  * `claude -p` e a fila ao banco e às regras do painel.
  *
- * Três coisas moram aqui e em nenhum outro lugar:
+ * Quatro coisas moram aqui e em nenhum outro lugar:
  *
  * - **a trava do gasto** (`CLAUDE_ENABLE_GENERATION`): desligada, o painel
  *   confere tudo e mostra o comando, mas nada entra na fila;
  * - **a proteção contra repetição**: um pedido por projeto de cada vez —
  *   esperando, rodando ou interrompido;
+ * - **a sequência de um site**: cada execução que termina bem põe na fila o
+ *   passo seguinte que o motor indica — a crítica, o refino —, e o site só
+ *   entra na lista de sites e vai ao GitHub quando o motor o dá por entregue;
  * - **o que o agente não pode ver**: o ambiente dele é montado aqui, e a lista
  *   do que ele não lê (o `.env`, a chave da service account, a pasta de dados
  *   fora da pasta de trabalho) também.
  *
  * As rotas (`routes.js`) só traduzem HTTP para as funções daqui.
  */
+
+/** Quantos ajustes rodam ao mesmo tempo quando as Configurações não dizem. */
+const AJUSTES_JUNTOS = 2;
+/** De quantas execuções já terminadas o log continua à mão da tela. */
+const LOGS_GUARDADOS = 4;
 
 /** Uma tarefa local (build, capturas) não roda junto com outra. */
 const TAREFA_OCUPADA = (nome) =>
@@ -60,6 +69,31 @@ const MAX_CARACTERES_DO_AJUSTE = 4000;
 
 /** Variável cujo valor é segredo: some de qualquer texto antes de ele ir à tela. */
 const NOME_DE_SEGREDO = /TOKEN|KEY|SECRET|PASSWORD|SENHA|CREDENTIAL/i;
+
+/** Os pedidos que o motor indica como passo seguinte de um site (`proximo`). */
+const PROXIMOS = new Set(["continuar", "criticar", "refinar"]);
+
+/**
+ * O passo seguinte de um site, ou `null` quando o motor não indica nenhum.
+ * @param {any} estado a resposta de `estado`
+ * @returns {"continuar" | "criticar" | "refinar" | null}
+ */
+const proximoDe = (estado) => (PROXIMOS.has(estado?.proximo) ? estado.proximo : null);
+
+/**
+ * Um passo da sequência de um site: o pedido e o ponto do pipeline em que ele
+ * é dado. A sequência não dá o mesmo passo duas vezes.
+ * @param {string} tipo
+ * @param {any} estado a resposta de `estado`
+ */
+const passoDe = (tipo, estado) => `${tipo}@${estado?.pipeline?.fase ?? "?"}:${estado?.pipeline?.rodada ?? "?"}`;
+
+/**
+ * O modelo e o esforço que um projeto escolheu para as execuções dele.
+ * @param {Record<string, any> | null | undefined} entry
+ * @returns {{ modelo: string | null, esforco: string | null }}
+ */
+const escolhasDe = (entry) => ({ modelo: entry?.options?.modelo ?? null, esforco: entry?.options?.esforco ?? null });
 
 /** As imagens que o painel devolve da pasta de trabalho. SVG fica de fora: pode carregar script. */
 const IMAGENS = {
@@ -162,7 +196,12 @@ export function criarServicoClaude({
       JOINVIXABLE_TRABALHO: caminhos.trabalho,
       CLI_MODEL: cfg.model,
       BROWSER_PATH: cfg.browserPath,
-      JOINVIXABLE_APROVACAO_HUMANA: cfg.humanApproval === null ? "" : cfg.humanApproval ? "1" : "0",
+      // O que as Configurações dizem do pipeline. Vazio não entra no ambiente,
+      // e aí vale o padrão do motor.
+      JOINVIXABLE_APROVACAO_HUMANA: cfg.humanApproval === true ? "1" : cfg.humanApproval === false ? "0" : "",
+      JOINVIXABLE_RODADAS: cfg.reviewRounds ? String(cfg.reviewRounds) : "",
+      JOINVIXABLE_DIRECAO_DE_ARTE: cfg.artDirection ?? "",
+      JOINVIXABLE_MOVIMENTO: cfg.motion ?? "",
       // A única chave que o agente carrega: a busca de fotos de banco roda como filha dele.
       PIXABAY_API_KEY: pixabayKey(),
       ...ambienteExtra(),
@@ -210,6 +249,7 @@ export function criarServicoClaude({
     opcoes: () => ({
       bin: lerConfig().bin,
       modelo: lerConfig().model,
+      esforco: lerConfig().effort,
       base: base(),
       ambiente: doPainel(),
       protegidos: protegidos(),
@@ -252,8 +292,8 @@ export function criarServicoClaude({
   /**
    * As respostas do motor que vão inteiras para a tela. A conferência diz em
    * que pasta procurou o briefing, e o site traz o que o agente escreveu (a
-   * direção criativa, o motivo de uma falha): nada disso chega com um caminho
-   * desta máquina ou com um segredo.
+   * direção criativa, as rotas, a crítica, o motivo de uma falha): nada disso
+   * chega com um caminho desta máquina ou com um segredo.
    * @type {Record<string, (resposta: any) => any>}
    */
   const PARA_A_TELA = {
@@ -264,7 +304,7 @@ export function criarServicoClaude({
     abortar: limpo,
     recusarFoto: limpo,
     aprovar: limpo,
-    metricas: limpo,
+    rota: limpo,
   };
 
   /**
@@ -303,10 +343,16 @@ export function criarServicoClaude({
   /** Muda a cada subida do painel: a tela percebe que o cursor dela ficou velho. */
   const epoca = randomBytes(4).toString("hex");
   let sequencia = 0;
-  /** @type {Array<{ n: number, item: string, ts: string, legiveis: import("./stream.js").Legivel[] }>} */
-  let recentes = [];
-  /** A etapa em que a execução atual está, para o card. */
-  let etapaAtual = { item: "", etapa: /** @type {string | null} */ (null) };
+  /**
+   * O que cada execução escreveu por último, por item da fila: com ajustes
+   * rodando ao lado da criação, cada uma tem o seu log.
+   * @type {Map<string, Array<{ n: number, ts: string, legiveis: import("./stream.js").Legivel[] }>>}
+   */
+  const recentes = new Map();
+  /** O item que escreveu por último: é o log que a tela vê quando não pede nenhum. */
+  let ultimoItem = "";
+  /** A etapa em que cada execução está, para o card. @type {Map<string, string>} */
+  const etapas = new Map();
   /** @type {string | undefined} */
   let tarefa;
   /**
@@ -327,19 +373,39 @@ export function criarServicoClaude({
       await registro.interruptRunningClaudeRuns((run) => Boolean(emOutroPainel && emOutroPainel.pid === run.pid));
 
       const nova = new Fila({
-        iniciar: (pedido, deps) => executor.iniciarExecucao(pedido, deps),
+        iniciar: (pedido, deps) =>
+          executor.iniciarExecucao(pedido, {
+            ...deps,
+            // Quem decide o que roda junto é a fila.
+            aoLado: true,
+            // O modelo e o esforço do projeto, como estiverem quando a execução começar.
+            doProjeto: async () => {
+              const projectId = deps.extra?.projectId;
+              return projectId ? escolhasDe(await registro.getClaudeProject(projectId)) : null;
+            },
+          }),
         salvos: await registro.loadClaudeQueue(),
         salvar: (itens) => registro.saveClaudeQueue(itens),
+        vagas: () => lerConfig().parallelAdjustments ?? AJUSTES_JUNTOS,
       });
       nova.on("evento", (evento, item) => {
-        if (recentes.length && recentes[0].item !== item.id) recentes = [];
-        if (etapaAtual.item !== item.id) etapaAtual = { item: item.id, etapa: null };
-        if (evento.etapa) etapaAtual.etapa = evento.etapa;
+        if (evento.etapa) etapas.set(item.id, evento.etapa);
         // Só o que é legível vai à tela, e já filtrado pelo executor. O evento
         // bruto fica no arquivo da execução.
         if (!evento.legiveis?.length) return;
-        recentes.push({ n: ++sequencia, item: item.id, ts: evento.ts, legiveis: evento.legiveis });
-        if (recentes.length > MAX_EVENTOS) recentes.shift();
+        let doItem = recentes.get(item.id);
+        if (!doItem) {
+          // Ficam os logs do que roda agora e os das últimas execuções que terminaram.
+          const vivos = new Set(nova.estado().rodandoTodos.map((rodando) => rodando.id));
+          for (const antigo of [...recentes.keys()].filter((id) => !vivos.has(id)).slice(0, -LOGS_GUARDADOS)) {
+            recentes.delete(antigo);
+            etapas.delete(antigo);
+          }
+          recentes.set(item.id, (doItem = []));
+        }
+        ultimoItem = item.id;
+        doItem.push({ n: ++sequencia, ts: evento.ts, legiveis: evento.legiveis });
+        if (doItem.length > MAX_EVENTOS) doItem.shift();
       });
       nova.on("fim", (fim) => {
         // Entre a execução sair da fila e o resumo do projeto ser regravado, o
@@ -404,7 +470,9 @@ export function criarServicoClaude({
     por: item.extra?.por ?? null,
     slug: item.slug ?? null,
     execucaoId: item.execucaoId ?? null,
-    etapa: etapaAtual.item === item.id ? etapaAtual.etapa : null,
+    etapa: item.estado === "rodando" ? (etapas.get(item.id) ?? null) : null,
+    // O painel pôs na fila sozinho, na sequência de outra execução do mesmo site.
+    encadeado: item.extra?.encadeado === true,
   });
 
   /**
@@ -494,8 +562,13 @@ export function criarServicoClaude({
   /**
    * Refaz o resumo que o card mostra — o briefing e o site —, perguntando ao
    * motor. Chamado depois de cada execução e de cada mudança feita pela tela.
+   *
+   * @param {string} projectId
+   * @param {Record<string, unknown>} [junto] gravado junto com o resumo
+   * @param {{ slug: string, estado: Record<string, any> } | null} [sabido] o
+   *   estado de um site que quem chama acabou de receber do motor
    */
-  async function atualizarResumo(projectId, junto = {}) {
+  async function atualizarResumo(projectId, junto = {}, sabido = null) {
     const entry = await registro.getClaudeProject(projectId);
     if (!entry) return null;
     const agora = new Date().toISOString();
@@ -513,13 +586,19 @@ export function criarServicoClaude({
       // O registro do cliente, no motor, é quem diz qual é o site mais recente.
       const slug = (Array.isArray(conferido.projetos) ? conferido.projetos.at(-1) : null) ?? entry.slug;
       if (slug) {
-        const estado = await motor.estadoDoProjeto(slug);
+        const estado = sabido?.slug === slug ? sabido.estado : await motor.estadoDoProjeto(slug);
         patch.slug = slug;
         patch.site = {
           awaitingApproval: Boolean(estado.aguardandoAprovacao),
           openStage: estado.etapaAberta ?? null,
+          // O pipeline inteiro terminou: geração, revisão e as rodadas de crítica e refino.
           delivered: Boolean(estado.entregue),
           situation: estado.situacao ?? null,
+          // Onde o site está no pipeline e o pedido que o faz andar (`null`: nenhum).
+          phase: estado.pipeline?.fase ?? null,
+          round: estado.pipeline?.rodada ?? null,
+          rounds: estado.pipeline?.rodadas ?? null,
+          next: proximoDe(estado),
           checkedAt: agora,
         };
       }
@@ -529,36 +608,88 @@ export function criarServicoClaude({
     return registro.patchClaudeProject(projectId, patch);
   }
 
-  /** O que fazer quando uma execução termina: o resumo do card e o registro do site. */
+  /**
+   * Põe na fila o passo seguinte do mesmo site — a continuação, a crítica ou
+   * o refino que o motor indica —, em nome de quem pediu o primeiro e com a
+   * mesma permissão de publicar. É assim que uma geração vira uma sequência
+   * de execuções sem ninguém clicar entre elas.
+   *
+   * A sequência para sozinha em dois casos, e o card fica com "Continuar":
+   * com a trava desligada (ou outra recusa na hora de enfileirar), e quando o
+   * motor pede de novo um passo que ela já deu no mesmo ponto do pipeline —
+   * uma execução que não fez o site andar não é repetida sem alguém decidir.
+   *
+   * @param {string} projectId
+   * @param {import("./queue.js").ItemDaFila} anterior o pedido que acabou de rodar
+   * @param {string} slug
+   * @param {Record<string, any>} estado o que o motor respondeu em `estado`
+   */
+  async function encadear(projectId, anterior, slug, estado) {
+    const tipo = proximoDe(estado);
+    if (!tipo) return null;
+    const passo = passoDe(tipo, estado);
+    const trilha = Array.isArray(anterior.extra?.trilha) ? anterior.extra.trilha : [];
+    if (trilha.includes(passo)) {
+      log(`[claude] ${slug}: o motor pede de novo "${tipo}" no mesmo ponto do pipeline; a sequência parou.`);
+      return null;
+    }
+    try {
+      return await enfileirar(projectId, { tipo, slug }, anterior.extra?.por ?? null, {
+        publicar: anterior.extra?.publicar === true,
+        encadeado: true,
+        trilha: [...trilha, passo],
+      });
+    } catch (/** @type {any} */ erro) {
+      log(`[claude] ${slug}: a sequência não seguiu sozinha (${erro?.message ?? erro}).`);
+      return null;
+    }
+  }
+
+  /**
+   * O que fazer quando uma execução termina. Se terminou bem e o motor dá o
+   * site por entregue, ele entra na lista de sites do projeto e segue para o
+   * GitHub; se ainda há pipeline pela frente, o passo seguinte entra na fila.
+   * Em qualquer caso, o resumo do card é refeito.
+   */
   async function aoTerminar(fim) {
     const projectId = fim.item.extra?.projectId;
     if (!projectId) return;
     const r = fim.resultado;
+    const quem = fim.item.extra?.por ?? null;
+    /** O estado do site no motor, como o executor o viu ao decidir o fim da execução. */
+    const estado = r?.status === "sucesso" && r.slug && fim.item.pedido.tipo !== "analisar" ? (r.projeto ?? null) : null;
 
-    // Site validado: entra na lista de sites do projeto, como os dos outros
-    // motores, e daí segue para o GitHub e a área de aprovação.
-    if (r?.status === "sucesso" && r.slug && fim.item.pedido.tipo !== "analisar") {
-      await recordClaudeSite(projectId, { slug: r.slug, by: fim.item.extra?.por ?? null });
+    if (estado?.entregue) {
+      // Site entregue: entra na lista de sites do projeto, como os dos outros
+      // motores, e daí segue para o GitHub e a área de aprovação. Antes disso
+      // — entre a geração e a última rodada de refino — nada sai desta máquina.
+      await recordClaudeSite(projectId, { slug: r.slug, by: quem });
       // Só segue sozinho quando quem pediu a geração também poderia enviá-lo;
       // senão o card para em "Enviar ao GitHub", para quem pode.
       const { githubToken, organization } = github.conta();
       if (fim.item.extra?.publicar === true && githubToken && organization) {
-        await enviar(projectId, { quem: fim.item.extra?.por ?? null, automatico: true }).catch((erro) =>
+        await enviar(projectId, { quem, automatico: true }).catch((erro) =>
           log(`[claude] envio automático de ${r.slug} ao GitHub: ${erro?.message ?? erro}`),
         );
       }
+    } else if (estado) {
+      await encadear(projectId, fim.item, r.slug, estado);
     }
-    await atualizarResumo(projectId, {
-      lastRun: {
-        id: r?.id ?? fim.item.execucaoId ?? null,
-        type: fim.item.pedido.tipo,
-        status: r?.status ?? "falha",
-        message: executor.filtrar(String(r?.mensagem ?? fim.erro ?? "")).slice(0, 2000),
-        at: new Date().toISOString(),
-        durationMs: r?.duracaoMs ?? null,
+    await atualizarResumo(
+      projectId,
+      {
+        lastRun: {
+          id: r?.id ?? fim.item.execucaoId ?? null,
+          type: fim.item.pedido.tipo,
+          status: r?.status ?? "falha",
+          message: executor.filtrar(String(r?.mensagem ?? fim.erro ?? "")).slice(0, 2000),
+          at: new Date().toISOString(),
+          durationMs: r?.duracaoMs ?? null,
+        },
+        ...(r?.slug ? { slug: r.slug } : {}),
       },
-      ...(r?.slug ? { slug: r.slug } : {}),
-    });
+      estado && r?.slug ? { slug: r.slug, estado } : null,
+    );
   }
 
   /** @param {string} projectId @param {Record<string, any>} entry @param {Fila} filaAtual */
@@ -577,7 +708,8 @@ export function criarServicoClaude({
         : null,
       material: entry.material ?? null,
       briefing: entry.briefing ?? null,
-      site: entry.site ?? null,
+      // Um resumo gravado antes de o painel guardar o ponto do pipeline sai com ele em branco.
+      site: entry.site ? { phase: null, round: null, rounds: null, next: null, ...entry.site } : null,
       lastRun: entry.lastRun ?? null,
       push: entry.push ?? null,
     };
@@ -761,6 +893,7 @@ export function criarServicoClaude({
     pedido: run.pedido,
     status: run.status,
     modelo: run.modelo ?? null,
+    esforco: run.esforco ?? null,
     etapa: run.etapa ?? null,
     etapaAberta: run.etapa_aberta ?? null,
     duracaoMs: run.duracao_ms ?? null,
@@ -830,23 +963,106 @@ export function criarServicoClaude({
     })),
   });
 
-  /** O comando que seria disparado, para a pessoa ver antes de autorizar. */
-  const comandoDe = async (tipo, { sites = [], pasta = null } = {}) =>
-    (await executor.comandoPrevisto({ tipo, sites, pasta })).texto;
+  /**
+   * O comando que seria disparado, para a pessoa ver antes de autorizar — com
+   * o modelo e o esforço que o projeto escolheu.
+   */
+  const comandoDe = async (projectId, tipo, { sites = [], pasta = null, escolhas = null } = {}) => {
+    // O que veio com o ensaio vale só para ele: mostra o comando sem gravar nada.
+    const doProjeto = { ...escolhasDe(await registro.getClaudeProject(projectId)), ...(escolhas ?? {}) };
+    return (await executor.comandoPrevisto({ tipo, sites, pasta, doProjeto })).texto;
+  };
+
+  /**
+   * O modelo e o esforço que vieram no corpo de um pedido, conferidos. Campo
+   * ausente fica como está no projeto; `null` ou vazio volta ao das
+   * Configurações.
+   *
+   * @param {any} corpo
+   * @returns {{ modelo?: string | null, esforco?: string | null } | null}
+   *   `null`: o corpo não trouxe nenhum dos dois
+   */
+  function escolhasDoCorpo(corpo) {
+    /** @type {{ modelo?: string | null, esforco?: string | null }} */
+    const escolhas = {};
+    const texto = (valor) => (valor === null ? "" : typeof valor === "string" ? valor.trim() : null);
+    if (corpo?.modelo !== undefined) {
+      const modelo = texto(corpo.modelo);
+      // O modelo vira um argumento do claude: a mesma regra das Configurações.
+      if (modelo === null || (modelo && !MODELO_VALIDO.test(modelo))) throw httpError(400, MODELO_INVALIDO);
+      escolhas.modelo = modelo || null;
+    }
+    if (corpo?.esforco !== undefined) {
+      const esforco = texto(corpo.esforco);
+      if (esforco === null || (esforco && !ESFORCOS.includes(esforco))) {
+        throw httpError(400, `Esforço inválido — use ${ESFORCOS.join(", ")}.`);
+      }
+      escolhas.esforco = esforco || null;
+    }
+    return Object.keys(escolhas).length ? escolhas : null;
+  }
+
+  /** Grava no projeto o modelo e o esforço escolhidos; o que não veio fica como está. */
+  async function gravarEscolhas(projectId, escolhas) {
+    const entry = await registro.getClaudeProject(projectId);
+    if (entry) await registro.patchClaudeProject(projectId, { options: { ...escolhasDe(entry), ...escolhas } });
+  }
 
   /**
    * Põe o pedido na fila. A conferência do motor vem antes da trava — a pessoa
    * vê primeiro o que está errado no pedido — e a frase conferida é a que vai
    * ao claude.
+   *
+   * @param {string} projectId
+   * @param {import("./executor.js").Pedido} pedido
+   * @param {string | null} quem
+   * @param {Record<string, any>} [extra]
+   * @param {{ modelo?: string | null, esforco?: string | null } | null} [escolhas]
+   *   o modelo e o esforço que vieram com o pedido: gravados no projeto só
+   *   quando ele de fato entra na fila
    */
-  async function enfileirar(projectId, pedido, quem, extra = {}) {
+  async function enfileirar(projectId, pedido, quem, extra = {}, escolhas = null) {
     const { frase } = await motor.conferirPedido(pedido);
     exigirDisparo();
+    if (escolhas) await gravarEscolhas(projectId, escolhas);
     const item = /** @type {Fila} */ (fila).adicionar(pedido, {
       frase,
       extra: { projectId, por: quem, ...extra },
     });
     return itemParaATela(item);
+  }
+
+  /**
+   * O que vale para quem não escolheu nada no projeto: o das Configurações e,
+   * onde elas estão vazias, o que o motor espera. Vai junto a lista do que a
+   * tela oferece em cada escolha.
+   */
+  async function padroes() {
+    const cfg = lerConfig();
+    const ambiente = await motor.ambiente();
+    const doMotor = ambiente.padroes ?? {};
+    const { modelo, esforco } = executor.resolver({ contrato: ambiente.headless, modeloEsperado: ambiente.modeloEsperado });
+    return {
+      modelo,
+      esforco,
+      rodadas: cfg.reviewRounds ?? doMotor.rodadas ?? null,
+      direcao_de_arte: cfg.artDirection || doMotor.direcao_de_arte || null,
+      movimento: cfg.motion || doMotor.movimento || null,
+      escolher_rota: cfg.humanApproval ?? doMotor.escolher_rota ?? Boolean(ambiente.aprovacaoHumana),
+      modelos: MODELOS,
+      esforcos: ESFORCOS,
+    };
+  }
+
+  /**
+   * As opções de um projeto, para a tela: o modelo e o esforço que ele
+   * escolheu, o que vale no lugar do que ele não escolheu e as opções do site,
+   * que moram no briefing (`null` enquanto não há um).
+   */
+  async function lerOpcoes(projectId) {
+    const entry = await registro.getClaudeProject(projectId);
+    const [defaults, review] = await Promise.all([padroes(), entry ? motor.revisao(entry.folder) : null]);
+    return { options: escolhasDe(entry), defaults, site: review?.opcoes ?? null };
   }
 
   return {
@@ -868,6 +1084,8 @@ export function criarServicoClaude({
         queue: {
           paused: estado.pausada,
           running: estado.rodando ? itemParaATela(estado.rodando) : null,
+          // Todas as execuções em andamento: a principal e os ajustes ao lado dela.
+          runningAll: estado.rodandoTodos.map(itemParaATela),
           waiting: estado.esperando.map(itemParaATela),
           interrupted: estado.interrompidas.map(itemParaATela),
           last: ultimo
@@ -884,13 +1102,14 @@ export function criarServicoClaude({
 
     /**
      * O motor nesta máquina, para a tela de Configurações: o pacote, o Claude
-     * Code, o navegador das capturas, o modelo e o comando de uma geração.
-     * Nada aqui dispara o Claude Code: `claude --version` só diz a versão.
+     * Code, o navegador das capturas, o modelo, o esforço e o comando de uma
+     * geração — os das Configurações, sem a escolha de nenhum projeto. Nada
+     * aqui dispara o Claude Code: `claude --version` só diz a versão.
      */
     async diagnostico() {
       const instalado = pacote();
       const comum = { installed: instalado.instalado, reason: instalado.motivo, generation: liberacao() };
-      const vazio = { claude: null, browser: null, model: null, humanApproval: null, command: null };
+      const vazio = { claude: null, browser: null, model: null, effort: null, humanApproval: null, command: null };
       if (!instalado.instalado) return { ...comum, ...vazio };
 
       const cfg = lerConfig();
@@ -911,7 +1130,9 @@ export function criarServicoClaude({
           // Só o nome do programa: o caminho é desta máquina e não interessa à tela.
           browser: { found: Boolean(navegador), name: navegador ? path.basename(navegador) : null, custom: Boolean(cfg.browserPath) },
           model: { effective: previsto.modelo, expected: previsto.modeloEsperado, custom: Boolean(cfg.model) },
-          humanApproval: { enabled: Boolean(ambiente.aprovacaoHumana), custom: cfg.humanApproval !== null },
+          // O esforço esperado é o da criação de um site, que é o comando mostrado.
+          effort: { effective: previsto.esforco, expected: previsto.esforcoEsperado, custom: ESFORCOS.includes(cfg.effort) },
+          humanApproval: { enabled: Boolean(ambiente.aprovacaoHumana), custom: typeof cfg.humanApproval === "boolean" },
           command: previsto.texto,
         };
       } catch (erro) {
@@ -985,22 +1206,17 @@ export function criarServicoClaude({
       return { ...basico, project: resumoDe(projectId, { ...entry, slug: slug ?? null }, filaAtual), review, site, runs };
     },
 
-    /** Custo e qualidade do site, por rótulo — os três nunca são somados. */
-    async metricas(projectId) {
-      const entry = await exigirSite(projectId);
-      return motor.metricas(entry.slug);
-    },
-
     /* ----- briefing ------------------------------------------------ */
 
     /** Ensaio: o que seria copiado e o comando que rodaria. Não gasta nem enfileira. */
     async ensaiarBriefing(projectId, corpo, quem) {
       await pronta();
+      const escolhas = escolhasDoCorpo(corpo);
       const planejado = await planejarBriefing(projectId, corpo, quem);
       return {
         dryRun: true,
         plan: planoParaATela(planejado),
-        command: await comandoDe("analisar", { sites: planejado.sites, pasta: planejado.entry.folder }),
+        command: await comandoDe(projectId, "analisar", { sites: planejado.sites, pasta: planejado.entry.folder, escolhas }),
         generation: liberacao(),
       };
     },
@@ -1008,6 +1224,7 @@ export function criarServicoClaude({
     /** Copia o material e põe o pedido de briefing na fila. CONSOME A ASSINATURA. */
     pedirBriefing: (projectId, corpo, { quem = null, publicar = false } = {}) =>
       comReserva(projectId, async () => {
+        const escolhas = escolhasDoCorpo(corpo);
         const planejado = await planejarBriefing(projectId, corpo, quem);
         exigirDisparo();
 
@@ -1029,7 +1246,7 @@ export function criarServicoClaude({
             skipped: copia.pulados.slice(0, 30),
           },
         });
-        const item = await enfileirar(projectId, planejado.pedido, quem, { publicar });
+        const item = await enfileirar(projectId, planejado.pedido, quem, { publicar }, escolhas);
         return { item, plan: planoParaATela(planejado), material: copia };
       }),
 
@@ -1046,24 +1263,55 @@ export function criarServicoClaude({
       return { review };
     },
 
-    /** Grava as opções do site (páginas, banco de imagens, skills, observações) no briefing. */
-    async gravarOpcoes(projectId, opcoes) {
+    /** As opções do projeto: o modelo e o esforço das execuções, os padrões e as opções do site. Só lê. */
+    async opcoes(projectId) {
       await pronta();
-      if (!opcoes || typeof opcoes !== "object" || Array.isArray(opcoes)) {
+      return lerOpcoes(projectId);
+    },
+
+    /**
+     * Grava as opções do projeto. O modelo e o esforço das execuções ficam no
+     * banco do painel e valem da próxima execução em diante; as opções do site
+     * (`site`: páginas, banco de imagens, skills, observações, rodadas, direção
+     * de arte, movimento, escolha de rota, referências) vão para o briefing,
+     * pelo motor, que é quem as confere. Não gasta.
+     *
+     * @param {string} projectId
+     * @param {any} corpo `{ modelo?, esforco?, site? }` — o que não vier fica como está
+     * @param {string | null} [quem]
+     */
+    async gravarOpcoes(projectId, corpo, quem = null) {
+      await pronta();
+      if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) throw httpError(400, "Opções inválidas.");
+      const escolhas = escolhasDoCorpo(corpo);
+      const doSite = corpo.site;
+      if (doSite !== undefined && (!doSite || typeof doSite !== "object" || Array.isArray(doSite))) {
         throw httpError(400, "Opções inválidas.");
       }
-      exigirSemPendencia(projectId);
-      const entry = await exigirProjeto(projectId);
-      const review = await motor.gravarOpcoes(entry.folder, opcoes);
-      await atualizarResumo(projectId);
-      return { review };
+      if (!escolhas && doSite === undefined) throw httpError(400, "Opções inválidas.");
+
+      // Primeiro o que o motor pode recusar: se ele recusa, nada muda.
+      if (doSite !== undefined) {
+        // O briefing é o arquivo que o agente lê: não muda com um pedido em andamento.
+        exigirSemPendencia(projectId);
+        const entry = await exigirProjeto(projectId);
+        await motor.gravarOpcoes(entry.folder, doSite);
+      }
+      if (escolhas) {
+        await abrirProjeto(projectId, quem);
+        await gravarEscolhas(projectId, escolhas);
+      }
+      if (doSite !== undefined) await atualizarResumo(projectId);
+      return lerOpcoes(projectId);
     },
 
     /* ----- site ---------------------------------------------------- */
 
     /** Ensaio da geração: a conferência do briefing e o comando que rodaria. */
-    async ensaiarSite(projectId, { refazer = false } = {}) {
+    async ensaiarSite(projectId, corpo = {}) {
       await pronta();
+      const refazer = corpo?.refazer === true;
+      const escolhas = escolhasDoCorpo(corpo);
       const entry = await exigirProjeto(projectId);
       const review = await motor.revisao(entry.folder);
       /** @type {{ tipo: "cliente", pasta: string, refazer?: boolean }} */
@@ -1081,7 +1329,7 @@ export function criarServicoClaude({
           previousSites: review.projetos ?? [],
           humanApproval: Boolean(review.aprovacaoHumana),
         },
-        command: await comandoDe("cliente"),
+        command: await comandoDe(projectId, "cliente", { escolhas }),
         generation: liberacao(),
       };
     },
@@ -1090,6 +1338,7 @@ export function criarServicoClaude({
     pedirSite: (projectId, corpo, { quem = null, publicar = false } = {}) =>
       comReserva(projectId, async () => {
         const refazer = corpo?.refazer === true;
+        const escolhas = escolhasDoCorpo(corpo);
         const opcoes = corpo?.opcoes;
         if (opcoes !== undefined && (!opcoes || typeof opcoes !== "object" || Array.isArray(opcoes))) {
           throw httpError(400, "Opções inválidas.");
@@ -1118,7 +1367,7 @@ export function criarServicoClaude({
         if (opcoes) await motor.gravarOpcoes(entry.folder, opcoes);
         /** @type {{ tipo: "cliente", pasta: string, refazer?: boolean }} */
         const pedido = { tipo: "cliente", pasta: entry.folder, ...(refazer ? { refazer: true } : {}) };
-        return { item: await enfileirar(projectId, pedido, quem, { publicar }) };
+        return { item: await enfileirar(projectId, pedido, quem, { publicar }, escolhas) };
       }),
 
     /** Pede um ajuste no site já gerado. CONSOME A ASSINATURA. */
@@ -1129,6 +1378,7 @@ export function criarServicoClaude({
         if (texto.length > MAX_CARACTERES_DO_AJUSTE) {
           throw httpError(400, `O pedido de ajuste tem ${texto.length} caracteres — o limite é ${MAX_CARACTERES_DO_AJUSTE}.`);
         }
+        const escolhas = escolhasDoCorpo(corpo);
         const entry = await exigirSite(projectId);
         const anexos = await conferirAnexos({ dirDoSite: dirDoSite(entry.slug), anexos: corpo?.anexos });
         /** @type {{ tipo: "ajuste", slug: string, pedido: string }} */
@@ -1138,7 +1388,8 @@ export function criarServicoClaude({
         // pedido anterior que não chegou a rodar.
         await gravarPendente(dirDoSite(entry.slug), anexos);
         try {
-          return { item: await enfileirar(projectId, pedido, quem, { publicar, ...(anexos ? { anexos: anexos.itens.length } : {}) }) };
+          const extra = { publicar, ...(anexos ? { anexos: anexos.itens.length } : {}) };
+          return { item: await enfileirar(projectId, pedido, quem, extra, escolhas) };
         } catch (error) {
           await gravarPendente(dirDoSite(entry.slug), null);
           throw error;
@@ -1159,13 +1410,24 @@ export function criarServicoClaude({
       await removerAnexo({ dirDoSite: dirDoSite(entry.slug), rascunho, arquivo });
     },
 
-    /** Continua um site que parou com etapa aberta. CONSOME A ASSINATURA. */
-    pedirContinuacao: (projectId, { quem = null, publicar = false } = {}) =>
+    /**
+     * "Continuar": põe na fila o passo que o motor indica para o site — a
+     * continuação de uma etapa que ficou aberta, a crítica ou o refino de uma
+     * sequência que parou. CONSOME A ASSINATURA.
+     */
+    pedirContinuacao: (projectId, corpo, { quem = null, publicar = false } = {}) =>
       comReserva(projectId, async () => {
+        const escolhas = escolhasDoCorpo(corpo);
         const entry = await exigirSite(projectId);
-        /** @type {{ tipo: "continuar", slug: string }} */
-        const pedido = { tipo: "continuar", slug: entry.slug };
-        return { item: await enfileirar(projectId, pedido, quem, { publicar }) };
+        const estado = await motor.estadoDoProjeto(entry.slug);
+        const tipo = proximoDe(estado);
+        if (!tipo) {
+          // Nada pela frente: é o motor quem diz por quê (site já entregue, direção esperando aprovação).
+          await motor.conferirPedido({ tipo: "continuar", slug: entry.slug });
+          throw httpError(409, "Não há o que continuar neste site.");
+        }
+        const extra = { publicar, trilha: [passoDe(tipo, estado)] };
+        return { item: await enfileirar(projectId, { tipo, slug: entry.slug }, quem, extra, escolhas) };
       }),
 
     /**
@@ -1188,6 +1450,38 @@ export function criarServicoClaude({
         const item = await enfileirar(projectId, { tipo: "continuar", slug: entry.slug }, quem, { publicar });
         await atualizarResumo(projectId);
         return { aprovado: true, mensagens: resposta.mensagens ?? [], item };
+      }),
+
+    /**
+     * Escolhe outra rota criativa entre as propostas e põe na fila a execução
+     * que refaz a direção com ela. CONSOME A ASSINATURA: a escolha só serve
+     * para o site seguir por essa rota.
+     *
+     * @param {string} projectId
+     * @param {unknown} rota o número da rota, como o motor a lista
+     */
+    escolherRota: (projectId, rota, { quem = null, publicar = false } = {}) =>
+      comReserva(projectId, async () => {
+        const entry = await exigirSite(projectId);
+        const estado = await motor.estadoDoProjeto(entry.slug);
+        if (!estado.aguardandoAprovacao) {
+          throw httpError(409, "Não há direção criativa esperando a escolha de uma rota neste projeto.");
+        }
+        const site = await motor.projeto(entry.slug);
+        const propostas = Array.isArray(site.rotas) ? site.rotas : [];
+        if (!Number.isInteger(rota) || !propostas.some((proposta) => proposta?.n === rota)) {
+          throw httpError(400, "Escolha uma das rotas propostas para este site.");
+        }
+        exigirDisparo();
+        const escolhido = await motor.rota(entry.slug, /** @type {number} */ (rota));
+        try {
+          const extra = { publicar, trilha: [passoDe("continuar", escolhido)] };
+          const item = await enfileirar(projectId, { tipo: "continuar", slug: entry.slug }, quem, extra);
+          return { site: escolhido, item };
+        } finally {
+          // A rota já mudou no motor, entre ou não o pedido na fila.
+          await atualizarResumo(projectId);
+        }
       }),
 
     /* ----- site feito na ferramenta antiga --------------------------- */
@@ -1321,6 +1615,20 @@ export function criarServicoClaude({
       return { site: await motor.recusarFoto(entry.slug, ref) };
     },
 
+    /**
+     * O site já gerado passa a aceitar várias páginas, ou volta a ser de página
+     * única. Não usa o Claude: é o que deixa o ajuste seguinte criar páginas.
+     */
+    mudarTipoDoSite: (projectId, corpo) =>
+      comReserva(projectId, async () => {
+        if (typeof corpo?.multiplas_paginas !== "boolean") {
+          throw httpError(400, "Informe se o site tem várias páginas (multiplas_paginas: true ou false).");
+        }
+        const entry = await exigirSite(projectId);
+        const tipo = await motor.tipoDoSite(entry.slug, corpo.multiplas_paginas, entry.folder);
+        return { multiplasPaginas: tipo.multiplasPaginas === true, paginas: Array.isArray(tipo.paginas) ? tipo.paginas : [] };
+      }),
+
     /** O mesmo build e a mesma validação que fecham uma etapa. */
     async validar(projectId) {
       await pronta();
@@ -1332,26 +1640,26 @@ export function criarServicoClaude({
       });
     },
 
-    /** Fotografa o site (desktop e celular) ou filma a abertura dele. */
+    /** Fotografa o site, em desktop e em celular. */
     async capturar(projectId, tipo) {
       await pronta();
-      if (tipo !== "telas" && tipo !== "filme") throw httpError(404, "Rota não encontrada");
+      if (tipo !== "telas") throw httpError(404, "Rota não encontrada");
       exigirSemPendencia(projectId);
       const entry = await exigirSite(projectId);
-      return comTarefa(`${tipo === "telas" ? "capturas" : "filme"} de ${entry.slug}`, async () => {
-        await motor[tipo](entry.slug);
+      return comTarefa(`capturas de ${entry.slug}`, async () => {
+        await motor.telas(entry.slug);
         const site = await motor.projeto(entry.slug);
-        return { [tipo]: site[tipo] ?? [] };
+        return { telas: site.telas ?? [] };
       });
     },
 
     /**
-     * O arquivo de uma imagem da pasta de trabalho, conferido: as telas e o
-     * filme do site, uma foto do material do cliente ou a miniatura de uma
-     * foto de banco proposta.
+     * O arquivo de uma imagem da pasta de trabalho, conferido: as telas do
+     * site, uma foto do material do cliente ou a miniatura de uma foto de
+     * banco proposta.
      *
      * @param {string} projectId
-     * @param {"telas" | "filme" | "material" | "miniatura"} tipo
+     * @param {"telas" | "material" | "miniatura"} tipo
      * @param {string} nome
      */
     async imagem(projectId, tipo, nome) {
@@ -1360,9 +1668,9 @@ export function criarServicoClaude({
       const tipoDoArquivo = IMAGENS[path.extname(relativo).toLowerCase()];
       /** @type {string | null} */
       let raiz = null;
-      if (tipo === "telas" || tipo === "filme") {
+      if (tipo === "telas") {
         if (entry.slug && /^[\w.-]+\.png$/i.test(relativo)) {
-          raiz = path.join(caminhos.trabalho, "projects", entry.slug, ".session", tipo);
+          raiz = path.join(caminhos.trabalho, "projects", entry.slug, ".session", "telas");
         }
       } else if (tipo === "material") {
         raiz = pastaDoCliente(entry.folder);
@@ -1389,23 +1697,28 @@ export function criarServicoClaude({
     },
 
     /**
-     * O que aconteceu na execução atual (ou na última) depois do cursor que a
-     * tela guarda. Consulta simples, repetida pela tela: não há conexão aberta.
+     * O que aconteceu em uma execução depois do cursor que a tela guarda.
+     * Consulta simples, repetida pela tela: não há conexão aberta.
      *
      * @param {unknown} cursor como veio da resposta anterior; vazio na primeira consulta
+     * @param {unknown} [item] o pedido da fila que a tela quer ver; sem ele (ou
+     *   sem log dele), vale a execução principal, ou a última que escreveu
      */
-    async eventos(cursor) {
-      await pronta();
+    async eventos(cursor, item) {
+      const filaAtual = await pronta();
       const [epocaDaTela, itemDaTela, numero] = String(cursor ?? "").split(":");
-      const itemAtual = recentes[0]?.item ?? "";
+      const pedido = typeof item === "string" ? item : "";
+      const principal = filaAtual.estado().rodando?.id ?? "";
+      const itemAtual = recentes.has(pedido) ? pedido : recentes.has(principal) ? principal : ultimoItem;
+      const doItem = recentes.get(itemAtual) ?? [];
       // O cursor só vale para a mesma subida do painel e a mesma execução.
       const mesma = epocaDaTela === epoca && itemDaTela === itemAtual;
       const desde = mesma ? Number(numero) || 0 : 0;
       // A tela ficou para trás do que ainda está guardado: recomeça do que há.
-      const perdeu = mesma && desde > 0 && recentes.length > 0 && recentes[0].n > desde + 1;
-      const novos = perdeu ? recentes : recentes.filter((evento) => evento.n > desde);
+      const perdeu = mesma && desde > 0 && doItem.length > 0 && doItem[0].n > desde;
+      const novos = perdeu ? doItem : doItem.filter((evento) => evento.n > desde);
       return {
-        cursor: `${epoca}:${itemAtual}:${recentes.at(-1)?.n ?? 0}`,
+        cursor: `${epoca}:${itemAtual}:${doItem.at(-1)?.n ?? 0}`,
         /** A tela deve trocar o que tinha pelo que veio, em vez de acrescentar. */
         reset: !mesma || perdeu,
         item: itemAtual || null,
@@ -1415,9 +1728,14 @@ export function criarServicoClaude({
 
     /* ----- fila ---------------------------------------------------- */
 
-    /** Cancela a execução em andamento (dois tempos, árvore de processos inteira). */
-    async cancelar() {
-      return { cancelled: (await pronta()).cancelar() };
+    /**
+     * Cancela uma execução em andamento (dois tempos, árvore de processos
+     * inteira). Sem o item, cancela a principal.
+     *
+     * @param {unknown} [itemId]
+     */
+    async cancelar(itemId) {
+      return { cancelled: (await pronta()).cancelar(typeof itemId === "string" && itemId ? itemId : undefined) };
     },
 
     /** Tira da fila um pedido que ainda não começou. */
@@ -1441,14 +1759,23 @@ export function criarServicoClaude({
       const item = filaAtual.estado().interrompidas.find((candidato) => candidato.id === String(itemId));
       if (!item) throw httpError(404, "Essa execução interrompida não está mais na lista.");
 
-      // Com o site já criado, o pedido vira "continue o site": ele retoma a
-      // sessão original quando ela ainda existe. Sem site, vale o pedido de antes.
+      // Com o site já criado, vale o passo que o motor indica para ele —
+      // continuar, criticar ou refinar. Sem nada pela frente, o "continue o
+      // site" traz a recusa do motor, com o motivo. Sem site, vale o pedido de antes.
       /** @type {any} */
-      const pedido = item.slug ? { tipo: "continuar", slug: item.slug } : item.pedido;
+      let pedido = item.pedido;
+      /** @type {Record<string, any>} */
+      const extra = { ...(item.extra ?? {}), por: quem ?? item.extra?.por ?? null, encadeado: false };
+      if (item.slug) {
+        const estado = await motor.estadoDoProjeto(item.slug);
+        pedido = { tipo: proximoDe(estado) ?? "continuar", slug: item.slug };
+        // Quem retoma abre uma sequência nova, a partir deste passo.
+        extra.trilha = [passoDe(pedido.tipo, estado)];
+      }
       const { frase } = await motor.conferirPedido(pedido);
       exigirDisparo();
       filaAtual.retirarInterrompida(item.id);
-      const novo = filaAtual.adicionar(pedido, { frase, extra: { ...(item.extra ?? {}), por: quem ?? item.extra?.por ?? null } });
+      const novo = filaAtual.adicionar(pedido, { frase, extra });
       return { item: itemParaATela(novo) };
     },
 

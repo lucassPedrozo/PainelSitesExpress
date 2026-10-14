@@ -42,6 +42,10 @@ export function claudeBatchPlanFromProject(project: Project): ClaudeBatchPlan | 
   if (claude?.site?.openStage) {
     return { ok: false, reason: "A geração parou com uma etapa aberta — continue ou encerre no projeto." };
   }
+  // Site ainda nas rodadas, com a sequência parada: gerar de novo faria outro site.
+  if (claude?.site?.next) {
+    return { ok: false, reason: "A criação do site parou antes da entrega — continue no projeto." };
+  }
   if (claude?.briefing?.state === "refused") {
     return {
       ok: false,
