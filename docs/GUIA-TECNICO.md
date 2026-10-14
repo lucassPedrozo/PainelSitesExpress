@@ -182,8 +182,8 @@ A pasta raiz precisa estar compartilhada com o e-mail da service account
 > A chave `g-suite-*.json` está no `.gitignore` — nunca versione esse arquivo.
 
 Nenhuma chave precisa ser editada à mão: a seção **Configurações** do cabeçalho
-reúne todas, por assunto (Drive, geração, motor Claude, assistente Gemini, modelo de
-IA, GitHub, área de aprovação, encurtador, rede). Cada seção é um cartão com os campos numa
+reúne todas, por assunto (Drive, geração, motor Claude, assistente Gemini, GitHub,
+área de aprovação, encurtador, rede). Cada seção é um cartão com os campos numa
 coluna — o nome e a variável à esquerda, o controle e a ajuda à direita —, o estado
 da integração no título ("Configurado", "Incompleto", "Não configurado") e grava
 sozinha no `.env` (modo `600`), preservando comentários e ordem. As regras:
@@ -198,18 +198,18 @@ sozinha no `.env` (modo `600`), preservando comentários e ordem. As regras:
   (`••••yS`). Um segredo gravado mostra "Definida" com os botões **Trocar** (abre a
   caixa do valor novo) e **Apagar**; a caixa vazia mantém o gravado.
 - **Ou tudo entra, ou nada muda.** O pedido é validado inteiro antes de gravar: tipo,
-  formato (token `github_pat_`, chave `sk-ant-`, `https://`), limites, e as regras que
+  formato (token `github_pat_`, `https://`), limites, e as regras que
   cruzam campos — abrir o painel para a rede (`SERVER_HOST`) exige a chave do
   administrador, e apagá-la com a rede aberta é recusado. Quebra de linha é recusada em
   qualquer valor: injetaria outra variável no `.env`.
 - **O que só vale ao reiniciar é dito.** Chaves lidas na subida (`PORT`, `SERVER_HOST`,
   Drive, limites do Lovable, encurtador, intervalos de varredura) aparecem com "ao
   reiniciar"; depois de gravadas, um aviso lista as que esperam o reinício. As demais
-  (GitHub, área de aprovação, motor Claude, IA, Gemini, Pixabay, chave do painel) valem
-  na hora.
+  (GitHub, área de aprovação, motor Claude, Gemini, Pixabay, chave do painel) valem na
+  hora.
   Campos em milissegundos e bytes mostram a leitura humana ao lado ("60000 = 1 min").
 - **Testes sem efeito colateral.** *Testar o acesso ao GitHub* só lê; *Testar a chave*
-  do modelo de IA e a do Gemini listam os modelos, sem gerar nada e sem custo. A única
+  do Gemini lista os modelos, sem gerar nada e sem custo. A única
   exceção é *Testar Claude*, que dispara o Claude Code de verdade: pede confirmação,
   exige a trava ligada e nunca roda sozinho (ver "Motor Claude").
 - **Programa que o painel lança só entra se for o esperado.** O caminho do `claude` e o
@@ -1058,41 +1058,15 @@ feito para ela continuar assim (`server/src/gemini/`):
   (permissão `gerar`; corpo `briefing`, `observations`, `projectName`, `fileNames`) e
   `POST /api/settings/check/gemini` (permissão `configurar`).
 
-## Motores de geração (Lovable, Claude e "Lovable próprio")
+## Motores de geração (Lovable e Claude)
 
 O painel produz sites por dois motores, escolhidos **a cada geração**, na própria tela:
 o **Lovable** e o **Claude** — o Claude Code desta máquina, pelo login da assinatura
 (seção seguinte). `GENERATION_ENGINE` só diz qual vem marcado; a escolha aparece
 quando os dois servem para o projeto (projeto criado no painel não tem geração pelo
 Lovable, e o Claude some onde o pacote do motor não está instalado). O estado de cada
-motor aparece em Configurações → Geração de sites.
-
-Há um terceiro, o **Lovable próprio** — um modelo de IA, pela chave de API configurada,
-escrevendo o site num projeto-modelo da organização. Ele está **arquitetado e não
-ligado**: nenhuma rota o chama, `GENERATION_ENGINE` não aceita `own`, e escolher,
-guardar ou testar a chave de IA não muda nada no que funciona.
-
-O que já existe (`server/src/engines/`, `server/src/ai/`):
-
-| Peça | O que faz |
-| --- | --- |
-| `engines/index.js` | Registro dos motores e o estado de cada um (mostrado em Configurações) |
-| `ai/providers.js` | Provedores de modelo: formato da chave, modelos oferecidos, teste da chave sem custo. Hoje Anthropic (Claude), pelo SDK oficial; um provedor novo é uma entrada a mais |
-| `engines/own/workspace.js` | Os arquivos do site em memória. O modelo só escreve `src/`, `public/` e `index.html`; `package.json`, `vite.config`, lockfiles e workflows vêm do modelo de projeto e não mudam — nem um briefing com instrução maliciosa acrescenta dependência com script de instalação ou mexe no workflow que recebe a senha do FTP |
-| `engines/own/tools.js` | As ferramentas de arquivo (listar, ler, escrever, apagar), com cada entrada conferida antes de executar |
-| `engines/own/prompt.js` | O prompt de sistema (fixo, para o cache valer entre gerações) e a mensagem com o briefing |
-| `engines/own/generate.js` | O laço de geração: streaming, adaptive thinking, entrada das ferramentas em streaming, parada em `max_tokens` e `refusal`, cache do prefixo e, no Opus 5 e no Fable 5.1, o fallback do servidor quando o modelo recusa por política |
-
-O caminho previsto, do briefing ao link de aprovação: o mesmo pacote de envio do
-Lovable → cópia do projeto-modelo (Vite, React, TypeScript, Tailwind, assinatura e modo
-SPA prontos) com os anexos em `src/assets/` → o modelo escreve o site → repositório novo
-na organização, num commit só (sem "conectar ao GitHub": nasce ligado) → o workflow da
-área de aprovação publica, e daí em diante nada muda. "Responder" vira um pedido de
-ajuste com os arquivos atuais, um commit e uma nova publicação.
-
-Falta para ligar: o repositório-modelo, a criação do repositório e o commit pela API
-do GitHub, o registro da geração com `engine: "own"` e a rota. O laço foi testado com
-um cliente falso; a primeira geração real vai gastar crédito do provedor.
+motor aparece em Configurações → Geração de sites, e o registro que o informa é
+`server/src/engines/index.js`.
 
 ## Motor Claude
 

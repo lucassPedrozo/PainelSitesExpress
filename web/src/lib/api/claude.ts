@@ -136,7 +136,7 @@ export type ClaudeStatus = {
   /** A trava do gasto (`CLAUDE_ENABLE_GENERATION`). */
   generation: ClaudeGate;
   /** O motor que a tela de geração traz marcado (`GENERATION_ENGINE`). */
-  defaultEngine: "lovable" | "claude" | "own";
+  defaultEngine: "lovable" | "claude";
   queue: {
     /** Voltou pausada de um reinício: nada roda até alguém retomar. */
     paused: boolean;

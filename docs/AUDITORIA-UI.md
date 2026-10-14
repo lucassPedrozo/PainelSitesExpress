@@ -308,6 +308,7 @@ Ver **Decisões em aberto → Prompt**. O texto enviado ao Lovable não foi toca
 - O cartão do motor desligado aparece na seção Geração. É informação para
   quem configura, não para quem gera; fica, porque a seção é só de quem tem a
   permissão `configurar`.
+- Depois da auditoria o motor próprio saiu do painel, e o cartão com ele.
 
 ---
 

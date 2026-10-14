@@ -3,7 +3,6 @@ import { ESFORCOS, MODELO_INVALIDO, MODELO_VALIDO } from "../engines/claude/comm
 import { config } from "../config.js";
 import { isLocalNetworkAddress } from "../security/network.js";
 import { hostPattern } from "../deploy/input.js";
-import { AI_PROVIDERS } from "../ai/providers.js";
 import { FREE_TIER_MODELS, isFlashModel } from "../gemini/client.js";
 
 /**
@@ -12,8 +11,8 @@ import { FREE_TIER_MODELS, isFlashModel } from "../gemini/client.js";
  * novo só vale depois de reiniciar o painel.
  *
  * `restart: true` são as que `config.js` lê uma vez, na subida (`config`); as
- * demais são relidas a cada uso (`runtimeConfig`, `devAreaConfig`, `aiConfig`,
- * `claudeConfig`) e valem na hora.
+ * demais são relidas a cada uso (`runtimeConfig`, `devAreaConfig`, `claudeConfig`)
+ * e valem na hora.
  *
  * Segredos nunca voltam para o navegador: a tela recebe só se estão definidos
  * e uma dica (`github_pat_…a1b2`) para reconhecer qual está gravado.
@@ -129,12 +128,8 @@ export const SETTINGS_SCHEMA = [
         options: [
           { value: "lovable", label: "Lovable" },
           { value: "claude", label: "Claude" },
-          { value: "own", label: "Lovable próprio (em preparação)", disabled: true },
         ],
         help: "Só a escolha inicial da tela de geração: quem gera pode trocar o motor a cada site. Vazio, vem o Lovable.",
-        // Enquanto o motor próprio não gera, gravar "own" deixaria o painel
-        // dizendo uma coisa e fazendo outra.
-        validate: (v) => (v === "own" ? "O motor próprio ainda não está disponível." : null),
       },
       {
         key: "LOVABLE_ENABLE_GENERATION",
@@ -311,46 +306,6 @@ export const SETTINGS_SCHEMA = [
             : isFlashModel(v)
               ? null
               : "Para a chave continuar no nível gratuito, só modelos Flash são aceitos.",
-      },
-    ],
-  },
-  {
-    id: "ai",
-    title: "Modelo de IA",
-    description: "A chave de API do modelo que o motor próprio vai usar. Guardar e testar a chave não gera nada nem muda o que já funciona.",
-    fields: [
-      {
-        key: "AI_PROVIDER",
-        label: "Provedor",
-        type: "select",
-        options: Object.values(AI_PROVIDERS).map((p) => ({ value: p.id, label: p.label })),
-        validate: (v) => (v === "" || AI_PROVIDERS[v] ? null : "Provedor desconhecido."),
-      },
-      {
-        key: "AI_API_KEY",
-        label: "Chave de API",
-        type: "secret",
-        help: "Guardada só no .env desta máquina. O botão Testar confere a chave listando os modelos — sem custo.",
-        validate: (v, all) => {
-          const provedor = AI_PROVIDERS[all.AI_PROVIDER || "anthropic"];
-          if (v.length > 512) return "Chave longa demais.";
-          return provedor?.keyPattern && !provedor.keyPattern.test(v)
-            ? `A chave não tem o formato de uma chave ${provedor.label} (${provedor.keyHint}).`
-            : null;
-        },
-      },
-      {
-        key: "AI_MODEL",
-        label: "Modelo",
-        type: "select",
-        options: Object.values(AI_PROVIDERS).flatMap((p) =>
-          p.models.map((m) => ({ value: m.id, label: `${m.label} — ${p.label}` })),
-        ),
-        help: "O padrão é o mais capaz para gerar código. O custo por site depende do modelo.",
-        validate: (v) =>
-          v === "" || Object.values(AI_PROVIDERS).some((p) => p.models.some((m) => m.id === v))
-            ? null
-            : "Modelo desconhecido.",
       },
     ],
   },

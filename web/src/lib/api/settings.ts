@@ -35,7 +35,7 @@ export type SettingSection = {
 };
 
 export type EngineStatus = {
-  id: "lovable" | "claude" | "own";
+  id: "lovable" | "claude";
   label: string;
   description: string;
   available: boolean;
@@ -64,10 +64,6 @@ export class SettingsValidationError extends ApiError {
     this.fieldErrors = fieldErrors;
   }
 }
-
-export type AiKeyCheck =
-  | { ok: true; models: string[]; model: string; modelAvailable: boolean }
-  | { ok: false; reason: string };
 
 export type GeminiKeyCheck =
   | {
@@ -150,14 +146,6 @@ export async function saveSettings(updates: Record<string, string | null>) {
 
 export const checkGithubAccess = (input: { token?: string; organization?: string }) =>
   request<AccessCheckResult>("/api/settings/check/github", {
-    method: "POST",
-    body: JSON.stringify(input),
-    timeoutMs: TIMEOUT_MS,
-  });
-
-/** Confere a chave do modelo de IA listando os modelos — sem custo. */
-export const checkAiKey = (input: { provider?: string; apiKey?: string; model?: string }) =>
-  request<AiKeyCheck>("/api/settings/check/ai", {
     method: "POST",
     body: JSON.stringify(input),
     timeoutMs: TIMEOUT_MS,

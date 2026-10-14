@@ -1,22 +1,16 @@
 import { useState, type ReactNode } from "react";
 import { CheckCircle2, Loader2, ShieldCheck, TriangleAlert, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import {
-  checkAiKey,
-  checkGeminiKey,
-  checkGithubAccess,
-  type AiKeyCheck,
-  type GeminiKeyCheck,
-} from "@/lib/api/settings";
+import { checkGeminiKey, checkGithubAccess, type GeminiKeyCheck } from "@/lib/api/settings";
 import type { AccessCheckResult } from "@/lib/api/deploy";
 import { Button } from "@/components/ui/button";
 import { HintWhenDisabled } from "@/features/claude/claude-shared";
 import type { Drafts } from "./settings-form";
 
 /**
- * Os testes sem efeito colateral de cada seção: GitHub (só lê), chave do
- * modelo de IA e chave do Gemini (listam os modelos — não geram nada e não
- * custam nada). Cada um usa o valor digitado na seção ou, vazio, o gravado.
+ * Os testes sem efeito colateral de cada seção: GitHub (só lê) e chave do
+ * Gemini (lista os modelos — não gera nada e não custa nada). Cada um usa o
+ * valor digitado na seção ou, vazio, o gravado.
  */
 
 const valorDe = (drafts: Drafts, key: string) => {
@@ -106,52 +100,6 @@ export function GithubTest({ drafts }: { drafts: Drafts }) {
               <b className="font-medium">{check.label}:</b> {check.detail}
             </Linha>
           ))}
-        </ul>
-      )}
-    </TestFooter>
-  );
-}
-
-export function AiTest({ drafts }: { drafts: Drafts }) {
-  const [testando, setTestando] = useState(false);
-  const [resultado, setResultado] = useState<AiKeyCheck | null>(null);
-
-  const testar = async () => {
-    setTestando(true);
-    try {
-      setResultado(
-        await checkAiKey({
-          provider: valorDe(drafts, "AI_PROVIDER"),
-          apiKey: valorDe(drafts, "AI_API_KEY"),
-          model: valorDe(drafts, "AI_MODEL"),
-        }),
-      );
-    } catch (erro) {
-      toast.error("Falha ao testar", { description: erro instanceof Error ? erro.message : undefined });
-    } finally {
-      setTestando(false);
-    }
-  };
-
-  return (
-    <TestFooter
-      label="Testar a chave"
-      hint="Lista os modelos que a chave alcança — não gera nada e não custa nada."
-      testing={testando}
-      onTest={() => void testar()}
-    >
-      {resultado && (
-        <ul className="space-y-1 text-xs">
-          {resultado.ok ? (
-            <Linha ok={resultado.modelAvailable ? true : "warn"}>
-              Chave válida · {resultado.models.length} modelos disponíveis ·{" "}
-              {resultado.modelAvailable
-                ? `${resultado.model} disponível para esta chave.`
-                : `${resultado.model} não aparece para esta chave — escolha outro modelo.`}
-            </Linha>
-          ) : (
-            <Linha ok={false}>{resultado.reason}</Linha>
-          )}
         </ul>
       )}
     </TestFooter>

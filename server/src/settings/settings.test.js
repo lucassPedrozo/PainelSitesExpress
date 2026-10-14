@@ -18,7 +18,6 @@ const chaves = [
   "SERVER_HOST",
   "PANEL_ACCESS_TOKEN",
   "DEV_AREA_FTP_PASSWORD",
-  "AI_API_KEY",
   "PORT",
   "CLAUDE_ENABLE_GENERATION",
   "CLAUDE_HUMAN_APPROVAL",
@@ -101,17 +100,18 @@ describe("validateSettings", () => {
     assert.match(r.errors.PANEL_ACCESS_TOKEN, /obrigatória/);
   });
 
-  it("o motor próprio ainda não pode ser escolhido; o Claude pode vir marcado", () => {
-    assert.match(validateSettings({ GENERATION_ENGINE: "own" }).errors.GENERATION_ENGINE, /ainda não está disponível/);
+  it("o motor que vem marcado é o Lovable ou o Claude", () => {
+    assert.equal(validateSettings({ GENERATION_ENGINE: "own" }).ok, false, "o motor próprio saiu do painel");
     assert.equal(validateSettings({ GENERATION_ENGINE: "lovable" }).ok, true);
     assert.equal(validateSettings({ GENERATION_ENGINE: "claude" }).ok, true);
     assert.equal(validateSettings({ GENERATION_ENGINE: "" }).ok, true);
     assert.equal(validateSettings({ GENERATION_ENGINE: "outro" }).ok, false);
   });
 
-  it("a chave de IA precisa ter o formato do provedor", () => {
-    assert.equal(validateSettings({ AI_API_KEY: "chave-qualquer" }).ok, false);
-    assert.equal(validateSettings({ AI_API_KEY: "sk-ant-api03-abcdefghijklmnop" }).ok, true);
+  it("as chaves do modelo de IA saíram das Configurações", () => {
+    for (const chave of ["AI_PROVIDER", "AI_API_KEY", "AI_MODEL"]) {
+      assert.match(validateSettings({ [chave]: "x" }).errors[chave], /desconhecida/, chave);
+    }
   });
 
   it("a chave do Gemini é um token sem espaço e o modelo preferido precisa ser Flash", () => {

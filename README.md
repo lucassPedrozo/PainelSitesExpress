@@ -31,7 +31,6 @@ A API inteira roda atrás de uma política de rede própria: escuta só em `127.
 - Chaves de acesso individuais com permissões granulares (organizar, gerar, publicar, configurar, administrar)
 - Banco local em JSON com escrita atômica, backup diário rotativo e recuperação automática a partir da cópia mais recente legível
 - Lançador para Windows com estado do servidor, endereços na rede local e log ao vivo
-- Motor de geração próprio (modelo de IA escrevendo o site num projeto-modelo) arquitetado e desligado, pronto para ser ativado
 
 ## Estrutura do projeto
 
@@ -51,13 +50,11 @@ A API inteira roda atrás de uma política de rede própria: escuta só em `127.
 |   `-- verificar-segredos.mjs
 |-- server/
 |   |-- src/
-|   |   |-- ai/
 |   |   |-- deploy/
 |   |   |   `-- github/
 |   |   |-- devarea/
 |   |   |-- engines/
-|   |   |   |-- claude/
-|   |   |   `-- own/
+|   |   |   `-- claude/
 |   |   |-- lovable/
 |   |   |-- preview/
 |   |   |-- routes/
@@ -190,7 +187,6 @@ A arquitetura completa — política de rede, chaves de acesso, API, geração n
 - API REST do GitHub e GitHub Actions
 - libsodium (secrets do GitHub)
 - BetterLinks (MCP)
-- Anthropic SDK (motor próprio, desligado)
 - Node test runner e Vitest
 - oxlint
 - C# (lançador para Windows)

@@ -22,20 +22,20 @@ import { cn } from "@/lib/utils";
 import { FieldRow } from "./settings-field";
 import { FIELD_GRID, initialDrafts, sectionUpdates, type Drafts, type FieldDraft } from "./settings-form";
 import { ClaudeStateRow, ClaudeTest } from "./settings-claude";
-import { AiTest, GeminiTest, GithubTest } from "./settings-tests";
+import { GeminiTest, GithubTest } from "./settings-tests";
 
 /**
  * A tela de configuração: todas as chaves do `.env`, por assunto.
  *
  * Cada seção é um cartão com os campos numa coluna só — nome à esquerda,
  * controle e ajuda à direita —, o estado da integração no título e o teste
- * que ela tem (GitHub, chave de IA, Gemini, Claude) no rodapé. A seção grava sozinha
+ * que ela tem (GitHub, Gemini, Claude) no rodapé. A seção grava sozinha
  * e diz o que só vale depois de reiniciar. Segredos nunca voltam para o
  * navegador: aparece só a dica.
  */
 
 /** Seções cujo estado é "configurado" quando os segredos delas estão gravados. */
-const SECOES_COM_ESTADO = new Set(["assistant", "ai", "github", "dev-area", "shortlinks"]);
+const SECOES_COM_ESTADO = new Set(["assistant", "github", "dev-area", "shortlinks"]);
 
 function sectionStatus(section: SettingSection, engines: EngineStatus[]) {
   // O motor Claude não tem segredo: o estado dele é o pacote e a trava.
@@ -277,7 +277,6 @@ function SectionCard({
       </div>
 
       {section.id === "github" && <GithubTest drafts={drafts} />}
-      {section.id === "ai" && <AiTest drafts={drafts} />}
       {section.id === "assistant" && <GeminiTest drafts={drafts} />}
       {section.id === "claude" && <ClaudeTest unsaved={mudancas > 0} />}
 
@@ -315,8 +314,8 @@ function EnginesRow({ engines }: { engines: EngineStatus[] }) {
           <li key={motor.id} className="text-sm">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{motor.label}</span>
-              <Badge variant={motor.available ? "success" : motor.id === "own" ? "info" : "warning"}>
-                {motor.available ? "Disponível" : motor.id === "own" ? "Em preparação" : "Indisponível"}
+              <Badge variant={motor.available ? "success" : "warning"}>
+                {motor.available ? "Disponível" : "Indisponível"}
               </Badge>
             </div>
             <p className="mt-0.5 max-w-prose text-xs text-muted-foreground">{motor.description}</p>
@@ -326,14 +325,6 @@ function EnginesRow({ engines }: { engines: EngineStatus[] }) {
                 {motor.details.enabled
                   ? "Uso liberado: cada execução consome a assinatura do Claude Code."
                   : "Uso desligado: o painel monta e confere o pedido, mas não dispara o Claude Code. A trava fica em Motor Claude."}
-              </p>
-            )}
-            {motor.id === "own" && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Modelo de IA:{" "}
-                {motor.details.aiConfigured
-                  ? `${String(motor.details.provider)} · ${String(motor.details.model)}`
-                  : "chave não configurada"}
               </p>
             )}
           </li>

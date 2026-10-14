@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { HttpError } from "../http.js";
 import { runtimeConfig } from "../config.js";
-import { AI_PROVIDERS, aiConfig } from "../ai/providers.js";
 import { engineStatuses } from "../engines/index.js";
 import { servicoClaude } from "../engines/claude/service.js";
 import {
@@ -94,40 +93,6 @@ settingsRouter.post("/settings/check/github", async (req, res) => {
   if (!token) throw new HttpError(400, "Informe o token do GitHub para testar.");
   if (!organization) throw new HttpError(400, "Informe a organização do GitHub para testar.");
   res.json(await checkAccess(getGitHubConfig({ token }), { organization }));
-});
-
-/**
- * Confere a chave do modelo de IA listando os modelos — sem gerar nada e sem
- * custo. Aceita a chave digitada (antes de gravar) ou usa a gravada.
- */
-settingsRouter.post("/settings/check/ai", async (req, res) => {
-  assertAdmin(req);
-  assertTestAllowed(req);
-  const gravado = aiConfig();
-  const providerId =
-    typeof req.body?.provider === "string" && req.body.provider ? req.body.provider : gravado.providerId;
-  const provedor = AI_PROVIDERS[providerId];
-  if (!provedor) throw new HttpError(400, "Provedor desconhecido.");
-  const apiKey = typeof req.body?.apiKey === "string" && req.body.apiKey.trim() ? req.body.apiKey.trim() : gravado.apiKey;
-  if (!apiKey) throw new HttpError(400, "Informe a chave de API para testar.");
-  if (!provedor.keyPattern.test(apiKey)) {
-    res.json({ ok: false, reason: `A chave não tem o formato esperado (${provedor.keyHint}).` });
-    return;
-  }
-
-  const resultado = await provedor.verifyKey(apiKey);
-  if (!resultado.ok) {
-    res.json(resultado);
-    return;
-  }
-  // O modelo escolhido precisa estar entre os que a chave alcança.
-  const modelo = (typeof req.body?.model === "string" && req.body.model) || gravado.model || provedor.defaultModel;
-  res.json({
-    ok: true,
-    models: resultado.models,
-    model: modelo,
-    modelAvailable: resultado.models.includes(modelo),
-  });
 });
 
 /**
