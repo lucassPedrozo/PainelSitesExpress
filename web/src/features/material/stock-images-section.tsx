@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { STOCK_ZIP_NAME, stockZipPath } from "@shared/stock-images.js";
-import { TechnicalCode, TechnicalDetails } from "@/features/claude/claude-shared";
+import { TechnicalCode, TechnicalDetails } from "@/components/technical-details";
 import { groupKey, newRowKey, type StockPick, type StockTermRow } from "./stock-images";
 import type { StockSearch } from "./use-stock-search";
 

@@ -4,7 +4,7 @@ import { pluralize } from "@/lib/format";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TechnicalCode, TechnicalDetails } from "@/features/claude/claude-shared";
+import { TechnicalCode, TechnicalDetails } from "@/components/technical-details";
 
 /**
  * O painel conectado ao Lovable, no cabeçalho de quem gera. Desconectado não

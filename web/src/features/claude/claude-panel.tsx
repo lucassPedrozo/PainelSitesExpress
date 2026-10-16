@@ -56,8 +56,8 @@ import {
   NoticeWithAction,
   RunStatusBadge,
   SectionDisclosure,
-  TechnicalDetails,
 } from "./claude-shared";
+import { TechnicalDetails } from "@/components/technical-details";
 import { ClaudeApprovalCard, ClaudeContinueCard, ClaudeSiteCard } from "./claude-site-card";
 import {
   claudeBlock,

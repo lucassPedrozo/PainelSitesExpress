@@ -59,7 +59,8 @@ import {
   siteOptionsProblem,
   type SiteOptionsDraft,
 } from "./claude-options";
-import { ConfirmClaudeDialog, TechnicalCode, TechnicalDetails } from "./claude-shared";
+import { TechnicalCode, TechnicalDetails } from "@/components/technical-details";
+import { ConfirmClaudeDialog } from "./claude-shared";
 import { claudeBlock, errorMessage } from "./claude-text";
 import { useClaudeOptions, useClaudeRefresh } from "./use-claude";
 import { ClaudeIcon } from "@/components/brand-icons";

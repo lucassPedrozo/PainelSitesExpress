@@ -67,7 +67,8 @@ import { cn } from "@/lib/utils";
 import { AdjustAttachments, attachmentsPayload, useAdjustAttachments } from "./claude-adjust-attachments";
 import { choicesSentence } from "./claude-options";
 import { ClaudeCritiqueCard, ClaudePipelineLine } from "./claude-pipeline-view";
-import { ConfirmClaudeDialog, TechnicalDetails } from "./claude-shared";
+import { TechnicalDetails } from "@/components/technical-details";
+import { ConfirmClaudeDialog } from "./claude-shared";
 import { claudeBlock, continueTexts, errorMessage, pausedNotice } from "./claude-text";
 import { useClaudeOptions, useClaudeRefresh } from "./use-claude";
 
