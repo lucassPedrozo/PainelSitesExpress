@@ -19,7 +19,7 @@ import {
   allowSameOriginFraming,
   safeInlineContentType,
 } from "../security/embedded-asset.js";
-import { driveScoped } from "./drive-scoped.js";
+import { driveScoped } from "../security/project-scope.js";
 import { headerOf, singleByteRange, thumbnailSize } from "./files-helpers.js";
 
 /** Pastas e arquivos do Drive, sempre dentro da pasta raiz das coletas. */

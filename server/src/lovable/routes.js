@@ -21,7 +21,7 @@ import {
 } from "../preview/service.js";
 import { isConfigured as shortlinksConfigured } from "../shortlinks/service.js";
 import { checkDevArea, publishDevAreaNow, retireDevAreaRepo } from "../devarea/service.js";
-import { assertProjectId } from "../routes/drive-scoped.js";
+import { assertProjectId } from "../security/project-scope.js";
 import { isLocalProjectId } from "../store/local-projects.js";
 import { httpError, publicMessageOf, statusOf } from "../http.js";
 import { identityAllows, requirePermission } from "../security/permissions.js";

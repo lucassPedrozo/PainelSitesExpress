@@ -25,7 +25,7 @@ import {
   setProjectTags,
 } from "../store/tags.js";
 import { listLocalProjects } from "../store/local-projects.js";
-import { driveScoped, projectScoped } from "./drive-scoped.js";
+import { driveScoped, projectScoped } from "../security/project-scope.js";
 import { siteOfOtherCollections } from "./projects-helpers.js";
 import { hasSiteSource, statsForLocalProject } from "./local-projects.js";
 
