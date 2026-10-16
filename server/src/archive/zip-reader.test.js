@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { crc32, deflateRawSync } from "node:zlib";
-import { createZip } from "../images/zip.js";
+import { createZip } from "./zip-writer.js";
 import {
   decodeEntryName,
   entryContent,

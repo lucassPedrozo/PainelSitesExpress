@@ -23,7 +23,7 @@ process.env.PANEL_ACCESS_TOKEN = MASTER_KEY;
 process.env.PREVIEW_WATCH_INTERVAL_MS = "0";
 
 const { createApp } = await import("../../app.js");
-const { createZip } = await import("../../images/zip.js");
+const { createZip } = await import("../../archive/zip-writer.js");
 const { writeFile: gravarNoProjeto } = await import("../../local/storage.js");
 const registro = await import("../../store/claude.js");
 const { linkGeneration, listGenerations, setGenerationDevArea } = await import("../../store/generations.js");

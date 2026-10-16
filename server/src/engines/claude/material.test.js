@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { after, describe, it } from "node:test";
-import { createZip } from "../../images/zip.js";
+import { createZip } from "../../archive/zip-writer.js";
 import {
   ARQUIVO_DAS_INFORMACOES,
   copiarMaterial,

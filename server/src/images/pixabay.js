@@ -1,7 +1,7 @@
 import { config } from "../config.js";
 import { httpError } from "../http.js";
 import { STOCK_ZIP_NAME, stockImageName, stockZipPath } from "../../../shared/stock-images.js";
-import { createZip } from "./zip.js";
+import { createZip } from "../archive/zip-writer.js";
 
 /**
  * Imagens de banco do Pixabay para completar o material do cliente.
