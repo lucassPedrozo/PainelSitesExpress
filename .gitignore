@@ -32,3 +32,6 @@ painel.log.1
 
 # Configurações locais de teste do Vite (portas alternativas)
 web/vite.teste-*.config.ts
+
+# Permissões que o Claude Code grava ao aprovar comandos neste projeto
+.claude/settings.local.json
