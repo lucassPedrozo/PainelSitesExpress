@@ -18,11 +18,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { manualStageOf, projectStatus } from "./project-status";
 import { ETAPAS, STAGES } from "./stage";
+import { MANUAL_STAGES, MAX_NOTE, MAX_PROJECT_NAME, MAX_RESPONSIBLE } from "@shared/project-fields.js";
 
-/** As etapas que dá para escolher, na ordem do caminho. */
-const ETAPAS_MANUAIS: ManualEtapa[] = ["material", "geracao", "link", "cliente", "publicacao", "no-ar"];
 const AUTOMATICA = "auto";
-const MAX_NOTA = 1000;
 
 /** "2026-09-29" para o campo de data; `""` sem data. */
 const paraCampoDeData = (iso: string | null | undefined) => {
@@ -169,7 +167,7 @@ function EditForm({
               value={form.name}
               onChange={(event) => mudar("name", event.target.value)}
               placeholder={automatico.label}
-              maxLength={120}
+              maxLength={MAX_PROJECT_NAME}
               aria-describedby="editar-nome-message"
             />
           </Field>
@@ -190,7 +188,7 @@ function EditForm({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={AUTOMATICA}>Automática — hoje, {etapaAutomatica.label}</SelectItem>
-              {ETAPAS_MANUAIS.map((etapa) => (
+              {MANUAL_STAGES.map((etapa) => (
                 <SelectItem key={etapa} value={etapa}>
                   {ETAPAS[etapa].label}
                 </SelectItem>
@@ -220,7 +218,7 @@ function EditForm({
               value={form.responsible}
               onChange={(event) => mudar("responsible", event.target.value)}
               list="editar-responsaveis"
-              maxLength={80}
+              maxLength={MAX_RESPONSIBLE}
               aria-describedby="editar-responsavel-message"
               autoComplete="off"
             />
@@ -235,14 +233,14 @@ function EditForm({
         <Field
           id="editar-nota"
           label="Observação interna"
-          hint={`Só a equipe vê. ${form.note.length.toLocaleString("pt-BR")} de ${MAX_NOTA.toLocaleString("pt-BR")} caracteres.`}
+          hint={`Só a equipe vê. ${form.note.length.toLocaleString("pt-BR")} de ${MAX_NOTE.toLocaleString("pt-BR")} caracteres.`}
         >
           <Textarea
             id="editar-nota"
             rows={3}
             value={form.note}
             onChange={(event) => mudar("note", event.target.value)}
-            maxLength={MAX_NOTA}
+            maxLength={MAX_NOTE}
             placeholder="O que a equipe precisa lembrar: “cliente pediu para esperar a logo nova”."
             aria-describedby="editar-nota-message"
           />

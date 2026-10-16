@@ -1,3 +1,4 @@
+import type { ManualEtapa } from "@shared/project-fields.js";
 import type { ClaudeSummary } from "./claude";
 import type { Generation } from "./generations";
 import { get, request, send } from "./http";
@@ -102,7 +103,7 @@ export type DomainSite = {
 };
 
 /** As etapas que dá para escolher à mão — as do caminho até o domínio. */
-export type ManualEtapa = "material" | "geracao" | "link" | "cliente" | "publicacao" | "no-ar";
+export type { ManualEtapa };
 
 export type ProjectDetails = {
   domain: string | null;

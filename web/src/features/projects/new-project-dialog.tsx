@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { MAX_PROJECT_NAME } from "@shared/project-fields.js";
 
 type Kind = "site" | "files";
 
@@ -103,7 +104,7 @@ function NewProjectForm({
             id="novo-projeto-nome"
             value={name}
             autoFocus
-            maxLength={120}
+            maxLength={MAX_PROJECT_NAME}
             placeholder="cliente.com.br"
             autoComplete="off"
             spellCheck={false}

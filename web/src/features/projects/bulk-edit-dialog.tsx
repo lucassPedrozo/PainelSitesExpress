@@ -16,8 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ETAPAS } from "./stage";
+import { MANUAL_STAGES, MAX_RESPONSIBLE } from "@shared/project-fields.js";
 
-const ETAPAS_MANUAIS: ManualEtapa[] = ["material", "geracao", "link", "cliente", "publicacao", "no-ar"];
 /** O campo fica como está em cada projeto. */
 const MANTER = "manter";
 
@@ -120,7 +120,7 @@ function BulkForm({
                 value={nome}
                 onChange={(event) => setNome(event.target.value)}
                 list="massa-responsaveis"
-                maxLength={80}
+                maxLength={MAX_RESPONSIBLE}
                 placeholder="Nome de quem cuida"
                 className="min-w-0 flex-1 basis-40"
                 aria-describedby="massa-responsavel-message"
@@ -148,7 +148,7 @@ function BulkForm({
               <SelectItem value={MANTER}>Não mudar</SelectItem>
               <SelectItem value="auto">Automática (calculada)</SelectItem>
               <SelectSeparator />
-              {ETAPAS_MANUAIS.map((item) => (
+              {MANUAL_STAGES.map((item) => (
                 <SelectItem key={item} value={item}>
                   {ETAPAS[item].label}
                 </SelectItem>

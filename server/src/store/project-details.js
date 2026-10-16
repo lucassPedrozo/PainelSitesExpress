@@ -1,4 +1,5 @@
 import { findDomain } from "../../../shared/domain.js";
+import { MANUAL_STAGES, MAX_NOTE, MAX_RESPONSIBLE } from "../../../shared/project-fields.js";
 import { httpError } from "../http.js";
 import { flush, read } from "./db.js";
 
@@ -19,11 +20,6 @@ import { flush, read } from "./db.js";
  * no Drive e volta com "Mostrar".
  * ------------------------------------------------------------------ */
 
-/** As etapas que dá para escolher — as do caminho até o domínio. */
-export const MANUAL_STAGES = ["material", "geracao", "link", "cliente", "publicacao", "no-ar"];
-
-const MAX_RESPONSIBLE = 80;
-const MAX_NOTE = 1000;
 /** Uma data à frente do relógio é erro de digitação; um dia de folga cobre o fuso. */
 const FUTURE_TOLERANCE_MS = 24 * 60 * 60_000;
 
@@ -101,7 +97,7 @@ export async function updateProjectDetails(projectId, patch, { by = null, now = 
 
   if (has(patch, "stage")) {
     const valor = text(patch.stage);
-    if (valor && !MANUAL_STAGES.includes(valor)) throw httpError(400, "Etapa desconhecida.");
+    if (valor && !/** @type {string[]} */ (MANUAL_STAGES).includes(valor)) throw httpError(400, "Etapa desconhecida.");
     next.stage = valor ? { etapa: valor, at: now.toISOString(), by: by ?? null } : null;
   }
 

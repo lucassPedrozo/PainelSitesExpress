@@ -1,3 +1,4 @@
+import { MAX_PROJECT_NAME } from "../../../shared/project-fields.js";
 import { httpError } from "../http.js";
 import { flush, read } from "./db.js";
 
@@ -11,8 +12,6 @@ import { flush, read } from "./db.js";
  * que passa a chamá-la de alguma coisa. A pasta no Drive não é tocada.
  * ------------------------------------------------------------------ */
 
-const MAX_NAME_LENGTH = 120;
-
 export async function listProjectNames() {
   const { names } = await read();
   return names;
@@ -21,8 +20,8 @@ export async function listProjectNames() {
 /** Confere o apelido sem gravar — para quem grava junto com outros campos. */
 export function checkProjectName(name) {
   const label = String(name ?? "").trim();
-  if (label.length > MAX_NAME_LENGTH) {
-    throw httpError(400, `Nome muito longo (máx. ${MAX_NAME_LENGTH})`);
+  if (label.length > MAX_PROJECT_NAME) {
+    throw httpError(400, `Nome muito longo (máx. ${MAX_PROJECT_NAME})`);
   }
   return label;
 }

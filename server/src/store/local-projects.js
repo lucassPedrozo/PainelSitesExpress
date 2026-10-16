@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { MAX_PROJECT_NAME } from "../../../shared/project-fields.js";
 import { httpError } from "../http.js";
 import { flush, read } from "./db.js";
 
@@ -12,8 +13,6 @@ import { flush, read } from "./db.js";
  * banco, os arquivos em disco (`local/storage.js`), e o resto — tags,
  * apelido, site, publicação — usa as mesmas tabelas das coletas, pelo id.
  * ------------------------------------------------------------------ */
-
-const MAX_NAME_LENGTH = 120;
 
 /** O formato do id: nunca é confundido com um id do Drive já registrado. */
 const LOCAL_ID = /^painel-[0-9a-f]{16}$/;
@@ -49,8 +48,8 @@ export async function requireLocalProject(id) {
 export async function createLocalProject({ name, kind = "site", by = null }) {
   const label = typeof name === "string" ? name.trim() : "";
   if (!label) throw httpError(400, "Dê um nome ao projeto — de preferência o domínio do site.");
-  if (label.length > MAX_NAME_LENGTH) {
-    throw httpError(400, `Nome muito longo (máx. ${MAX_NAME_LENGTH})`);
+  if (label.length > MAX_PROJECT_NAME) {
+    throw httpError(400, `Nome muito longo (máx. ${MAX_PROJECT_NAME})`);
   }
   if (!LOCAL_PROJECT_KINDS.includes(/** @type {any} */ (kind))) {
     throw httpError(400, "Tipo de projeto inválido.");
