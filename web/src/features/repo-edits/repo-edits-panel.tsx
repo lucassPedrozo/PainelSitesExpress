@@ -52,7 +52,7 @@ import { RunCard } from "@/features/claude/claude-panel";
 import { ConfirmClaudeDialog, GenerationOffNotice, SectionDisclosure } from "@/features/claude/claude-shared";
 import { claudeBlock, errorMessage } from "@/features/claude/claude-text";
 import { useClaudeRefresh } from "@/features/claude/use-claude";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 
 /**
  * A aba "Ajustes": ajustes pelo Claude num site que mora num repositório do

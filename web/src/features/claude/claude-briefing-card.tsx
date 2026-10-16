@@ -28,7 +28,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { BriefingEditor } from "./briefing-editor";
 import { sameBriefing } from "./briefing-fields";

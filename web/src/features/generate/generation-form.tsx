@@ -51,7 +51,7 @@ import { StockImagesSection } from "./stock-images-section";
 import { nextStockSelection, rowsFromQueries, toggleStockPick, type StockPick } from "./stock-images";
 import { useWorkspaceChoice } from "./use-lovable";
 import { useStockSearch } from "./use-stock-search";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 
 /**
  * A escolha do workspace do Lovable — a mesma no diálogo completo e no

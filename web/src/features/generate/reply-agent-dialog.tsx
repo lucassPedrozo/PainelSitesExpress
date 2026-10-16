@@ -6,7 +6,7 @@ import { replyToAgent } from "@/lib/api";
 import { projectIdentity } from "@/lib/format";
 import { latestGeneration } from "@/features/projects/project-status";
 import { lovableEditorUrl } from "@/features/projects/next-step";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { noPermission } from "@/lib/permissions";
 import { usePermissions } from "@/lib/permissions";
 import { DisabledHint, Reason } from "@/components/disabled-hint";

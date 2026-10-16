@@ -29,7 +29,7 @@ import { filterFiles } from "@/features/generate/generation-prompt";
 import { StockImagesSection } from "@/features/generate/stock-images-section";
 import { nextStockSelection, toggleStockPick, type StockPick } from "@/features/generate/stock-images";
 import { useStockSearch } from "@/features/generate/use-stock-search";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { RunChoicesFields } from "./claude-option-fields";
 import { choicesLine, choicesSentence } from "./claude-options";
 import { ConfirmClaudeDialog, GenerationOffNotice, TechnicalCode, TechnicalDetails } from "./claude-shared";

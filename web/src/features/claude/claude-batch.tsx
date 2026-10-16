@@ -12,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DialogBody, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { claudeBatchPlan, claudeBatchPlanFromProject, type ClaudeBatchPlan } from "./claude-batch-plan";
 import { GenerationOffNotice } from "./claude-shared";

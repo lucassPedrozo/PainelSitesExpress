@@ -16,7 +16,7 @@ import { ClaudeBatchContent } from "@/features/claude/claude-batch";
 import { useClaudeStatus } from "@/features/claude/use-claude";
 import { pluralize, projectIdentity } from "@/lib/format";
 import { queryKeys } from "@/lib/query";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { DisabledHint, Reason } from "@/components/disabled-hint";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";

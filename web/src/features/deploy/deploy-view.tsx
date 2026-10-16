@@ -34,7 +34,7 @@ import { usePublicationSettings } from "./use-publication-settings";
 import { useSuggestedRepository } from "./use-suggested-repository";
 import { serverErrorField, validateSettings } from "./validation";
 import { queryKeys } from "@/lib/query";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { WorkflowCard } from "./workflow-card";
 import { ClearWorkflowsDialog, WorkflowPreviewDialog } from "./workflow-dialogs";
 

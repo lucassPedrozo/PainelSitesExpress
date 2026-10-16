@@ -62,7 +62,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyNotice } from "@/components/page-header";
 import { claudeRoundLabel, claudeStageLabel, isClaudeSite } from "@/features/projects/project-status";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { AdjustAttachments, attachmentsPayload, useAdjustAttachments } from "./claude-adjust-attachments";
 import { choicesSentence } from "./claude-options";

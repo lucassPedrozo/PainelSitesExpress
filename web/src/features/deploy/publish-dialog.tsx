@@ -21,7 +21,7 @@ import { deployApi, isRunActive, type WorkflowRun } from "@/lib/api/deploy";
 import { projectIdentity } from "@/lib/format";
 import { noPermission, usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { Reason } from "@/components/disabled-hint";
 import { ErrorNotice } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

@@ -45,7 +45,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, Dia
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyNotice, ErrorNotice } from "@/components/page-header";
 import { claudeRoundLabel, claudeStageLabel } from "@/features/projects/project-status";
-import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { ClaudeAdoptNotice } from "./claude-adopt";
 import { ClaudeBriefingCard } from "./claude-briefing-card";
 import { ClaudeLog } from "./claude-log";

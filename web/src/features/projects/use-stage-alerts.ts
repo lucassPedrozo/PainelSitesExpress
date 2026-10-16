@@ -87,28 +87,14 @@ export function stageAlerts(
   return alerts;
 }
 
-/**
- * Pede permissão de notificação. Só funciona dentro de um clique — por isso é
- * chamada ao gerar e ao publicar, os dois momentos em que um aviso depois
- * faz sentido.
- */
-export function requestNotificationPermission() {
-  try {
-    if ("Notification" in window && Notification.permission === "default") {
-      void Notification.requestPermission();
-    }
-  } catch {
-    // Navegador sem suporte: o toast e o título da aba continuam avisando.
-  }
-}
-
+/** A permissão é pedida ao gerar e ao publicar (`requestNotificationPermission`, em lib/notifications). */
 function notify(alert: StageAlert) {
   try {
     if ("Notification" in window && Notification.permission === "granted") {
       new Notification(alert.title, { body: alert.body, tag: alert.projectId });
     }
   } catch {
-    // Idem: sem notificação, sobra o título da aba.
+    // Navegador sem suporte: sem notificação, sobra o título da aba.
   }
 }
 
