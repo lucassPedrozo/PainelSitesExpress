@@ -5,7 +5,7 @@ import { pluralize } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { AttachmentRow } from "./attachment-row";
+import { AttachmentRow } from "@/features/material/attachment-row";
 import { filterFiles, type SelectionSummary } from "./generation-prompt";
 
 /** A coluna dos anexos: busca, seleção e as ressalvas de tipo e tamanho. */

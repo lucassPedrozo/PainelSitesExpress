@@ -47,10 +47,10 @@ import {
 } from "./generation-notices";
 import { OBSERVATIONS_INPUT_ID, PromptSection } from "./prompt-section";
 import { OpenInLovable, ResultPanel } from "./result-panel";
-import { StockImagesSection } from "./stock-images-section";
-import { nextStockSelection, rowsFromQueries, toggleStockPick, type StockPick } from "./stock-images";
+import { StockImagesSection } from "@/features/material/stock-images-section";
+import { nextStockSelection, rowsFromQueries, toggleStockPick, type StockPick } from "@/features/material/stock-images";
 import { useWorkspaceChoice } from "./use-lovable";
-import { useStockSearch } from "./use-stock-search";
+import { useStockSearch } from "@/features/material/use-stock-search";
 import { requestNotificationPermission } from "@/lib/notifications";
 
 /**

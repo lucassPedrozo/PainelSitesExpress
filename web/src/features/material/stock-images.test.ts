@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StockCandidate, StockSearchResult } from "@/lib/api";
 import { stockImageName, stockImagesBlock, stockZipPath } from "@shared/stock-images.js";
-import { composePrompt, summarizeSelection } from "./generation-prompt";
+import { composePrompt, summarizeSelection } from "@/features/generate/generation-prompt";
 import { nextStockSelection, rowsFromQueries, termsToSearch, toggleStockPick } from "./stock-images";
 
 const foto = (id: number): StockCandidate => ({
