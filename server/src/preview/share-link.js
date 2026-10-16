@@ -51,9 +51,6 @@ export function parseSharePreviewUrl(input) {
   return { url: normalizado, token: casou[1] };
 }
 
-/** Estados possíveis de um link de share. */
-export const PREVIEW_STATES = ["alive", "dead", "unknown"];
-
 /**
  * Traduz a resposta da sonda. Separado do `fetch` de propósito: é a regra que
  * decide se o link vai ao cliente, e regra que decide isso merece teste.

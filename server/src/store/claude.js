@@ -112,15 +112,6 @@ export async function patchClaudeProject(projectId, patch) {
   return entry;
 }
 
-/** @param {string} projectId */
-export async function forgetClaudeProject(projectId) {
-  const data = await read();
-  if (!data.claude.projects[projectId]) return false;
-  delete data.claude.projects[projectId];
-  await flush();
-  return true;
-}
-
 /* ------------------------------------------------------------------ *
  * Fila
  * ------------------------------------------------------------------ */

@@ -16,8 +16,6 @@ import { servicoClaude } from "./claude/service.js";
 
 /** @typedef {{ id: string, label: string, description: string, available: boolean, reason: string | null, details: Record<string, unknown> }} EngineStatus */
 
-export const ENGINE_IDS = ["lovable", "claude"];
-
 /**
  * O motor que a tela de geração traz marcado. Cada geração escolhe o seu; o
  * `.env` só diz qual vem pré-selecionado.

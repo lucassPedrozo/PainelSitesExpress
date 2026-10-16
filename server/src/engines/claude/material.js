@@ -10,7 +10,6 @@ import { renameWithRetry } from "../../atomic-write.js";
 import { loadBrief } from "../../brief.js";
 import { GOOGLE_NATIVE_PDF, kindOf, streamFile, walkProjectFiles } from "../../drive.js";
 import { httpError } from "../../http.js";
-import { pixabay } from "../../images/pixabay.js";
 import { localFileId, readRange, walkFiles } from "../../local/storage.js";
 import { isLocalProjectId } from "../../store/local-projects.js";
 import { abrirEscritorio, ESCRITORIO_ABERTO } from "./office.js";
@@ -577,9 +576,3 @@ ${aberto.texto}
 
   return { arquivos: quantos, bytes: total, pulados };
 }
-
-/**
- * Baixa do Pixabay as fotos de banco escolhidas no painel, já conferidas.
- * @param {Parameters<typeof pixabay.download>[0]} imagens
- */
-export const baixarFotosDeBanco = (imagens) => pixabay.download(imagens);

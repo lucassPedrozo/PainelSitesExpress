@@ -168,17 +168,3 @@ export const callTool = async (name, args = {}) => {
 
   return corpo?.data ?? corpo;
 };
-
-/**
- * Conferência da conexão — `tools/list` não altera nada. Com descrição e
- * parâmetros: o BetterLinks muda o formato das tools sem aviso (a paginação do
- * `list-links` e o prefixo dos links apareceram assim).
- */
-export const listTools = async () => {
-  const result = await rpc("tools/list", {});
-  return (result?.tools ?? []).map((tool) => ({
-    name: tool.name,
-    description: tool.description ?? null,
-    inputSchema: tool.inputSchema ?? null,
-  }));
-};
