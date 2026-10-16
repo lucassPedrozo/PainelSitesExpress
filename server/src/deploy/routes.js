@@ -2,6 +2,7 @@ import { Router } from "express";
 import { HttpError } from "../http.js";
 import { runtimeConfig } from "../config.js";
 import { dropSessionsOfUser } from "../security/access.js";
+import { ADMIN } from "../security/authenticate.js";
 import { identityAllows } from "../security/permissions.js";
 import {
   listPublications,
@@ -90,7 +91,7 @@ deployRouter.post("/config", (req, res) => {
     updates.PANEL_ACCESS_TOKEN !== undefined &&
     updates.PANEL_ACCESS_TOKEN !== previousPanelToken
   ) {
-    const encerradas = dropSessionsOfUser("admin");
+    const encerradas = dropSessionsOfUser(ADMIN);
     if (encerradas) {
       console.log(`[deploy] chave mestra trocada: ${encerradas} sessão(ões) encerrada(s).`);
     }

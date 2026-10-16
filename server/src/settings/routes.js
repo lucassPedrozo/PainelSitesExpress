@@ -14,6 +14,7 @@ import { checkAccess } from "../deploy/github/access-check.js";
 import { getGitHubConfig } from "../deploy/github/client.js";
 import { assertCanConfigure } from "../deploy/guards.js";
 import { dropSessionsOfUser } from "../security/access.js";
+import { ADMIN } from "../security/authenticate.js";
 import { RateLimiter, scheduleThrottlePruning } from "../security/throttle.js";
 import { readSettings, validateSettings, writeSettings } from "./service.js";
 
@@ -68,7 +69,7 @@ settingsRouter.put("/settings", async (req, res) => {
   // Trocar a chave mestra tem de valer para quem já estava dentro.
   let sessionsClosed = 0;
   if ("PANEL_ACCESS_TOKEN" in resultado.values && resultado.values.PANEL_ACCESS_TOKEN !== chaveAnterior) {
-    sessionsClosed = dropSessionsOfUser("admin");
+    sessionsClosed = dropSessionsOfUser(ADMIN);
   }
 
   res.json({
