@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { config, envPath, resetRuntimeConfig, runtimeConfig } from "../config.js";
 import { HttpError } from "../http.js";
-import { maskSecret, upsertEnvFile } from "./env-file.js";
+import { maskSecret, upsertEnvFile } from "../settings/env-file.js";
 import { HOST_PATTERN } from "../../../shared/deploy-rules.js";
 
 /** Chaves que a tela de configuração pode gravar no `.env`. */

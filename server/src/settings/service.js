@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { envPath, resetRuntimeConfig } from "../config.js";
-import { maskSecret, upsertEnvFile } from "../deploy/env-file.js";
+import { maskSecret, upsertEnvFile } from "./env-file.js";
 import { SETTING_FIELDS, SETTINGS_SCHEMA } from "./schema.js";
 
 /**
