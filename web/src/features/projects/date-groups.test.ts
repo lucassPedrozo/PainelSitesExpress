@@ -12,6 +12,14 @@ describe("dateGroupOf", () => {
     expect(dateGroupOf(dia("2026-08-25"), REF).label).toBe("Últimos 30 dias");
   });
 
+  it("tem o nome curto da margem, sem o 'Últimos'", () => {
+    expect(dateGroupOf(dia("2026-09-09"), REF).short).toBe("Hoje");
+    expect(dateGroupOf(dia("2026-09-05"), REF).short).toBe("7 dias");
+    expect(dateGroupOf(dia("2026-08-25"), REF).short).toBe("30 dias");
+    expect(dateGroupOf(dia("2026-07-15"), REF).short).toBe("Julho");
+    expect(dateGroupOf(dia("2025-11-02"), REF).short).toBe("2025");
+  });
+
   it("conta dias de calendário, não períodos de 24 h", () => {
     // Às 00h30, uma coleta de ontem às 23h tem de cair em "Ontem" — e não em
     // "Hoje" só porque faz menos de um dia. As datas são montadas em hora

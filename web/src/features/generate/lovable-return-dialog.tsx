@@ -104,7 +104,7 @@ export function LovableReturnDialog({ connection }: { connection: Connection }) 
             Fechar
           </Button>
           <Button onClick={() => void concluir()} disabled={!url.trim() || enviando}>
-            {enviando && <Loader2 className="size-4 animate-spin" />}
+            {enviando && <Loader2 className="animate-spin" />}
             Concluir com este endereço
           </Button>
         </DialogFooter>

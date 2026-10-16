@@ -1,8 +1,13 @@
 import { X } from "lucide-react";
 import type { Tag } from "@/lib/api";
-import { tagBadgeClass } from "@/features/tags/tag-colors";
+import { tagDotClass } from "@/features/tags/tag-colors";
 import { cn } from "@/lib/utils";
 
+/**
+ * Uma tag: pílula neutra com o ponto na cor dela. A cor de fundo ficou para
+ * as etapas — numa linha com selo de etapa, duas cores fortes disputavam o
+ * olhar, e a tag é a informação de exceção, não a principal.
+ */
 export function TagBadge({
   tag,
   className,
@@ -15,12 +20,12 @@ export function TagBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-2 text-xs font-medium",
-        tagBadgeClass[tag.color],
+        "inline-flex h-5 max-w-full items-center gap-1.5 rounded-sm border bg-card px-1.5 text-2xs font-medium text-muted-foreground",
         className,
       )}
       title={tag.name}
     >
+      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", tagDotClass[tag.color])} />
       <span className="truncate">{tag.name}</span>
       {onRemove && (
         <button

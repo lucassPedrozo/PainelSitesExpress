@@ -1,6 +1,7 @@
 import { CheckCircle2, Circle, Loader2, Rocket, XCircle } from "lucide-react";
 import type { DevArea, PreviewState } from "@/lib/api";
 import { devAreaSteps, type StepStatus } from "@/features/projects/dev-area-steps";
+import { Reason } from "@/components/disabled-hint";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -23,21 +24,23 @@ export function DevAreaStepsView({
   canPublish,
   publishing,
   onPublish,
+  delivered = false,
 }: {
   area: DevArea;
   previewState: PreviewState;
   editorUrl: string | null;
+  delivered?: boolean;
   canPublish: boolean;
   publishing: boolean;
   onPublish: () => void;
 }) {
-  const etapas = devAreaSteps(area, previewState, editorUrl);
+  const etapas = devAreaSteps(area, previewState, editorUrl, delivered);
   const emAndamento = etapas.some((etapa) => etapa.key === "build" && etapa.status === "active");
   const semRepositorio = etapas[0].status === "active";
 
   return (
-    <div className="space-y-2 rounded-lg border bg-muted/30 px-3 py-2.5">
-      <div className="flex items-center gap-2">
+    <div className="space-y-2 rounded-lg border bg-muted/40 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs font-medium">Área de aprovação</p>
         {!emAndamento && (
           <Button
@@ -46,15 +49,15 @@ export function DevAreaStepsView({
             size="xs"
             className="ml-auto"
             disabled={publishing || !canPublish}
-            title={
-              canPublish
-                ? "Grava o workflow no repositório e publica a versão atual na pasta."
-                : "Sua chave não tem a permissão de publicar."
-            }
-            onClick={onPublish}>
-            {publishing ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />}
+            title="Grava o workflow no repositório e publica a versão atual na pasta."
+            onClick={onPublish}
+          >
+            {publishing ? <Loader2 className="animate-spin" /> : <Rocket />}
             {semRepositorio ? "Já conectei" : "Publicar de novo"}
           </Button>
+        )}
+        {!emAndamento && !canPublish && (
+          <Reason className="basis-full justify-end">Sua chave de acesso não pode publicar.</Reason>
         )}
       </div>
       <ol className="space-y-1.5">

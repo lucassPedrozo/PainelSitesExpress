@@ -9,10 +9,12 @@ import { usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
 import { projectIdentity } from "@/lib/format";
 import { RepositoryPicker } from "@/features/deploy/repository-picker";
+import { Reason } from "@/components/disabled-hint";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -63,7 +65,7 @@ export function LinkSiteDialog({
 }) {
   return (
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent layout="sectioned" className="sm:max-w-xl">
         {project && (
           <LinkSiteForm
             key={project.id}
@@ -115,6 +117,14 @@ function LinkSiteForm({
   const oferecePrevia = estado === "ready";
   const faltaRepoNoAr = estado === "live" && !repo;
   const podeVincular = temOrigem && !faltaRepoNoAr && (estado !== "live" || dominio.trim()) && !enviando;
+  // O que falta, escrito ao lado do botão: antes ele só ficava cinza.
+  const falta = !temOrigem
+    ? "Informe o projeto no Lovable ou o repositório."
+    : faltaRepoNoAr
+      ? "Para marcar como no ar, escolha o repositório."
+      : estado === "live" && !dominio.trim()
+        ? "Para marcar como no ar, informe o domínio."
+        : null;
 
   const vincular = async (event: FormEvent) => {
     event.preventDefault();
@@ -157,7 +167,7 @@ function LinkSiteForm({
         </DialogDescription>
       </DialogHeader>
 
-      <div className="space-y-5">
+      <DialogBody className="space-y-5">
         <div className="space-y-1.5">
           <Label htmlFor="vincular-lovable">Projeto no Lovable</Label>
           <Input
@@ -263,9 +273,10 @@ function LinkSiteForm({
         )}
 
         {erro && <p className="text-sm text-destructive">{erro}</p>}
-      </div>
+      </DialogBody>
 
       <DialogFooter>
+        {falta && <Reason className="sm:mr-auto">{falta}</Reason>}
         <Button type="button" variant="outline" onClick={onCancel} disabled={enviando}>
           Cancelar
         </Button>

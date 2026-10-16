@@ -13,7 +13,7 @@ import {
 import { PERMISSION_LABELS } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
 import { copyToClipboard } from "@/lib/clipboard";
-import { formatDateTime, pluralize, relativeTime } from "@/lib/format";
+import { formatDate, formatDateTime, pluralize } from "@/lib/format";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -37,7 +38,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyNotice } from "@/components/page-header";
+import { EmptyNotice, ErrorNotice } from "@/components/page-header";
+import { When } from "@/components/when";
 
 /**
  * Uma fileira de permissões — a mesma no formulário de criação e em cada chave
@@ -70,6 +72,7 @@ function PermissionToggles({
           >
             <Checkbox
               id={id}
+              aria-describedby={detailed ? undefined : `${id}-hint`}
               className={detailed ? "mt-0.5" : undefined}
               checked={on}
               disabled={disabled}
@@ -87,9 +90,17 @@ function PermissionToggles({
                 <span className="text-xs leading-snug font-normal text-muted-foreground">{hint}</span>
               </Label>
             ) : (
-              <Label htmlFor={id} title={hint} className="cursor-pointer text-xs font-normal">
-                {title}
-              </Label>
+              /* Na lista, a explicação à vista repetiria cinco linhas por
+                 chave (ela já aparece no formulário de criação). Fica no
+                 hover e, para o leitor de tela, ligada à caixa. */
+              <>
+                <Label htmlFor={id} title={hint} className="cursor-pointer text-xs font-normal">
+                  {title}
+                </Label>
+                <span id={`${id}-hint`} className="sr-only">
+                  {hint}
+                </span>
+              </>
             )}
           </div>
         );
@@ -120,7 +131,9 @@ export function AccessKeysDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      {/* Corpo rolável entre cabeçalho e bordas: a lista de chaves cresce
+          com a equipe, e sem limite o diálogo passava da tela. */}
+      <DialogContent layout="sectioned" className="sm:max-w-xl">
         {/* A chave zera o formulário e a chave recém-criada ao fechar, sem
             precisar de um efeito que limpe estado depois da renderização. */}
         <AccessKeysManager key={open ? "aberto" : "fechado"} open={open} />
@@ -247,124 +260,127 @@ function AccessKeysManager({ open }: { open: boolean }) {
         </DialogDescription>
       </DialogHeader>
 
-      {fresh && (
-        <Alert variant="success">
-          <KeyRound />
-          <AlertTitle>Chave de {fresh.name}</AlertTitle>
-          <AlertDescription className="space-y-2">
-            <p>
-              Copie agora: o painel guarda apenas o hash, e esta chave não será
-              mostrada de novo.
-            </p>
-            <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1.5">
-              <code className="min-w-0 flex-1 truncate font-mono text-xs">
-                {fresh.key}
-              </code>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => copy(fresh.key)}
-                aria-label="Copiar chave"
-              >
-                <Copy className="size-3.5" />
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <form onSubmit={create} className="space-y-2">
-        <Label htmlFor="access-name">Nome de quem vai usar</Label>
-        <div className="flex gap-2">
-          <Input
-            id="access-name"
-            autoComplete="off"
-            placeholder="Ana, Bruno, notebook da recepção…"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <Button type="submit" disabled={!name.trim() || creating}>
-            {creating ? <Loader2 className="animate-spin" /> : <Plus />}
-            Criar
-          </Button>
-        </div>
-        <PermissionToggles
-          idPrefix="nova"
-          detailed
-          value={permissions}
-          onChange={setPermissions}
-          disabled={creating}
-        />
-      </form>
-
-      <div className="overflow-hidden rounded-lg border">
-        {isPending ? (
-          <div className="space-y-2 p-3">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : error ? (
-          /* Na própria lista, e não num toast: o erro é sobre o que deveria
-             estar ali, e o toast some antes de alguém agir. */
-          <EmptyNotice
-            icon={<KeyRound />}
-            title="Não foi possível listar as chaves"
-            description={(error as Error).message}
-            action={
-              <Button type="button" variant="outline" size="sm" onClick={refresh}>
-                Tentar novamente
-              </Button>
-            }
-          />
-        ) : users.length === 0 ? (
-          <EmptyNotice
-            icon={<KeyRound />}
-            title="Nenhuma chave criada"
-            description="Enquanto isso, vale a chave do .env — a do administrador."
-          />
-        ) : (
-          <ul className="divide-y">
-            {users.map((user) => (
-              <li key={user.id} className="space-y-2 px-3 py-2.5">
-                <div className="flex items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{user.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {user.lastSeenAt ? (
-                        <span title={formatDateTime(user.lastSeenAt)}>
-                          último acesso {relativeTime(user.lastSeenAt)}
-                        </span>
-                      ) : (
-                        "ainda não usou"
-                      )}
-                    </p>
-                  </div>
-                  {saving === user.id && (
-                    <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-                  )}
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon-sm"
-                    onClick={() => setRevoking(user)}
-                    aria-label={`Revogar a chave de ${user.name}`}
-                    title={`Revogar a chave de ${user.name}`}
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-                <PermissionToggles
-                  idPrefix={user.id}
-                  value={user.permissions}
-                  onChange={(proximas) => changePermissions(user, proximas)}
-                  disabled={saving === user.id}
-                />
-              </li>
-            ))}
-          </ul>
+      <DialogBody className="space-y-5">
+        {fresh && (
+          <Alert variant="success">
+            <KeyRound />
+            <AlertTitle>Chave de {fresh.name}</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>
+                Copie agora: o painel guarda apenas o hash, e esta chave não será
+                mostrada de novo.
+              </p>
+              <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1.5">
+                <code className="min-w-0 flex-1 font-mono text-xs break-all">
+                  {fresh.key}
+                </code>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => copy(fresh.key)}
+                  aria-label="Copiar chave"
+                >
+                  <Copy />
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
         )}
-      </div>
+
+        <form onSubmit={create} className="space-y-2">
+          <Label htmlFor="access-name">Nome de quem vai usar</Label>
+          <div className="flex gap-2">
+            <Input
+              id="access-name"
+              autoComplete="off"
+              placeholder="Ana, Bruno, notebook da recepção…"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <Button type="submit" disabled={!name.trim() || creating}>
+              {creating ? <Loader2 className="animate-spin" /> : <Plus />}
+              Criar
+            </Button>
+          </div>
+          <PermissionToggles
+            idPrefix="nova"
+            detailed
+            value={permissions}
+            onChange={setPermissions}
+            disabled={creating}
+          />
+        </form>
+
+        <div className="overflow-hidden rounded-lg border">
+          {isPending ? (
+            <div className="space-y-2 p-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : error ? (
+            /* Na própria lista, e não num toast: o erro é sobre o que deveria
+               estar ali, e o toast some antes de alguém agir. */
+            <ErrorNotice
+              title="Não foi possível listar as chaves"
+              error={error}
+              onRetry={() => void refresh()}
+            />
+          ) : users.length === 0 ? (
+            <EmptyNotice
+              icon={<KeyRound />}
+              title="Nenhuma chave criada"
+              description="Enquanto isso, vale a chave do .env — a do administrador."
+            />
+          ) : (
+            <ul className="divide-y">
+              {users.map((user) => (
+                <li key={user.id} className="space-y-2 px-3 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium" title={user.name}>
+                        {user.name}
+                      </p>
+                      {/* O último acesso é o que se confere; quando a chave
+                          nasceu fica ao lado, discreto. */}
+                      <p className="flex flex-wrap gap-x-1.5 text-xs text-muted-foreground">
+                        {user.lastSeenAt ? (
+                          <When at={user.lastSeenAt} prefix="último acesso" />
+                        ) : (
+                          <span>ainda não usou</span>
+                        )}
+                        <span aria-hidden>·</span>
+                        <span title={formatDateTime(user.createdAt)}>
+                          criada em {formatDate(user.createdAt)}
+                        </span>
+                      </p>
+                    </div>
+                    {saving === user.id && (
+                      <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                    )}
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon-sm"
+                      onClick={() => setRevoking(user)}
+                      aria-label={`Revogar a chave de ${user.name}`}
+                      title={`Revogar a chave de ${user.name}`}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                  <PermissionToggles
+                    idPrefix={user.id}
+                    value={user.permissions}
+                    onChange={(proximas) => changePermissions(user, proximas)}
+                    disabled={saving === user.id}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </DialogBody>
 
       {/* Revogar é irreversível e derruba as sessões da pessoa na hora: um
           clique a mais, com o nome dela, antes de acontecer. */}

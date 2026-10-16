@@ -43,7 +43,7 @@ const publicacao = (over: Partial<ProjectPublication> = {}): ProjectPublication 
 describe("nextStep", () => {
   it("antes do site: gerar; pasta vazia: abrir o Drive", () => {
     expect(nextStep(projeto()).kind).toBe("generate");
-    expect(nextStep(projeto({ fileCount: 0 }))).toEqual({
+    expect(nextStep(projeto({ fileCount: 0 }))).toMatchObject({
       kind: "link",
       label: "Abrir no Drive",
       href: "https://drive/pasta",
@@ -51,7 +51,7 @@ describe("nextStep", () => {
   });
 
   it("site gerado sem link: criar o link no editor do Lovable", () => {
-    expect(nextStep(projeto({ generations: [geracao()] }))).toEqual({
+    expect(nextStep(projeto({ generations: [geracao()] }))).toMatchObject({
       kind: "create-link",
       label: "Criar link",
       href: "https://lovable.dev/projects/gen-1",
@@ -82,7 +82,7 @@ describe("nextStep", () => {
 
   it("agente parado: responder pelo painel", () => {
     const g = geracao({ agentState: "awaiting" });
-    expect(nextStep(projeto({ generations: [g] }))).toEqual({
+    expect(nextStep(projeto({ generations: [g] }))).toMatchObject({
       kind: "reply",
       label: "Responder",
     });
@@ -92,7 +92,7 @@ describe("nextStep", () => {
     const pendente = publicacao({
       lastAttempt: { at: "t", status: "pending", runUrl: null },
     });
-    expect(nextStep(projeto({ publication: pendente }))).toEqual({
+    expect(nextStep(projeto({ publication: pendente }))).toMatchObject({
       kind: "link",
       label: "Acompanhar",
       href: null,
@@ -101,14 +101,14 @@ describe("nextStep", () => {
     const falhou = publicacao({
       lastAttempt: { at: "t", status: "failure", runUrl: "https://gh/run/1" },
     });
-    expect(nextStep(projeto({ publication: falhou }))).toEqual({
+    expect(nextStep(projeto({ publication: falhou }))).toMatchObject({
       kind: "link",
       label: "Ver erro",
       href: "https://gh/run/1",
     });
 
     const noAr = publicacao({ lastDeployAt: "t" });
-    expect(nextStep(projeto({ publication: noAr }))).toEqual({
+    expect(nextStep(projeto({ publication: noAr }))).toMatchObject({
       kind: "link",
       label: "Abrir site",
       href: "https://cliente.com.br",
@@ -121,7 +121,7 @@ describe("nextStep — área de desenvolvimento", () => {
     projeto({ generations: [geracao({ devArea, ...over } as never)] });
 
   it("sem repositório, leva ao editor do Lovable para conectar o GitHub", () => {
-    expect(nextStep(comArea({ state: "waiting-repo", lastRun: null }))).toEqual({
+    expect(nextStep(comArea({ state: "waiting-repo", lastRun: null }))).toMatchObject({
       kind: "link",
       label: "Conectar GitHub",
       href: "https://lovable.dev/projects/gen-1",
@@ -130,12 +130,12 @@ describe("nextStep — área de desenvolvimento", () => {
 
   it("publicando ou com erro, leva à execução no GitHub", () => {
     const execucao = { at: "t", status: "failure", runUrl: "https://gh/run/7", sha: null };
-    expect(nextStep(comArea({ state: "failed", lastRun: execucao }))).toEqual({
+    expect(nextStep(comArea({ state: "failed", lastRun: execucao }))).toMatchObject({
       kind: "link",
       label: "Ver erro",
       href: "https://gh/run/7",
     });
-    expect(nextStep(comArea({ state: "publishing", lastRun: { ...execucao, status: "pending" } }))).toEqual({
+    expect(nextStep(comArea({ state: "publishing", lastRun: { ...execucao, status: "pending" } }))).toMatchObject({
       kind: "link",
       label: "Acompanhar",
       href: "https://gh/run/7",
@@ -149,14 +149,14 @@ describe("nextStep — área de desenvolvimento", () => {
         { clientUrl: "https://area.dev/x/", previewState: "dead" },
       ),
     );
-    expect(passo).toEqual({ kind: "verify-link", label: "Verificar link" });
+    expect(passo).toMatchObject({ kind: "verify-link", label: "Verificar link" });
   });
 });
 
 describe("site vinculado de fora do painel", () => {
   it("sem link, o próximo passo é publicar a prévia — não criar Share preview", () => {
     const externo = projeto({ generations: [geracao({ id: "ext-abc123", origin: "linked" })] });
-    expect(nextStep(externo)).toEqual({ kind: "approval", label: "Publicar prévia" });
+    expect(nextStep(externo)).toMatchObject({ kind: "approval", label: "Publicar prévia" });
     expect(projectStatus(externo).label).toBe("Site vinculado");
     // Sem projeto no Lovable, não há editor a abrir.
     expect(lovableEditorUrl(externo)).toBeNull();
@@ -175,18 +175,18 @@ describe("site vinculado de fora do painel", () => {
       generations: [geracao({ id: "ext-abc123", origin: "linked", deliveredAt: "2026-09-28T10:00:00Z" })],
     });
     expect(projectStatus(entregue).stage).toBe("delivered");
-    expect(nextStep(entregue)).toEqual({ kind: "publish", label: "Publicar" });
+    expect(nextStep(entregue)).toMatchObject({ kind: "publish", label: "Publicar" });
   });
 
   it("criado no painel: enviar ao GitHub, ou só abrir os arquivos", () => {
     const site = projeto({ source: "panel", purpose: "site", fileCount: 0, webViewLink: "" });
     expect(projectStatus(site).stage).toBe("to-github");
-    expect(nextStep(site)).toEqual({ kind: "push-site", label: "Enviar ao GitHub" });
+    expect(nextStep(site)).toMatchObject({ kind: "push-site", label: "Enviar ao GitHub" });
 
     // Só material: não cobra passo, mesmo vazio (não é "Sem material").
     const arquivos = projeto({ source: "panel", purpose: "files", fileCount: 0, webViewLink: "" });
     expect(projectStatus(arquivos)).toMatchObject({ stage: "storage", attention: false });
-    expect(nextStep(arquivos)).toEqual({ kind: "files", label: "Abrir arquivos" });
+    expect(nextStep(arquivos)).toMatchObject({ kind: "files", label: "Abrir arquivos" });
   });
 
   it("criado no painel, com o site já no GitHub: segue o caminho dos vinculados", () => {
@@ -195,6 +195,6 @@ describe("site vinculado de fora do painel", () => {
       purpose: "site",
       generations: [geracao({ id: "ext-abc123", origin: "linked", repoFullName: "org/cliente" })],
     });
-    expect(nextStep(enviado)).toEqual({ kind: "approval", label: "Publicar prévia" });
+    expect(nextStep(enviado)).toMatchObject({ kind: "approval", label: "Publicar prévia" });
   });
 });

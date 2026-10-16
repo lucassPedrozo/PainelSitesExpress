@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
+import { EmptyState } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 import { AccessGate } from "@/features/access/access-gate";
 import { ApiError, onUnauthorized } from "@/lib/access-token";
 import { queryKeys } from "@/lib/query";
@@ -58,24 +60,37 @@ export function PanelGate({ children }: { children: ReactNode }) {
 
   if (gate.isPending) {
     return (
-      <main className="grid min-h-svh place-items-center bg-background">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <main className="grid min-h-svh place-items-center bg-background" role="status">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden />
+        <span className="sr-only">Abrindo o painel…</span>
       </main>
     );
   }
 
   if (gate.isError) {
+    // Sem endereço fixo: o painel pode estar em outra porta, ou ser aberto
+    // pela rede, e "localhost:3333" mandava conferir a máquina errada.
+    const motivo = gate.error instanceof Error && gate.error.message ? gate.error.message : null;
     return (
-      <main className="grid min-h-svh place-items-center bg-background p-6 text-center">
-        <div className="max-w-sm space-y-2">
-          <p className="font-medium">Não foi possível conectar à API</p>
-          <p className="text-sm text-muted-foreground">
-            {(gate.error as Error).message}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Confirme se o servidor está rodando em http://localhost:3333
-          </p>
-        </div>
+      <main className="grid min-h-svh place-items-center bg-background p-6">
+        <EmptyState
+          tone="danger"
+          icon={<AlertCircle />}
+          title="Não foi possível conectar ao painel"
+          description={
+            <>
+              {motivo && <p>{motivo}</p>}
+              <p>Confira se o painel está rodando e se este endereço é o dele.</p>
+            </>
+          }
+          action={
+            <Button onClick={() => void gate.refetch()} disabled={gate.isFetching}>
+              {gate.isFetching ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+              Tentar novamente
+            </Button>
+          }
+          className="w-full max-w-sm"
+        />
       </main>
     );
   }

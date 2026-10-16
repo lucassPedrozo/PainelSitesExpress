@@ -1,6 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { GenerationPlan, Project } from "@/lib/api";
-import { formatBytes, pluralize } from "@/lib/format";
+import { formatBytes, formatDate, plural, pluralize } from "@/lib/format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,26 +27,33 @@ export function PreviousGenerations({ project }: { project: Project }) {
       <span className="font-medium text-foreground">
         Esta coleta já gerou {pluralize(previous.length, "site")} — este será outro:
       </span>
-      {previous.map((item) => (
-        <a
-          key={item.id ?? item.createdAt}
-          href={item.previewUrl ?? item.url ?? "#"}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 hover:text-foreground"
-        >
-          <ExternalLink className="size-3" />
-          {item.displayName ?? "site"} ·{" "}
-          {new Date(item.createdAt).toLocaleDateString("pt-BR")}
-        </a>
-      ))}
+      {previous.map((item) => {
+        const href = item.previewUrl ?? item.url;
+        const rotulo = `${item.displayName ?? "site"} · ${formatDate(item.createdAt)}`;
+        // Sem endereço, o site aparece como texto: um link para "#" não leva a nada.
+        return href ? (
+          <a
+            key={item.id ?? item.createdAt}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 hover:text-foreground"
+          >
+            <ExternalLink className="size-3" />
+            {rotulo}
+          </a>
+        ) : (
+          <span key={item.id ?? item.createdAt}>{rotulo}</span>
+        );
+      })}
     </p>
   );
 }
 
 export function PlanSummary({ plan }: { plan: GenerationPlan }) {
+  const fotos = plan.stockImages.length;
   return (
-    <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs">
+    <div role="status" className="rounded-lg border border-dashed bg-background p-3 text-xs">
       <p className="font-medium">Conferido — nada foi enviado ao Lovable</p>
       <p className="mt-1 text-muted-foreground">
         {pluralize(plan.promptChars, "caractere")} de prompt e{" "}
@@ -55,7 +62,7 @@ export function PlanSummary({ plan }: { plan: GenerationPlan }) {
         {plan.unknownSizes > 0 &&
           `, ${plan.unknownSizes} com tamanho conhecido só na exportação`}
         {plan.stockZip &&
-          `, mais ${plan.stockZip} com ${pluralize(plan.stockImages.length, "foto")} de banco conferidas no Pixabay`}
+          `, mais ${plan.stockZip} com ${pluralize(fotos, "foto")} de banco ${plural(fotos, "conferida", "conferidas")} no Pixabay`}
         .
       </p>
     </div>
@@ -87,7 +94,9 @@ export function ConfirmGenerationDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Criar o site no Lovable?</AlertDialogTitle>
           <AlertDialogDescription>
-            Esta é a única ação do painel que consome créditos da sua conta do
+            {/* Não é a única ação que gasta (responder ao agente também
+                gasta): a frase diz o custo desta, sem prometer exclusividade. */}
+            Isto cria um projeto novo e consome créditos da sua conta do
             Lovable. Serão enviados{" "}
             {/* O número é o do prompt final, com as observações: antes esta
                 linha contava só o briefing e prometia um envio menor do que

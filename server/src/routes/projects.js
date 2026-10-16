@@ -16,7 +16,8 @@ import {
 } from "../../../shared/domain.js";
 import { requirePermission } from "../security/permissions.js";
 import { listGenerations } from "../store/generations.js";
-import { listProjectNames, setProjectName } from "../store/project-names.js";
+import { listProjectDetails, updateProjectDetails } from "../store/project-details.js";
+import { checkProjectName, listProjectNames, setProjectName } from "../store/project-names.js";
 import { lastAttemptOf, listPublications } from "../store/publications.js";
 import {
   getFinishedTagId,
@@ -25,7 +26,8 @@ import {
 } from "../store/tags.js";
 import { listLocalProjects } from "../store/local-projects.js";
 import { driveScoped, projectScoped } from "./drive-scoped.js";
-import { statsForLocalProject } from "./local-projects.js";
+import { siteOfOtherCollections } from "./projects-helpers.js";
+import { hasSiteSource, statsForLocalProject } from "./local-projects.js";
 
 /**
  * Projetos: as pastas de cliente do Drive e os criados no painel, com o que o
@@ -54,11 +56,13 @@ const emptyStats = {
 };
 
 /**
- * O domínio do projeto: o do apelido, quando o apelido é um domínio, senão o
- * do nome da pasta. É por ele que o projeto encontra a sua publicação — o
- * painel grava o domínio ao configurar o repositório, não o id da pasta.
+ * O domínio do projeto: o corrigido à mão, quando há; senão o do apelido,
+ * quando o apelido é um domínio; senão o do nome da pasta. É por ele que o
+ * projeto encontra a sua publicação — o painel grava o domínio ao configurar
+ * o repositório, não o id da pasta.
  */
-function projectDomain(folderName, alias) {
+function projectDomain(folderName, alias, override = null) {
+  if (override) return override;
   const fromAlias = findDomain(alias);
   if (fromAlias?.exact) return fromAlias.domain;
   return parseCollectionName(folderName).domain;
@@ -106,6 +110,10 @@ projectsRouter.get("/projects", async (req, res) => {
   // muda é de onde vêm os arquivos (`source`).
   const locals = await listLocalProjects();
   const localStats = await Promise.all(locals.map((project) => statsForLocalProject(project.id)));
+  // Só os de site perguntam: num projeto de arquivos não há o que procurar.
+  const localSites = await Promise.all(
+    locals.map((project) => ((project.kind ?? "site") === "site" ? hasSiteSource(project.id) : null)),
+  );
   for (const [index, project] of locals.entries()) {
     folders.push({
       id: project.id,
@@ -116,12 +124,14 @@ projectsRouter.get("/projects", async (req, res) => {
       owners: project.createdBy ? [{ displayName: project.createdBy }] : [],
       source: "panel",
       purpose: project.kind ?? "site",
+      hasSite: localSites[index],
     });
     stats.push(localStats[index]);
   }
 
   const generations = await listGenerations();
   const names = await listProjectNames();
+  const details = await listProjectDetails();
   const publications = await publicationsByDomain();
   // O que o motor Claude tem de cada projeto. Vem do banco do painel, sem
   // consultar o motor — e uma falha aqui não derruba a lista.
@@ -136,7 +146,7 @@ projectsRouter.get("/projects", async (req, res) => {
   // incompleta). Cada envio vira uma pasta; contar as do mesmo domínio deixa o
   // card avisar que existe outra coleta.
   const domains = folders.map((folder) =>
-    projectDomain(folder.name, names[folder.id] ?? null),
+    projectDomain(folder.name, names[folder.id] ?? null, details[folder.id]?.domain ?? null),
   );
   const collectionsByDomain = new Map();
   for (const domain of domains) {
@@ -145,9 +155,12 @@ projectsRouter.get("/projects", async (req, res) => {
     }
   }
 
+  const domainSites = siteOfOtherCollections(folders, domains, generations);
+
   const projects = folders.map((folder, index) => {
     const s = stats[index] ?? emptyStats;
     const alias = names[folder.id] ?? null;
+    const corrigido = details[folder.id] ?? null;
     const domain = domains[index];
     const publication = domain ? publications.get(domain) : undefined;
     return {
@@ -156,9 +169,12 @@ projectsRouter.get("/projects", async (req, res) => {
       source: folder.source ?? "drive",
       /** Só nos do painel: `site` (para publicar) ou `files` (só material). */
       purpose: folder.purpose ?? null,
+      /** Só nos do painel de site: há um site pronto entre os arquivos. */
+      hasSite: folder.hasSite ?? null,
       name: folder.name,
       description: folder.description ?? null,
-      createdTime: folder.createdTime,
+      // A data corrigida à mão vale em todo lugar: ordem, faixas, Dashboard.
+      createdTime: corrigido?.receivedAt ?? folder.createdTime,
       modifiedTime: folder.modifiedTime,
       webViewLink: folder.webViewLink,
       owner: folder.owners?.[0]?.displayName ?? null,
@@ -166,7 +182,9 @@ projectsRouter.get("/projects", async (req, res) => {
       folderCount: s.folderCount,
       totalSize: s.size,
       kinds: s.kinds,
-      lastActivity: s.lastActivity ?? folder.modifiedTime,
+      // Pasta vazia: a criação dela é tudo o que aconteceu. O `modifiedTime`
+      // da pasta muda com uma renomeação, que não é atividade do projeto.
+      lastActivity: s.lastActivity ?? corrigido?.receivedAt ?? folder.createdTime,
       lastAdded: s.lastAdded ?? null,
       brief: s.brief,
       tagIds: projectTags[folder.id] ?? [],
@@ -176,7 +194,26 @@ projectsRouter.get("/projects", async (req, res) => {
       // `name` continua sendo o da pasta no Drive; o apelido é do painel.
       alias,
       domain,
+      /**
+       * O que a equipe corrigiu à mão — para a tela marcar o campo e oferecer
+       * a volta ao cálculo. `domain` e `createdTime` acima já vêm corrigidos.
+       */
+      details: corrigido
+        ? {
+            domain: corrigido.domain ?? null,
+            receivedAt: corrigido.receivedAt ?? null,
+            responsible: corrigido.responsible ?? null,
+            note: corrigido.note ?? null,
+            stage: corrigido.stage ?? null,
+            hidden: corrigido.hidden ?? null,
+          }
+        : null,
       domainCollections: domain ? collectionsByDomain.get(domain) : 0,
+      /**
+       * Só nas coletas sem site: o site do mesmo domínio registrado em outra
+       * coleta — ver `siteOfOtherCollections`.
+       */
+      domainSite: domainSites[index],
       publication: publication
         ? {
             domain: publication.domain,
@@ -224,6 +261,30 @@ projectsRouter.put(
   async (req, res) => {
     const tagIds = Array.isArray(req.body?.tagIds) ? req.body.tagIds : [];
     res.json({ tagIds: await setProjectTags(req.params.id, tagIds) });
+  },
+);
+
+/**
+ * Corrige à mão o que o painel calcula — domínio, data de recebimento, etapa —
+ * e guarda o responsável e a observação interna. Só os campos enviados mudam;
+ * vazio volta ao cálculo. O nome (`name`) é o apelido, o mesmo da rota abaixo.
+ */
+projectsRouter.patch(
+  "/projects/:id/details",
+  projectScoped,
+  requirePermission("organizar"),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const body = req.body ?? {};
+    const { name, ...patch } = body;
+    // Tudo é conferido antes de gravar: nada fica pela metade.
+    const temNome = Object.prototype.hasOwnProperty.call(body, "name");
+    if (temNome) checkProjectName(name);
+    const details = await updateProjectDetails(id, patch, { by: req.identity?.name ?? null });
+    const alias = temNome
+      ? await setProjectName(id, name)
+      : ((await listProjectNames())[id] ?? null);
+    res.json({ alias, details });
   },
 );
 

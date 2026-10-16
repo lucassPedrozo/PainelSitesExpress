@@ -49,6 +49,8 @@ const controle = {
   modelo: "",
   esforco: "",
   rodadas: /** @type {number | null} */ (null),
+  /** Quantos sites nascem ao mesmo tempo. `null`: o padrão do painel. */
+  sites: /** @type {number | null} */ (null),
   direcao: "",
   movimento: "",
   aprovacao: /** @type {boolean | null} */ (null),
@@ -75,6 +77,7 @@ const novoServico = (extras = {}) =>
       model: controle.modelo,
       effort: controle.esforco,
       reviewRounds: controle.rodadas,
+      parallelSites: controle.sites,
       artDirection: controle.direcao,
       motion: controle.movimento,
       browserPath: "",
@@ -373,7 +376,7 @@ describe("motor Claude — na tela de Configurações", () => {
     const secao = body.sections.find((section) => section.id === "claude");
     assert.deepEqual(
       secao.fields.map((campo) => campo.key),
-      ["CLAUDE_ENABLE_GENERATION", "CLAUDE_MODEL", "CLAUDE_REASONING_EFFORT", "CLAUDE_REVIEW_ROUNDS", "CLAUDE_PARALLEL_ADJUSTMENTS", "CLAUDE_ART_DIRECTION", "CLAUDE_MOTION", "CLAUDE_HUMAN_APPROVAL", "CLAUDE_BIN", "CLAUDE_BROWSER_PATH"],
+      ["CLAUDE_ENABLE_GENERATION", "CLAUDE_MODEL", "CLAUDE_REASONING_EFFORT", "CLAUDE_REVIEW_ROUNDS", "CLAUDE_PARALLEL_SITES", "CLAUDE_PARALLEL_ADJUSTMENTS", "CLAUDE_ART_DIRECTION", "CLAUDE_MOTION", "CLAUDE_HUMAN_APPROVAL", "CLAUDE_BIN", "CLAUDE_BROWSER_PATH"],
     );
     // Vale na hora: o serviço relê a configuração a cada uso.
     assert.ok(secao.fields.every((campo) => campo.restart === false));
@@ -894,8 +897,32 @@ describe("motor Claude — a fila", () => {
     controle.trava = true;
   });
 
-  it("um pedido por projeto e uma execução por vez; quem espera pode sair, quem roda é cancelado", { timeout: 120_000 }, async () => {
+  it("dois sites nascem juntos: nenhum espera o outro, e o cancelamento é por item", { timeout: 120_000 }, async () => {
     controle.cenario = "lento";
+    const antes = { a: (await detalhe(a)).project?.lastRun?.id ?? null, b: (await detalhe(b)).project?.lastRun?.id ?? null };
+    for (const id of [a, b]) {
+      const pedido = await call(`/api/projects/${id}/claude/briefing`, { method: "POST", json: { confirm: true } });
+      assert.equal(pedido.status, 201, JSON.stringify(pedido.body));
+    }
+    const fila = await esperarAte(async () => {
+      const s = (await call("/api/claude/status")).body.queue;
+      return s.runningAll.length === 2 ? s : null;
+    });
+    assert.deepEqual([fila.runningAll.map((item) => [item.projectId, item.tipo]), fila.waiting.length], [[[a, "analisar"], [b, "analisar"]], 0]);
+
+    const doB = fila.runningAll[1].id;
+    assert.deepEqual((await call(`/api/claude/queue/cancel?item=${doB}`, { method: "POST", json: {} })).body, { cancelled: true });
+    assert.equal((await esperarFim(b, antes.b)).project.lastRun.status, "cancelada");
+    assert.deepEqual((await call("/api/claude/status")).body.queue.runningAll.map((item) => item.projectId), [a], "o site de A continua");
+    assert.deepEqual((await call("/api/claude/queue/cancel", { method: "POST", json: {} })).body, { cancelled: true });
+    assert.equal((await esperarFim(a, antes.a)).project.lastRun.status, "cancelada");
+    controle.cenario = "ok";
+  });
+
+  it("com um site por vez: um pedido por projeto e uma execução por vez; quem espera pode sair, quem roda é cancelado", { timeout: 120_000 }, async () => {
+    controle.cenario = "lento";
+    controle.sites = 1;
+    const chamadasAntes = chamadas().length;
     const primeiro = await call(`/api/projects/${a}/claude/briefing`, { method: "POST", json: { confirm: true } });
     assert.equal(primeiro.status, 201, JSON.stringify(primeiro.body));
     const repetido = await call(`/api/projects/${a}/claude/briefing`, { method: "POST", json: { confirm: true } });
@@ -932,7 +959,8 @@ describe("motor Claude — a fila", () => {
     const d = await esperarFim(a, anterior);
     assert.deepEqual([d.project.lastRun.status, d.project.lastRun.message], ["cancelada", "Execução cancelada."]);
     assert.deepEqual((await call("/api/claude/queue/cancel", { method: "POST", json: {} })).body, { cancelled: false });
-    assert.equal(chamadas().filter((chamada) => chamada.entrada.includes("fila-b")).length, 0, "o removido nunca rodou");
+    assert.equal(chamadas().slice(chamadasAntes).filter((chamada) => chamada.entrada.includes("fila-b")).length, 0, "o removido nunca rodou");
+    controle.sites = null;
   });
 
   it("depois de um reinício a fila volta pausada e o que rodava aparece como interrompido", { timeout: 120_000 }, async () => {
@@ -1835,5 +1863,24 @@ describe("motor Claude — a escolha da rota criativa", () => {
     assert.equal(chamadas().at(-1).args[chamadas().at(-1).args.indexOf("--resume") + 1], "sessao-falsa-1", "a direção é refeita por quem a escreveu");
     assert.equal(d.project.site.awaitingApproval, false);
     doMotor.projetos[pasta] = {};
+  });
+});
+
+describe("edição livre — ajustes pelo Claude em sites de repositório", () => {
+  it("pedir um ajuste pede gerar e publicar, e a confirmação de gasto; a aba explica quando não dá", async () => {
+    const projectId = await novoProjeto("Site do Lovable", {});
+    const aba = await call(`/api/projects/${projectId}/edits`);
+    assert.equal(aba.status, 200);
+    assert.equal(aba.body.available, false);
+    assert.match(aba.body.reason, /ainda não tem site/);
+
+    // Quem gera mas não publica: o ajuste vai ao GitHub e à área do cliente.
+    const semPublicar = await call(`/api/projects/${projectId}/edits`, { method: "POST", como: "gera", json: { pedido: "x", confirm: true } });
+    assert.equal(semPublicar.status, 403);
+    const semConfirmar = await call(`/api/projects/${projectId}/edits`, { method: "POST", json: { pedido: "x" } });
+    assert.equal(semConfirmar.status, 428);
+    const semSite = await call(`/api/projects/${projectId}/edits`, { method: "POST", json: { pedido: "x", confirm: true } });
+    assert.equal(semSite.status, 409);
+    assert.match(semSite.body.error, /ainda não tem site/);
   });
 });

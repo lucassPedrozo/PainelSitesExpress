@@ -1,61 +1,82 @@
-import { Check, ExternalLink } from "lucide-react";
+import { Check, CircleCheck, ExternalLink } from "lucide-react";
 import type { GenerationResult, LovableStatus } from "@/lib/api";
 import { pluralize } from "@/lib/format";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TechnicalCode, TechnicalDetails } from "@/features/claude/claude-shared";
 
+/**
+ * O painel conectado ao Lovable, no cabeçalho de quem gera. Desconectado não
+ * vira selo: o aviso de conexão, logo abaixo, já diz e oferece o que fazer.
+ */
 export function ConnectionBadge({ status }: { status: LovableStatus | null }) {
-  if (!status) return null;
-  return status.connected ? (
+  if (!status?.connected) return null;
+  return (
     <Badge variant="success">
       <Check />
       Lovable conectado
     </Badge>
-  ) : (
-    <Badge variant="warning">Lovable desconectado</Badge>
   );
 }
 
 /** O formato do retorno do Lovable não é documentado: lemos com tolerância. */
-export function ResultPanel({ result }: { result: GenerationResult }) {
+const pick = (result: GenerationResult, ...keys: string[]) => {
   const data = result.project ?? {};
-  const pick = (...keys: string[]) => {
-    for (const key of keys) {
-      const value = data[key];
-      if (typeof value === "string" && value) return value;
-    }
-    return null;
-  };
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === "string" && value) return value;
+  }
+  return null;
+};
 
-  const url = pick("url", "project_url", "preview_url", "app_url");
-  const id = pick("id", "project_id");
+/** O endereço do projeto criado no Lovable. */
+const lovableResultUrl = (result: GenerationResult) =>
+  pick(result, "url", "project_url", "preview_url", "app_url");
+
+/**
+ * "Abrir no Lovable", a ação principal do rodapé depois de gerar. Sem o
+ * endereço na resposta, não há o que abrir — e o botão não aparece.
+ */
+export function OpenInLovable({ result }: { result: GenerationResult }) {
+  const url = lovableResultUrl(result);
+  if (!url) return null;
+  return (
+    <Button asChild>
+      <a href={url} target="_blank" rel="noreferrer">
+        <ExternalLink />
+        Abrir no Lovable
+      </a>
+    </Button>
+  );
+}
+
+/**
+ * O site criado: o que foi enviado, em uma linha. "Abrir no Lovable" fica no
+ * rodapé do diálogo, como ação principal; o id do projeto e a resposta crua
+ * ficam em "Detalhes técnicos".
+ */
+export function ResultPanel({ result }: { result: GenerationResult }) {
+  const url = lovableResultUrl(result);
+  const id = pick(result, "id", "project_id");
 
   return (
-    <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-xs">
-      <p className="font-medium">Site criado no Lovable</p>
-      <p className="mt-1 text-muted-foreground">
-        {pluralize(result.attachments.length, "anexo enviado", "anexos enviados")} ·{" "}
-        {pluralize(result.promptChars, "caractere")} de prompt
-        {id && ` · projeto ${id}`}
-      </p>
-      {url && (
-        <Button asChild size="sm" variant="outline" className="mt-2">
-          <a href={url} target="_blank" rel="noreferrer">
-            <ExternalLink className="size-4" />
-            Abrir no Lovable
-          </a>
-        </Button>
-      )}
-      {!url && (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-muted-foreground">
-            Ver resposta completa
-          </summary>
-          <pre className="mt-1 overflow-x-auto text-2xs">
-            {JSON.stringify(result.project, null, 2)}
-          </pre>
-        </details>
-      )}
-    </div>
+    <Alert variant="success">
+      <CircleCheck />
+      <AlertTitle>Site criado no Lovable</AlertTitle>
+      <AlertDescription className="space-y-1.5">
+        <p>
+          {pluralize(result.attachments.length, "anexo enviado", "anexos enviados")} e{" "}
+          {pluralize(result.promptChars, "caractere")} de prompt.{" "}
+          {url
+            ? "O link ficou salvo no card do projeto."
+            : "O Lovable não devolveu o link do projeto: confira na sua conta do Lovable."}
+        </p>
+        <TechnicalDetails>
+          {id && <p>Projeto no Lovable: {id}</p>}
+          <TechnicalCode>{JSON.stringify(result.project, null, 2)}</TechnicalCode>
+        </TechnicalDetails>
+      </AlertDescription>
+    </Alert>
   );
 }

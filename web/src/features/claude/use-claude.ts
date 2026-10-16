@@ -125,6 +125,11 @@ export function useClaudeLog(itemId: string | null, active: boolean) {
   const [lines, setLines] = useState<ClaudeLogLine[]>([]);
   /** O pedido a que as linhas guardadas pertencem. */
   const [owner, setOwner] = useState<string | null>(null);
+  /**
+   * A última leitura falhou. A tela diz isso — antes o erro era engolido, e um
+   * log que nunca chegava ficava para sempre "esperando as primeiras linhas".
+   */
+  const [error, setError] = useState<unknown>(null);
   const cursor = useRef("");
 
   const read = useCallback(async () => {
@@ -143,8 +148,11 @@ export function useClaudeLog(itemId: string | null, active: boolean) {
     const ciclo = async () => {
       try {
         await read();
-      } catch {
-        // Uma consulta que falha não derruba o log: a próxima traz o que faltou.
+        if (!parado) setError(null);
+      } catch (err) {
+        // Uma consulta que falha não derruba o log: a próxima traz o que
+        // faltou. Enquanto isso, a tela mostra o erro.
+        if (!parado) setError(err);
       }
       if (!parado && active) relogio = window.setTimeout(ciclo, LOG_INTERVAL_MS);
     };
@@ -156,5 +164,13 @@ export function useClaudeLog(itemId: string | null, active: boolean) {
     };
   }, [active, itemId, read]);
 
-  return { lines: itemId && owner === itemId ? lines : [] };
+  /** Lê de novo agora, sem esperar o próximo ciclo. */
+  const retry = useCallback(() => {
+    read().then(
+      () => setError(null),
+      (err: unknown) => setError(err),
+    );
+  }, [read]);
+
+  return { lines: itemId && owner === itemId ? lines : [], error, retry };
 }

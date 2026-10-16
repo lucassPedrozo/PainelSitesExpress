@@ -1,21 +1,23 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Bot, FileSearch, FolderOpen, ImageIcon, Loader2, Lock, Search } from "lucide-react";
+import { FileSearch, FolderOpen, ImageIcon, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import type {
   BuildFile,
   ClaudeBriefingPlan,
   ClaudeMaterial,
+  ClaudeOptions,
   ClaudeRunChoices,
   Project,
   StockSearchResult,
 } from "@/lib/api";
 import { fetchClaudeMaterial, isPanelProject, previewClaudeBriefing, requestClaudeBriefing } from "@/lib/api";
-import { formatBytes, pluralize } from "@/lib/format";
+import { formatBytes, plural, pluralize } from "@/lib/format";
 import { usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
+import { ErrorNotice } from "@/components/page-header";
 import { Segmented } from "@/components/segmented";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,9 +32,10 @@ import { useStockSearch } from "@/features/generate/use-stock-search";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
 import { RunChoicesFields } from "./claude-option-fields";
 import { choicesLine, choicesSentence } from "./claude-options";
-import { ConfirmClaudeDialog, HintWhenDisabled } from "./claude-shared";
-import { errorMessage, semPermissaoDeGerar } from "./claude-text";
+import { ConfirmClaudeDialog, GenerationOffNotice, TechnicalCode, TechnicalDetails } from "./claude-shared";
+import { claudeBlock, errorMessage } from "./claude-text";
 import { useClaudeOptions, useClaudeRefresh } from "./use-claude";
+import { ClaudeIcon, GoogleDriveIcon } from "@/components/brand-icons";
 
 /**
  * O primeiro passo da geração pelo Claude: o material do projeto que ele vai
@@ -64,12 +67,12 @@ export function ClaudeBriefingForm({
 
   if (material.error) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-        <AlertTriangle className="size-8 text-destructive" />
-        <p className="text-sm text-muted-foreground">{errorMessage(material.error)}</p>
-        <Button variant="outline" onClick={() => void material.refetch()}>
-          Tentar novamente
-        </Button>
+      <div className="flex flex-1 items-center justify-center p-6">
+        <ErrorNotice
+          title="Não foi possível ler o material do projeto"
+          error={material.error}
+          onRetry={() => void material.refetch()}
+        />
       </div>
     );
   }
@@ -154,6 +157,17 @@ function BriefingRequest({
   const vazio = marcados.length === 0 && !texto.trim() && stockImages.length === 0 && !observacoes.trim();
   const podeConferir = !busy && excedido.length === 0 && !vazio;
 
+  // O que impede, escrito ao lado dos botões, na ordem em que a pessoa
+  // resolve: o ensaio para nos três primeiros; gerar, também na trava.
+  const motivoDoPedido = !can("gerar")
+    ? claudeBlock.semPermissao
+    : vazio
+      ? "Marque arquivos, escreva as informações do site ou cite o site do cliente nas observações."
+      : excedido.length > 0
+        ? `O pedido passou do limite: ${excedido.join(", ")}.`
+        : null;
+  const motivoDoBloqueio = motivoDoPedido ?? (!material.generation.enabled ? claudeBlock.desligada : null);
+
   // O modelo e o esforço só vão quando alguém mexeu neles: sem a chave, o
   // servidor usa o que o projeto tem gravado.
   const corpo = () => ({
@@ -209,29 +223,17 @@ function BriefingRequest({
     }
   };
 
-  const motivoDoBloqueio = !can("gerar")
-    ? semPermissaoDeGerar
-    : !material.generation.enabled
-      ? "A geração pelo Claude está desligada neste painel."
-      : null;
-
   return (
     <>
       {/* Antes de tudo, o que impede: a pessoa não preenche a tela inteira
           para descobrir no fim que o botão não vai funcionar. */}
       {!material.generation.enabled && (
         <div className="shrink-0 border-b px-6 py-3">
-          <Alert variant="warning">
-            <Lock />
-            <AlertTitle>A geração pelo Claude está desligada neste painel</AlertTitle>
-            <AlertDescription>
-              {material.generation.reason} Dá para conferir o pedido mesmo assim.
-            </AlertDescription>
-          </Alert>
+          <GenerationOffNotice reason={material.generation.reason}>Dá para conferir o pedido mesmo assim.</GenerationOffNotice>
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 auto-rows-max overflow-y-auto lg:grid-cols-[1.05fr_1fr] lg:grid-rows-1 lg:divide-x lg:overflow-hidden">
+      <div className="grid min-h-0 flex-1 auto-rows-max overflow-y-auto lg:grid-cols-2 lg:grid-rows-1 lg:divide-x lg:overflow-hidden">
         <section className="flex min-h-0 min-w-0 flex-col gap-2 p-6 lg:overflow-y-auto">
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor="claude-informacoes" className="text-sm font-medium">
@@ -250,7 +252,7 @@ function BriefingRequest({
               changed();
             }}
             placeholder="O que o cliente informou: empresa, serviços, contato, endereço, horário. O Claude lê este texto junto com os arquivos marcados."
-            className="max-h-[45vh] min-h-56 flex-1 resize-none overflow-y-auto text-sm leading-relaxed lg:max-h-none lg:min-h-40"
+            className="max-h-96 min-h-56 flex-1 resize-none overflow-y-auto text-sm leading-relaxed lg:max-h-none lg:min-h-40"
           />
           <p className="text-xs text-muted-foreground">
             Vai para a pasta de trabalho como <code>informacoes-do-site.txt</code>. O arquivo do projeto
@@ -304,7 +306,7 @@ function BriefingRequest({
               value={tab}
               onChange={setTab}
               options={[
-                { value: "files", label: fromPanel ? "Do projeto" : "Do Drive", icon: <FolderOpen />, count: selected.size },
+                { value: "files", label: fromPanel ? "Do projeto" : "Do Drive", icon: fromPanel ? <FolderOpen /> : <GoogleDriveIcon />, count: selected.size },
                 { value: "stock", label: "Banco de imagens", icon: <ImageIcon />, count: stock.size },
               ]}
             />
@@ -354,7 +356,9 @@ function BriefingRequest({
             <div className="min-h-40 flex-1 space-y-1 overflow-y-auto rounded-lg border p-1">
               {visible.length === 0 ? (
                 <p className="p-6 text-center text-sm text-muted-foreground">
-                  {material.files.length === 0 ? "Este projeto ainda não tem arquivos." : "Nenhum arquivo encontrado."}
+                  {material.files.length === 0
+                    ? "Este projeto ainda não tem arquivos."
+                    : `Nenhum arquivo com “${query.trim()}” no nome ou na subpasta.`}
                 </p>
               ) : (
                 visible.map((file) => (
@@ -375,6 +379,7 @@ function BriefingRequest({
           </section>
 
           <StockImagesSection
+            engine="claude"
             className={cn("flex-1 pt-3", tab !== "stock" && "hidden")}
             search={stockSearch}
             picks={stock}
@@ -388,23 +393,26 @@ function BriefingRequest({
         </div>
       </div>
 
-      <div className="shrink-0 space-y-3 border-t px-6 py-3">
+      <div className="shrink-0 space-y-3 border-t bg-muted/40 px-6 py-3">
         {conferido && (
           <PlanBox
             plan={conferido.plan}
             command={conferido.command}
-            choices={conferido.escolhas && opcoes.data ? choicesLine(conferido.escolhas, opcoes.data.defaults) : null}
+            choices={conferido.escolhas}
+            defaults={opcoes.data?.defaults ?? null}
           />
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <p className={cn("text-xs tabular-nums text-muted-foreground", excedido.length > 0 && "text-destructive")}>
-            {pluralize(marcados.length, "arquivo")}
-            {bytes > 0 && ` · ${formatBytes(bytes)}`}
-            {texto.trim() && ` · ${pluralize(texto.trim().length, "caractere")} de informações`}
-            {stockImages.length > 0 && ` · ${pluralize(stockImages.length, "foto")} de banco`}
-            {excedido.length > 0 && ` · ${excedido.join(" · ")}`}
-          </p>
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {pluralize(marcados.length, "arquivo")}
+              {bytes > 0 && ` · ${formatBytes(bytes)}`}
+              {texto.trim() && ` · ${pluralize(texto.trim().length, "caractere")} de informações`}
+              {stockImages.length > 0 && ` · ${pluralize(stockImages.length, "foto")} de banco`}
+            </p>
+            {motivoDoBloqueio && <Reason>{motivoDoBloqueio}</Reason>}
+          </div>
 
           <div className="flex items-center gap-2">
             <Button
@@ -417,12 +425,12 @@ function BriefingRequest({
               {busy === "preview" ? <Loader2 className="animate-spin" /> : <FileSearch />}
               Conferir pedido
             </Button>
-            <HintWhenDisabled reason={motivoDoBloqueio}>
+            <DisabledHint reason={motivoDoBloqueio}>
               <Button size="sm" disabled={!podeConferir || Boolean(motivoDoBloqueio)} onClick={() => setConfirming(true)}>
-                {busy === "request" ? <Loader2 className="animate-spin" /> : <Bot />}
+                {busy === "request" ? <Loader2 className="animate-spin" /> : <ClaudeIcon mono />}
                 Gerar briefing
               </Button>
-            </HintWhenDisabled>
+            </DisabledHint>
           </div>
         </div>
       </div>
@@ -445,43 +453,52 @@ function BriefingRequest({
 }
 
 /**
- * O resultado do ensaio: o que seria copiado, a frase do pedido, o modelo e o
- * esforço conferidos e o comando exato.
+ * O resultado do ensaio: o que seria copiado e com que modelo o briefing sai.
+ * A frase digitada ao Claude, o id do modelo e o comando ficam em "Detalhes
+ * técnicos".
  */
 function PlanBox({
   plan,
   command,
   choices,
+  defaults,
 }: {
   plan: ClaudeBriefingPlan;
   command: string;
-  /** "Modelo: … · Esforço: …"; `null` sem as opções do projeto em mãos. */
-  choices: string | null;
+  /** O modelo e o esforço conferidos; `null` sem as opções do projeto em mãos. */
+  choices: ClaudeRunChoices | null;
+  defaults: ClaudeOptions["defaults"] | null;
 }) {
+  const fotos = plan.stockImages.length;
   return (
-    <div className="space-y-1.5 rounded-lg border border-dashed bg-muted/40 p-3 text-xs">
+    <div role="status" className="space-y-1.5 rounded-lg border border-dashed bg-background p-3 text-xs">
       <p className="font-medium">Conferido — nada foi copiado nem disparado</p>
       <p className="text-muted-foreground">
         {pluralize(plan.files.length, "arquivo")}
         {plan.totalBytes > 0 && ` (${formatBytes(plan.totalBytes)})`}
-        {plan.unknownSizes > 0 && `, ${plan.unknownSizes} com tamanho conhecido só na exportação`}
+        {plan.unknownSizes > 0 &&
+          `, ${plan.unknownSizes} com tamanho conhecido só na exportação`}
         {plan.infoChars > 0 && `, ${pluralize(plan.infoChars, "caractere")} de informações`}
-        {plan.stockImages.length > 0 && `, ${pluralize(plan.stockImages.length, "foto")} de banco conferidas no Pixabay`}
+        {/* As fotos do pedido de briefing são as da busca do painel, e o
+            servidor as confere no Pixabay — o banco que essa busca usa. */}
+        {fotos > 0 && `, ${pluralize(fotos, "foto")} de banco ${plural(fotos, "conferida", "conferidas")} no Pixabay`}
         .{" "}
         {plan.sites.length > 0
           ? `O Claude poderá ler páginas de ${plan.sites.join(", ")} — e de nenhum outro endereço.`
           : "O Claude não terá acesso à rede."}
       </p>
-      <p className="text-muted-foreground">
-        Pedido que será digitado ao Claude: <span className="text-foreground">“{plan.phrase.split("\n")[0]}”</span>
-      </p>
-      {choices && <p className="text-muted-foreground">{choices}</p>}
-      <details className="text-muted-foreground">
-        <summary className="cursor-pointer select-none hover:text-foreground">Comando que será executado</summary>
-        <pre className="mt-1.5 max-h-40 overflow-auto rounded-md border bg-background p-2 font-mono text-2xs leading-relaxed break-all whitespace-pre-wrap">
-          {command}
-        </pre>
-      </details>
+      {choices && defaults && (
+        <p className="text-muted-foreground">O briefing sai com {choicesSentence(choices, defaults)}.</p>
+      )}
+      <TechnicalDetails>
+        <p>
+          Pedido que será digitado ao Claude:{" "}
+          <span className="whitespace-pre-wrap text-foreground">“{plan.phrase}”</span>
+        </p>
+        {choices && defaults && <p>{choicesLine(choices, defaults)}</p>}
+        <p>Comando que será executado:</p>
+        <TechnicalCode>{command}</TechnicalCode>
+      </TechnicalDetails>
     </div>
   );
 }

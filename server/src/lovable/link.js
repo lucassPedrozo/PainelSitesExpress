@@ -111,17 +111,22 @@ export function planLink(body, orgRepos) {
 
 /**
  * O nome do projeto no Lovable — é com ele que o repositório nasce no GitHub,
- * e é por ele que a área de aprovação acha o repositório sozinha. Sem conexão
- * com o Lovable (ou projeto de outra conta), segue sem nome.
+ * e é por ele que a área de aprovação acha o repositório sozinha — e quando
+ * ele foi criado lá. Sem conexão com o Lovable (ou projeto de outra conta),
+ * segue sem os dois.
  *
  * @param {string} lovableId
+ * @returns {Promise<{ name: string | null, createdAt: string | null }>}
  */
-export async function lovableNameOf(lovableId) {
+export async function lovableInfoOf(lovableId) {
   try {
-    const { name } = readProject(await callTool("get_project", { project_id: lovableId }));
-    return name;
+    const { name, createdAt } = readProject(await callTool("get_project", { project_id: lovableId }));
+    return { name, createdAt };
   } catch (err) {
-    console.warn(`[vincular] nome do projeto ${lovableId} no Lovable: ${err?.message ?? err}`);
-    return null;
+    console.warn(`[vincular] projeto ${lovableId} no Lovable: ${err?.message ?? err}`);
+    return { name: null, createdAt: null };
   }
 }
+
+/** Só o nome — ver `lovableInfoOf`. */
+export const lovableNameOf = async (lovableId) => (await lovableInfoOf(lovableId)).name;

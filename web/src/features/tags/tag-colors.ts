@@ -1,25 +1,34 @@
 import type { TagColor } from "@/lib/api";
 
 /**
+ * As cores das tags. São a exceção às cores do tema: quem cria a tag escolhe
+ * a cor, e ela precisa ser a mesma em toda tela e nos dois temas — por isso o
+ * tom fixo do Tailwind, e não um token de estado.
+ *
  * As classes precisam aparecer literalmente no código para o Tailwind
  * detectá-las — por isso o mapa é escrito por extenso, sem interpolação.
  */
-export const tagBadgeClass: Record<TagColor, string> = {
-  slate:
-    "border-slate-500/25 bg-slate-500/10 text-slate-700 dark:text-slate-300",
-  blue: "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  cyan: "border-cyan-500/25 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-  emerald:
-    "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  amber:
-    "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  orange:
-    "border-orange-500/25 bg-orange-500/10 text-orange-700 dark:text-orange-300",
-  red: "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300",
-  violet:
-    "border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-  pink: "border-pink-500/25 bg-pink-500/10 text-pink-700 dark:text-pink-300",
-};
+
+/**
+ * A ordem da paleta: a do seletor de cor e a da cor sugerida para a próxima
+ * tag. Uma lista só — antes o diálogo de tags e o seletor tinham cada um a
+ * sua cópia.
+ */
+export const TAG_PALETTE: TagColor[] = [
+  "slate",
+  "blue",
+  "cyan",
+  "emerald",
+  "amber",
+  "orange",
+  "red",
+  "violet",
+  "pink",
+];
+
+/** A cor depois de `color` na paleta, girando: a sugestão para a próxima tag. */
+export const nextTagColor = (color: TagColor) =>
+  TAG_PALETTE[(TAG_PALETTE.indexOf(color) + 1) % TAG_PALETTE.length];
 
 export const tagDotClass: Record<TagColor, string> = {
   slate: "bg-slate-500",

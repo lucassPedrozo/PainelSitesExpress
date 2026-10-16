@@ -5,7 +5,7 @@ import {
   type PublicationSettings,
 } from "@/lib/api/deploy";
 import type { ValidationErrors } from "./deploy-types";
-import { Field } from "./field";
+import { Field } from "@/components/field";
 import { advancedFilledCount, hasAdvancedError } from "./validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,8 @@ export function AdvancedOptions({
 
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
+      {/* Gatilho de colapsável: ocupa a linha toda para o selo e a seta
+          ficarem nas pontas — é o único ajuste fora da variante. */}
       <CollapsibleTrigger asChild>
         <Button
           type="button"
@@ -74,7 +76,7 @@ export function AdvancedOptions({
           size="sm"
           className="w-full justify-start"
         >
-          <Settings2 className="size-4" />
+          <Settings2 />
           Opções avançadas
           {advancedInvalid ? (
             <Badge variant="destructive" className="ml-1.5">
@@ -88,10 +90,7 @@ export function AdvancedOptions({
             )
           )}
           <ChevronDown
-            className={cn(
-              "ml-auto size-4 transition-transform",
-              open && "rotate-180",
-            )}
+            className={cn("ml-auto transition-transform", open && "rotate-180")}
           />
         </Button>
       </CollapsibleTrigger>

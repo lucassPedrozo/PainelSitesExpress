@@ -4,12 +4,18 @@ import { EventEmitter } from "node:events";
  * A fila do motor Claude: uma, para o painel inteiro. Gerar em lote é pôr
  * vários pedidos nela.
  *
- * A criação de um site (briefing, geração, continuação, crítica e refino)
- * roda uma de cada vez: cada site é comparado com os anteriores, e dois
- * nascendo juntos não se enxergariam. O ajuste de um site já entregue não
- * depende de nenhum outro: roda ao lado da criação, e até `vagas` ajustes
- * rodam ao mesmo tempo. Nunca duas execuções no mesmo site. Com `vagas` em
- * zero, tudo volta a rodar um de cada vez.
+ * Há duas cotas, uma ao lado da outra: a da criação de sites (briefing,
+ * geração, continuação, crítica e refino) e a dos ajustes de sites já
+ * entregues. Até `vagas().criacoes` sites nascem ao mesmo tempo e até
+ * `vagas().ajustes` ajustes rodam juntos; uma cota não espera a outra. Nunca
+ * duas execuções no mesmo site. Com `ajustes` em zero, tudo volta a rodar um
+ * de cada vez.
+ *
+ * Um site em criação não perde a vez entre uma etapa e a seguinte: quando uma
+ * execução termina, a vaga dela fica segura enquanto `seguir` põe na fila o
+ * passo seguinte do mesmo site, e esse passo (`primeiro`) passa à frente dos
+ * pedidos que ainda nem começaram. Sem isso, o site que esperava a vez
+ * entrava no meio e o que já estava andando parava até outro terminar.
  *
  * O que fica guardado é só o bastante para o painel reabrir sabendo o que
  * estava na fila e o que estava rodando. Depois de um reinício a fila volta
@@ -27,12 +33,16 @@ import { EventEmitter } from "node:events";
  *   id: string, pedido: Pedido, frase: string, criadoEm: string,
  *   estado: "esperando" | "rodando" | "interrompida", inicio?: string,
  *   slug?: string, sessionId?: string, execucaoId?: string,
- *   extra?: Record<string, any>,
+ *   extra?: Record<string, any>, primeiro?: boolean,
  * }} ItemDaFila `slug`, `sessionId` e `execucaoId` são preenchidos enquanto
  *   roda, assim que o executor descobre: servem para retomar o que foi
  *   interrompido. `extra` é do painel: o projeto, quem pediu e, na sequência
- *   de um site, os passos que ela já deu.
- * @typedef {{ item: ItemDaFila, resultado?: ResultadoDaExecucao, erro?: string, status?: number }} FimDeItem
+ *   de um site, os passos que ela já deu. `primeiro`: passa à frente de quem
+ *   ainda não começou (o passo seguinte de um site em andamento).
+ * @typedef {{ item: ItemDaFila, resultado?: ResultadoDaExecucao, erro?: string, status?: number,
+ *   seguindo?: Promise<void> }} FimDeItem `seguindo`: o `seguir` deste fim, quando ele devolveu
+ *   uma promessa; resolve (nunca rejeita) quando a vaga é liberada.
+ * @typedef {{ criacoes: number, ajustes: number }} Vagas
  * @typedef {{
  *   rodando: ItemDaFila | null, rodandoTodos: ItemDaFila[], esperando: ItemDaFila[],
  *   interrompidas: ItemDaFila[], pausada: boolean, ultimo: FimDeItem | null,
@@ -46,7 +56,13 @@ import { EventEmitter } from "node:events";
 const alvoDe = (/** @type {ItemDaFila} */ item) =>
   item.slug ?? ("slug" in item.pedido ? item.pedido.slug : `cliente:${item.pedido.pasta}`);
 
-const ehAjuste = (/** @type {ItemDaFila} */ item) => item.pedido.tipo === "ajuste";
+/** Os ajustes — do motor e a edição livre de um site de repositório — rodam na cota deles. */
+const ehAjuste = (/** @type {ItemDaFila} */ item) => item.pedido.tipo === "ajuste" || item.pedido.tipo === "edicao";
+
+/** Quanto a vaga espera o `seguir` de quem terminou antes de passar adiante. */
+const ESPERA_DO_SEGUIR_MS = 2 * 60_000;
+
+const inteiro = (valor) => Math.max(0, Math.floor(Number(valor) || 0));
 
 /**
  * Eventos: `mudou` (EstadoDaFila), `evento` (EventoDaExecucao e o item) e
@@ -59,6 +75,8 @@ export class Fila extends EventEmitter {
   #interrompidas = [];
   /** As execuções em andamento, na ordem em que começaram. @type {Map<string, { item: ItemDaFila, exec: Execucao }>} */
   #rodando = new Map();
+  /** As que já terminaram e ainda seguram a vaga, à espera do `seguir`. @type {Map<string, ItemDaFila>} */
+  #segurando = new Map();
   #pausada = false;
   /** @type {FimDeItem | null} */
   #ultimo = null;
@@ -66,24 +84,29 @@ export class Fila extends EventEmitter {
   #iniciar;
   #salvar;
   #vagas;
+  #seguir;
 
   /**
    * @param {{
    *   iniciar: Iniciar,
    *   salvos?: ItemDaFila[] | null,
    *   salvar?: (itens: ItemDaFila[]) => unknown,
-   *   vagas?: () => number,
+   *   vagas?: () => Partial<Vagas>,
+   *   seguir?: (fim: FimDeItem) => unknown,
    * }} opcoes
    *   `salvos`: os itens que estavam guardados quando o painel subiu.
    *   `salvar`: chamado a cada mudança, com tudo o que precisa sobreviver a um reinício.
-   *   `vagas`: quantos ajustes rodam ao mesmo tempo, lido a cada pedido que
-   *   pode começar. Zero: nada roda junto.
+   *   `vagas`: quantos sites nascem e quantos ajustes rodam ao mesmo tempo,
+   *   lido a cada pedido que pode começar. Ajustes em zero: nada roda junto.
+   *   `seguir`: chamado quando uma execução termina; se devolver uma promessa,
+   *   a vaga dela só passa adiante quando a promessa acabar (ou demorar demais).
    */
-  constructor({ iniciar, salvos = null, salvar = () => undefined, vagas = () => 0 }) {
+  constructor({ iniciar, salvos = null, salvar = () => undefined, vagas = () => ({}), seguir = () => undefined }) {
     super();
     this.#iniciar = iniciar;
     this.#salvar = salvar;
     this.#vagas = vagas;
+    this.#seguir = seguir;
     if (!Array.isArray(salvos) || salvos.length === 0) return;
 
     this.#interrompidas = salvos
@@ -115,11 +138,12 @@ export class Fila extends EventEmitter {
 
   /**
    * @param {Pedido} pedido
-   * @param {{ frase: string, extra?: Record<string, any> }} dados a frase do
-   *   runbook que vai ao claude, já conferida pelo motor
+   * @param {{ frase: string, extra?: Record<string, any>, primeiro?: boolean }} dados a frase do
+   *   runbook que vai ao claude, já conferida pelo motor. `primeiro`: entra
+   *   na frente de quem espera sem `primeiro` (atrás dos outros que têm).
    * @returns {ItemDaFila}
    */
-  adicionar(pedido, { frase, extra }) {
+  adicionar(pedido, { frase, extra, primeiro = false }) {
     /** @type {ItemDaFila} */
     const item = {
       id: `${Date.now().toString(36)}-${++this.#seq}`,
@@ -128,8 +152,11 @@ export class Fila extends EventEmitter {
       criadoEm: new Date().toISOString(),
       estado: "esperando",
       ...(extra ? { extra } : {}),
+      ...(primeiro ? { primeiro: true } : {}),
     };
-    this.#esperando.push(item);
+    const antesDe = primeiro ? this.#esperando.findIndex((outro) => !outro.primeiro) : -1;
+    if (antesDe < 0) this.#esperando.push(item);
+    else this.#esperando.splice(antesDe, 0, item);
     this.#mudou();
     this.#processar();
     return item;
@@ -206,16 +233,42 @@ export class Fila extends EventEmitter {
     this.emit("mudou", this.estado());
   }
 
-  /** O pedido pode começar agora, com o que já está rodando? */
+  /** O pedido pode começar agora, com o que já está rodando (ou segurando a vaga)? */
   #cabe(item) {
-    const rodando = [...this.#rodando.values()].map((atual) => atual.item);
-    if (rodando.length === 0) return true;
-    const vagas = Math.max(0, Math.floor(Number(this.#vagas()) || 0));
-    if (vagas === 0) return false;
-    if (rodando.some((outro) => alvoDe(outro) === alvoDe(item))) return false;
-    return ehAjuste(item)
-      ? rodando.filter(ehAjuste).length < vagas
-      : !rodando.some((outro) => !ehAjuste(outro));
+    const ocupando = [...[...this.#rodando.values()].map((atual) => atual.item), ...this.#segurando.values()];
+    if (ocupando.length === 0) return true;
+    const vagas = this.#vagas() ?? {};
+    const ajustes = inteiro(vagas.ajustes);
+    if (ajustes === 0) return false;
+    if (ocupando.some((outro) => alvoDe(outro) === alvoDe(item))) return false;
+    const limite = ehAjuste(item) ? ajustes : Math.max(1, inteiro(vagas.criacoes));
+    return ocupando.filter((outro) => ehAjuste(outro) === ehAjuste(item)).length < limite;
+  }
+
+  /**
+   * O `seguir` de um fim, como promessa que nunca rejeita e não passa do
+   * prazo; `null` quando ele não devolveu promessa (a vaga passa adiante já).
+   * @param {FimDeItem} fim
+   * @returns {Promise<void> | null}
+   */
+  #seguirDe(fim) {
+    /** @type {any} */
+    let retorno;
+    try {
+      retorno = this.#seguir(fim);
+    } catch {
+      return null;
+    }
+    if (typeof retorno?.then !== "function") return null;
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let relogio;
+    const prazo = new Promise((ok) => {
+      relogio = setTimeout(ok, ESPERA_DO_SEGUIR_MS);
+      relogio.unref?.();
+    });
+    return Promise.race([Promise.resolve(retorno).then(() => undefined, () => undefined), prazo]).finally(() =>
+      clearTimeout(relogio),
+    );
   }
 
   /** Começa, na ordem de chegada, cada pedido que cabe ao lado do que já roda. */
@@ -261,10 +314,18 @@ export class Fila extends EventEmitter {
       )
       .then((fim) => {
         this.#rodando.delete(item.id);
+        const seguindo = this.#seguirDe(fim);
+        // A vaga fica com este site até o passo seguinte dele entrar na fila.
+        if (seguindo) this.#segurando.set(item.id, fim.item);
         this.#ultimo = fim;
         this.#mudou();
-        this.emit("fim", fim);
-        this.#processar();
+        this.emit("fim", seguindo ? { ...fim, seguindo } : fim);
+        const liberar = () => {
+          this.#segurando.delete(item.id);
+          this.#processar();
+        };
+        if (seguindo) void seguindo.then(liberar);
+        else liberar();
       });
   }
 }

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import {
+  AlertCircle,
   CheckCircle2,
   ExternalLink,
   Loader2,
   PlayCircle,
   RefreshCw,
+  Save,
   Settings2,
   XCircle,
 } from "lucide-react";
@@ -15,22 +17,31 @@ import type { Project } from "@/lib/api";
 import { setGenerationRepository } from "@/lib/api";
 import { latestGeneration } from "@/features/projects/project-status";
 import { lovableEditorUrl } from "@/features/projects/next-step";
+import { noPermission } from "@/features/projects/project-actions";
 import { deployApi, isRunActive, type WorkflowRun } from "@/lib/api/deploy";
 import { projectIdentity } from "@/lib/format";
+import { usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Reason } from "@/components/disabled-hint";
+import { ErrorNotice } from "@/components/page-header";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
+  DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { errorMessage } from "./deploy-placeholders";
 import type { ValidationErrors } from "./deploy-types";
-import { PublicationForm } from "./publication-form";
+import { PublicationFields } from "./publication-form";
+import { OutdatedWorkflowsAlert } from "./publication-summary";
 import {
   publishTargetOf,
   readyToPublish,
@@ -38,7 +49,6 @@ import {
 } from "./publish-target";
 import { RepositoryPicker } from "./repository-picker";
 import { SuggestionNote } from "./suggestion-note";
-import { configuredRepositories } from "./settings-store";
 import {
   useDeployStatus,
   usePublications,
@@ -55,6 +65,10 @@ import { serverErrorField, validateSettings } from "./validation";
  * o repositório já sugerido, a configuração pronta quando o painel já
  * publicou este domínio, e um botão. O formulário só aparece quando falta
  * alguma coisa, e salvar já publica. A aba Deploy continua para o resto.
+ *
+ * Molde de diálogo alto: cabeçalho com o projeto, o domínio e o estado;
+ * corpo que rola sozinho; rodapé só com "Cancelar" e a ação principal da
+ * vez — que antes ficava no fim de uma rolagem, junto com o cabeçalho.
  */
 export default function PublishDialog({
   project,
@@ -68,7 +82,7 @@ export default function PublishDialog({
 }) {
   return (
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] flex-col gap-4 overflow-y-auto sm:max-w-2xl">
+      <DialogContent layout="sectioned" className="sm:max-w-2xl">
         {project && (
           <PublishContent
             key={project.id}
@@ -92,6 +106,8 @@ function PublishContent({
   const painel = useDeployStatus();
   const publicacoes = usePublications();
   const target = useMemo(() => publishTargetOf(project), [project]);
+  const podePublicar = usePermissions().can("publicar");
+  const formId = useId();
 
   const [chosenId, setChosenId] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -240,148 +256,250 @@ function PublishContent({
     return () => window.clearInterval(timer);
   }, [esperandoExecucao, reloadRuns]);
 
-  if (painel.status?.setupRequired) {
-    return (
-      <>
-        <Header project={project} />
-        <p className="text-sm text-muted-foreground">
-          A publicação ainda não foi configurada (token do GitHub e organização).
-        </p>
-        <Button className="self-start" onClick={onOpenDeployTab}>
-          Abrir a seção Deploy
-        </Button>
-      </>
-    );
-  }
+  const label = projectIdentity(project).label;
+  const dominio = publicacao?.domain || target.domain || "sem domínio na coleta";
+  const mostrarPronto = Boolean(repo) && pronto && !editing;
+  const mostrarFormulario =
+    Boolean(repo) && (!pronto || editing) && !repositorio.isCheckingWorkflow;
+  const carregando = !painel.status && !painel.statusError;
+  const semConfiguracao = Boolean(painel.status?.setupRequired);
+  // "Nenhum repositório para este site" só quando a lista respondeu: uma
+  // falha ou uma lista que ainda vem a caminho não são a mesma coisa.
+  const semRepositorio =
+    !repo && painel.reposLoaded && !painel.reposError && !painel.isLoadingRepos;
+
+  /** O estado em poucas palavras, no cabeçalho, ao lado do domínio. */
+  const estado = painel.statusError
+    ? "sem conexão com a API"
+    : carregando
+      ? "carregando…"
+      : semConfiguracao
+        ? "publicação não configurada no painel"
+        : dispatchedAt
+          ? !execucao
+            ? "esperando o GitHub…"
+            : isRunActive(execucao)
+              ? "publicando…"
+              : execucao.conclusion === "success"
+                ? "publicado"
+                : "a publicação falhou"
+          : painel.reposError && !repo
+            ? "não foi possível ler os repositórios"
+            : !repo
+              ? painel.isLoadingRepos || !painel.reposLoaded
+                ? "lendo os repositórios…"
+                : "sem repositório no GitHub"
+              : repositorio.isCheckingWorkflow && !pronto
+                ? "conferindo o repositório…"
+                : mostrarPronto
+                  ? "pronto para publicar"
+                  : editing
+                    ? "alterando a configuração"
+                    : "falta configurar a publicação";
 
   return (
     <>
-      <Header project={project} />
+      <DialogHeader>
+        <DialogTitle className="truncate" title={label}>
+          Publicar — {label}
+        </DialogTitle>
+        <DialogDescription>
+          {dominio} · {estado}
+        </DialogDescription>
+      </DialogHeader>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="publish-repo">Repositório</Label>
+      <DialogBody className="space-y-4">
+        {painel.statusError ? (
+          <ErrorNotice
+            title="Não foi possível conectar à API"
+            error={painel.statusError}
+            onRetry={() => void painel.reloadStatus()}
+          />
+        ) : carregando ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Carregando a configuração de publicação…
+          </p>
+        ) : semConfiguracao ? (
+          <p className="text-sm text-muted-foreground">
+            A publicação ainda não foi configurada (token do GitHub e organização). Isso é feito na
+            seção Deploy.
+          </p>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="publish-repo">Repositório</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  disabled={painel.isLoadingRepos}
+                  onClick={() => void painel.reloadRepos()}
+                  title="Um repositório recém-conectado no Lovable aparece depois de reler a lista do GitHub"
+                >
+                  <RefreshCw className={painel.isLoadingRepos ? "animate-spin" : undefined} />
+                  Reler repositórios
+                </Button>
+              </div>
+              <RepositoryPicker
+                id="publish-repo"
+                repos={painel.repos}
+                selected={repo}
+                loading={painel.isLoadingRepos}
+                configured={publicacoes.configured}
+                domains={publicacoes.domains}
+                open={pickerOpen}
+                onOpenChange={setPickerOpen}
+                onSelect={(item) => {
+                  setChosenId(item.id);
+                  setErrors({});
+                  setPickerOpen(false);
+                }}
+              />
+              {!escolhido && sugestao && (
+                <SuggestionNote suggestion={sugestao} lovableName={site?.lovableName ?? null} />
+              )}
+            </div>
+
+            {painel.reposError && !repo ? (
+              <ErrorNotice
+                title="Não foi possível ler os repositórios do GitHub"
+                error={painel.reposError}
+                onRetry={() => void painel.reloadRepos()}
+                className="rounded-lg border"
+              />
+            ) : (
+              semRepositorio && (
+                <ConnectGitHubNote
+                  organization={painel.status?.organization ?? ""}
+                  repoName={target.lovableRepoNames[0] ?? null}
+                  editorUrl={lovableEditorUrl(project)}
+                />
+              )
+            )}
+
+            {repo && repositorio.isCheckingWorkflow && !pronto && (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Conferindo o repositório…
+              </p>
+            )}
+
+            {/* Não deu para ler os workflows: o formulário continua (salvar
+                grava tudo de novo), mas a tela não finge que eles não existem. */}
+            {repo && Boolean(repositorio.workflowsError) && !repositorio.isCheckingWorkflow && (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>Não foi possível conferir os workflows do repositório</AlertTitle>
+                <AlertDescription>
+                  <span className="block">
+                    {errorMessage(repositorio.workflowsError) ?? "Tente de novo em alguns instantes."}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="xs"
+                    className="px-0"
+                    onClick={() => void repositorio.reloadWorkflows()}
+                  >
+                    Tentar novamente
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* O aviso de versão antiga aparece uma vez, com a mesma
+                instrução do resumo na seção Deploy. */}
+            {repo && repositorio.outdatedWorkflows.length > 0 && <OutdatedWorkflowsAlert />}
+
+            {mostrarPronto && (
+              <div className="flex flex-wrap items-start gap-3 rounded-lg border p-4">
+                <p className="flex min-w-0 flex-1 items-start gap-2 text-sm">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+                  <span>
+                    Tudo configurado para <b className="font-medium">{publicacao?.domain}</b>. A
+                    senha FTP já está no repositório; publicar roda o build e o envio por FTP no
+                    GitHub Actions, e o selo do projeto acompanha até o fim.
+                  </span>
+                </p>
+                <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
+                  <Settings2 />
+                  Alterar configuração
+                </Button>
+              </div>
+            )}
+
+            {mostrarFormulario && (
+              <form id={formId} onSubmit={saveAndPublish} noValidate>
+                <PublicationFields
+                  settings={settings.settings}
+                  errors={errors}
+                  suggestedDomain={target.domain}
+                  advancedOpen={advancedOpen}
+                  onAdvancedOpenChange={setAdvancedOpen}
+                  onChange={(patch) => {
+                    settings.update(patch);
+                    setErrors((current) => {
+                      const next = { ...current };
+                      for (const key of Object.keys(patch)) delete next[key as keyof ValidationErrors];
+                      return next;
+                    });
+                  }}
+                />
+              </form>
+            )}
+
+            {dispatchedAt && <RunProgress run={execucao} />}
+          </>
+        )}
+
+        {/* Sem configuração, abrir a seção Deploy já é a ação principal, no
+            rodapé — aqui ela só repetiria. */}
+        {!semConfiguracao && (
           <Button
             type="button"
-            variant="ghost"
+            variant="link"
             size="xs"
-            className="text-muted-foreground"
-            disabled={painel.isLoadingRepos}
-            onClick={() => void painel.reloadRepos()}
-            title="Reler a lista do GitHub — um repositório recém-conectado aparece aqui"
+            className="px-0 text-muted-foreground"
+            onClick={onOpenDeployTab}
           >
-            <RefreshCw className={painel.isLoadingRepos ? "size-3 animate-spin" : "size-3"} />
-            Atualizar
+            Abrir na seção Deploy (simulação, workflows e histórico)
           </Button>
-        </div>
-        <RepositoryPicker
-          id="publish-repo"
-          repos={painel.repos}
-          selected={repo}
-          loading={painel.isLoadingRepos}
-          configured={configuredRepositories()}
-          domains={
-            new Map(
-              publicacoes.items
-                .filter((item) => item.domain)
-                .map((item) => [item.repoFullName, item.domain as string]),
-            )
-          }
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          onSelect={(item) => {
-            setChosenId(item.id);
-            setErrors({});
-            setPickerOpen(false);
-          }}
-        />
-        {!escolhido && sugestao && (
-          <SuggestionNote suggestion={sugestao} lovableName={site?.lovableName ?? null} />
         )}
-        {!repo && !painel.isLoadingRepos && (
-          <ConnectGitHubNote
-            organization={painel.status?.organization ?? ""}
-            repoName={target.lovableRepoNames[0] ?? null}
-            editorUrl={lovableEditorUrl(project)}
-          />
+      </DialogBody>
+
+      {/* Rodapé só com ações: "Cancelar" ao lado da principal da vez. O
+          motivo de a principal estar travada fica escrito, à esquerda. */}
+      <DialogFooter>
+        {(mostrarPronto || mostrarFormulario) && !podePublicar && (
+          <Reason className="sm:mr-auto">{noPermission.publicar}</Reason>
         )}
-      </div>
-
-      {repo && repositorio.isCheckingWorkflow && !pronto && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          Conferindo o repositório…
-        </p>
-      )}
-
-      {repo && pronto && !editing && (
-        <div className="space-y-3 rounded-lg border p-4">
-          <p className="flex items-center gap-2 text-sm">
-            <CheckCircle2 className="size-4 shrink-0 text-success" />
-            <span>
-              Tudo configurado para <b className="font-medium">{publicacao?.domain}</b>.
-              A senha FTP já está no repositório.
-            </span>
-          </p>
-          {repositorio.outdatedWorkflows.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Os workflows são de uma versão antiga do painel — publicam
-              normalmente, mas sem a conferência da assinatura Joinvix no build.
-              “Alterar configuração” atualiza (pede a senha FTP).
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button disabled={busy !== null} onClick={() => void dispatch()}>
-              {busy === "dispatching" ? <Loader2 className="animate-spin" /> : <PlayCircle />}
-              Publicar agora
-            </Button>
-            <Button variant="ghost" onClick={() => setEditing(true)}>
-              <Settings2 />
-              Alterar configuração
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {repo && (!pronto || editing) && !repositorio.isCheckingWorkflow && (
-        <form onSubmit={saveAndPublish} noValidate className="space-y-3">
-          {repositorio.outdatedWorkflows.length > 0 && (
-            <Alert variant="warning">
-              <Settings2 />
-              <AlertTitle>Workflows de uma versão antiga do painel — salvar atualiza.</AlertTitle>
-            </Alert>
-          )}
-          <PublicationForm
-            settings={settings.settings}
-            errors={errors}
-            isSaving={busy !== null}
-            disabled={busy !== null}
-            suggestedDomain={target.domain}
-            advancedOpen={advancedOpen}
-            onAdvancedOpenChange={setAdvancedOpen}
-            onChange={(patch) => {
-              settings.update(patch);
-              setErrors((current) => {
-                const next = { ...current };
-                for (const key of Object.keys(patch)) delete next[key as keyof ValidationErrors];
-                return next;
-              });
-            }}
-            submitLabel="Salvar e publicar"
-            showStep={false}
-          />
-        </form>
-      )}
-
-      {dispatchedAt && <RunProgress run={execucao} />}
-
-      <button
-        type="button"
-        className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-        onClick={onOpenDeployTab}
-      >
-        Abrir na seção Deploy (simulação, workflows e histórico)
-      </button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            {dispatchedAt ? "Fechar" : "Cancelar"}
+          </Button>
+        </DialogClose>
+        {semConfiguracao ? (
+          <Button type="button" onClick={onOpenDeployTab}>
+            Abrir a seção Deploy
+          </Button>
+        ) : mostrarPronto ? (
+          <Button
+            type="button"
+            disabled={busy !== null || !podePublicar}
+            onClick={() => void dispatch()}
+          >
+            {busy === "dispatching" ? <Loader2 className="animate-spin" /> : <PlayCircle />}
+            Publicar agora
+          </Button>
+        ) : mostrarFormulario ? (
+          <Button type="submit" form={formId} disabled={busy !== null || !podePublicar}>
+            {busy !== null ? <Loader2 className="animate-spin" /> : <Save />}
+            {busy !== null ? "Gravando..." : "Salvar e publicar"}
+          </Button>
+        ) : null}
+      </DialogFooter>
     </>
   );
 }
@@ -411,28 +529,17 @@ function ConnectGitHubNote({
             <code className="rounded bg-muted px-1 text-foreground">{repoName}</code>
           </>
         ) : null}
-        . Depois, volte aqui e clique em <b className="font-medium">Atualizar</b>.
+        . Depois, volte aqui e clique em <b className="font-medium">Reler repositórios</b>.
       </p>
       {editorUrl && (
         <Button asChild size="sm" variant="outline">
           <a href={editorUrl} target="_blank" rel="noreferrer">
-            <ExternalLink className="size-3.5" />
+            <ExternalLink />
             Abrir no Lovable
           </a>
         </Button>
       )}
     </div>
-  );
-}
-
-function Header({ project }: { project: Project }) {
-  return (
-    <DialogHeader>
-      <DialogTitle>Publicar — {projectIdentity(project).label}</DialogTitle>
-      <DialogDescription>
-        Build e envio por FTP no GitHub Actions. O selo do card acompanha até o fim.
-      </DialogDescription>
-    </DialogHeader>
   );
 }
 

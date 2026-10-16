@@ -31,6 +31,9 @@ export const queryKeys = {
   claudeOptions: (projectId: string) => ["claude", "options", projectId],
   claudePushPlan: (projectId: string) => ["claude", "push-plan", projectId],
   claudeAdoptPlan: (projectId: string) => ["claude", "adopt-plan", projectId],
+  // Sob o prefixo "claude": as telas do motor o invalidam a cada passo de uma execução.
+  repoEdits: (projectId: string) => ["claude", "repo-edits", projectId],
+  repoVersion: (projectId: string) => ["repo-version", projectId],
   lovableStatus: ["lovable", "status"],
   lovableWorkspaces: ["lovable", "workspaces"],
   stockImagesStatus: ["images", "status"],

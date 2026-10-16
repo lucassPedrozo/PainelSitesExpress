@@ -2,6 +2,7 @@ import { Clock, ExternalLink, Hourglass, Loader2 } from "lucide-react";
 import type { Project } from "@/lib/api";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { formatTime } from "@/lib/format";
 import { formatElapsed, progressOf, type ProgressModel } from "./project-progress";
 
 /**
@@ -9,83 +10,10 @@ import { formatElapsed, progressOf, type ProgressModel } from "./project-progres
  * geração no Lovable (fases e ação atual) ou a publicação (passo do deploy).
  * Some quando nada roda.
  */
-export function ProjectProgress({
-  project,
-  className,
-  compact = false,
-}: {
-  project: Project;
-  className?: string;
-  /** Duas linhas de altura fixa (o card): título e barra, com o passo no título. */
-  compact?: boolean;
-}) {
+export function ProjectProgress({ project, className }: { project: Project; className?: string }) {
   const model = progressOf(project);
   if (!model) return null;
-  if (compact) return <CompactProgress model={model} className={className} />;
   return <ProgressBody model={model} className={className} />;
-}
-
-/**
- * O andamento em duas linhas, para caber no card sem mudar a altura dele: a
- * primeira diz o quê e há quanto tempo; a segunda é a barra (as quatro fases
- * da geração, ou o avanço do deploy). O passo atual fica no título ao passar
- * o mouse, e completo no modal do projeto.
- */
-function CompactProgress({ model, className }: { model: ProgressModel; className?: string }) {
-  const esperando = model.kind === "agent" && model.waiting;
-  const naFila = model.kind === "agent" && model.queued === true;
-  const detalhe = model.kind === "agent" ? [model.current, model.counts].filter(Boolean).join(" · ") : model.step;
-  return (
-    <div
-      className={cn("min-w-0 flex-1 space-y-1 text-xs", className)}
-      title={detalhe || undefined}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <div className="flex items-center gap-1.5">
-        {esperando ? (
-          <Hourglass className="size-3.5 shrink-0 text-destructive" />
-        ) : naFila ? (
-          <Clock className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-info" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-medium">{model.title}</span>
-        <span className="text-muted-foreground">
-          <Elapsed startedAt={model.startedAt} waiting={esperando || naFila} />
-        </span>
-      </div>
-      {model.kind === "agent" ? (
-        <div
-          className="grid gap-1"
-          style={{ gridTemplateColumns: `repeat(${model.phases.length}, minmax(0, 1fr))` }}
-          aria-label="Fases da geração"
-        >
-          {model.phases.map((fase) => (
-            <div
-              key={fase.label}
-              title={fase.label}
-              className={cn(
-                "h-1 rounded-full",
-                fase.state === "done" && "bg-info",
-                fase.state === "active" && (esperando ? "bg-destructive/60" : "animate-pulse bg-info/70"),
-                fase.state === "todo" && "bg-muted-foreground/20",
-              )}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="h-1 overflow-hidden rounded-full bg-muted-foreground/20">
-          <div
-            className={cn(
-              "h-full rounded-full bg-info transition-[width] duration-700",
-              model.fraction === null && "w-1/4 animate-pulse",
-            )}
-            style={model.fraction === null ? undefined : { width: `${Math.max(5, model.fraction * 100)}%` }}
-          />
-        </div>
-      )}
-    </div>
-  );
 }
 
 function Elapsed({ startedAt, waiting }: { startedAt: string | null; waiting?: boolean }) {
@@ -93,7 +21,7 @@ function Elapsed({ startedAt, waiting }: { startedAt: string | null; waiting?: b
   const inicio = startedAt ? Date.parse(startedAt) : Number.NaN;
   if (!Number.isFinite(inicio)) return null;
   return (
-    <span className="shrink-0 tabular-nums" title={`Começou às ${new Date(inicio).toLocaleTimeString("pt-BR")}`}>
+    <span className="shrink-0 tabular-nums" title={`Começou às ${formatTime(inicio)}`}>
       {waiting ? "há " : ""}
       {formatElapsed(now - inicio)}
     </span>

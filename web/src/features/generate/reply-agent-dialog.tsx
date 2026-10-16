@@ -7,9 +7,13 @@ import { projectIdentity } from "@/lib/format";
 import { latestGeneration } from "@/features/projects/project-status";
 import { lovableEditorUrl } from "@/features/projects/next-step";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { noPermission } from "@/features/projects/project-actions";
+import { usePermissions } from "@/lib/permissions";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -60,10 +64,21 @@ function ReplyForm({
   project: Project;
   onDone: (generation: Generation) => void;
 }) {
+  const { can } = usePermissions();
   const site = latestGeneration(project);
   const editor = lovableEditorUrl(project);
   const [message, setMessage] = useState("Pode seguir.");
   const [sending, setSending] = useState(false);
+
+  // Por que "Enviar resposta" não está livre, escrito no rodapé. A permissão é
+  // a mesma que o servidor exige para responder.
+  const motivo = !can("gerar")
+    ? noPermission.gerar
+    : !site?.id
+      ? "O painel não tem o projeto do Lovable deste site: responda pelo editor do Lovable."
+      : !message.trim()
+        ? "Escreva a resposta ao agente."
+        : null;
 
   const send = async () => {
     if (!site?.id) return;
@@ -102,6 +117,19 @@ function ReplyForm({
             </span>
           )}
         </div>
+        {/* O editor fica a um clique, para quando a pergunta pede mais do que
+            uma linha — fora do rodapé, que é só de responder ou desistir. */}
+        {editor && (
+          <a
+            href={editor}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            <ExternalLink className="size-3" />
+            Ver a conversa no Lovable
+          </a>
+        )}
 
         <div className="space-y-1.5">
           <Label htmlFor="agent-reply">Sua resposta</Label>
@@ -117,28 +145,19 @@ function ReplyForm({
         </div>
       </div>
 
-      <DialogFooter className="gap-2 sm:justify-between">
-        {editor ? (
-          <Button asChild variant="outline">
-            <a href={editor} target="_blank" rel="noreferrer">
-              <ExternalLink className="size-4" />
-              Abrir no Lovable
-            </a>
+      <DialogFooter>
+        {motivo && <Reason className="sm:mr-auto">{motivo}</Reason>}
+        <DialogClose asChild>
+          <Button variant="outline" disabled={sending}>
+            Cancelar
           </Button>
-        ) : (
-          <span />
-        )}
-        <Button
-          disabled={sending || !message.trim() || !site?.id}
-          onClick={() => void send()}
-        >
-          {sending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <MessageSquareReply className="size-4" />
-          )}
-          Enviar resposta
-        </Button>
+        </DialogClose>
+        <DisabledHint reason={motivo}>
+          <Button disabled={sending || Boolean(motivo)} onClick={() => void send()}>
+            {sending ? <Loader2 className="animate-spin" /> : <MessageSquareReply />}
+            Enviar resposta
+          </Button>
+        </DisabledHint>
       </DialogFooter>
     </>
   );

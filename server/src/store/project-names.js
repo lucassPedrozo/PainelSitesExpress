@@ -18,14 +18,19 @@ export async function listProjectNames() {
   return names;
 }
 
-/** Texto vazio apaga o apelido e devolve o nome da pasta do Drive. */
-export async function setProjectName(projectId, name) {
-  const data = await read();
+/** Confere o apelido sem gravar — para quem grava junto com outros campos. */
+export function checkProjectName(name) {
   const label = String(name ?? "").trim();
-
   if (label.length > MAX_NAME_LENGTH) {
     throw httpError(400, `Nome muito longo (máx. ${MAX_NAME_LENGTH})`);
   }
+  return label;
+}
+
+/** Texto vazio apaga o apelido e devolve o nome da pasta do Drive. */
+export async function setProjectName(projectId, name) {
+  const label = checkProjectName(name);
+  const data = await read();
 
   if (label) data.names[projectId] = label;
   else delete data.names[projectId];

@@ -1,10 +1,12 @@
 import { Check, ExternalLink, ImageOff, Loader2, Plus, Search, X } from "lucide-react";
 import type { StockCandidate, StockSearchResult } from "@/lib/api";
 import { stockThumbnailUrl } from "@/lib/api";
+import { pluralize } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { STOCK_ZIP_NAME, stockZipPath } from "@shared/stock-images.js";
+import { TechnicalCode, TechnicalDetails } from "@/features/claude/claude-shared";
 import { groupKey, newRowKey, type StockPick, type StockTermRow } from "./stock-images";
 import type { StockSearch } from "./use-stock-search";
 
@@ -12,11 +14,12 @@ import type { StockSearch } from "./use-stock-search";
  * Imagens de banco (Pixabay) para completar o material do cliente.
  *
  * Um termo por seção do site, como no script de busca da equipe ("hero:3",
- * "sobre:2"…). A busca não gasta crédito do Lovable e a chave do Pixabay fica
- * no servidor; as fotos marcadas são baixadas só na geração e sobem num anexo
+ * "sobre:2"…). A busca não gasta nada e a chave do Pixabay fica no servidor.
+ * No Lovable, as fotos marcadas são baixadas só na geração e sobem num anexo
  * só, `imagens-pixabay.zip`, com uma pasta por seção — o Lovable limita os
- * anexos por arquivo, e o zip conta como um. Um bloco próprio do prompt diz o
- * que há no zip e onde usar cada foto.
+ * anexos por arquivo, e o zip conta como um; um bloco próprio do prompt diz o
+ * que há no zip. No Claude, elas são baixadas para a pasta de trabalho junto
+ * com o material do briefing: não há zip nem bloco de prompt.
  *
  * Os termos e a busca vivem em `useStockSearch`, no formulário: é de lá que o
  * assistente preenche as buscas sugeridas.
@@ -26,6 +29,7 @@ export function StockImagesSection({
   picks,
   results,
   stockBlock,
+  engine = "lovable",
   className,
   onToggle,
 }: {
@@ -34,6 +38,8 @@ export function StockImagesSection({
   results: StockSearchResult[];
   /** O bloco que vai no fim do prompt — mostrado para não haver surpresa. */
   stockBlock: string;
+  /** Para quem as fotos vão: as regras do envio mudam com o motor. */
+  engine?: "lovable" | "claude";
   className?: string;
   onToggle: (candidate: StockCandidate, group: StockSearchResult) => void;
 }) {
@@ -49,9 +55,7 @@ export function StockImagesSection({
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-medium">
           Imagens de banco
-          <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-            {picks.size} {picks.size === 1 ? "marcada" : "marcadas"}
-          </span>
+          <span className="ml-1.5 text-xs font-normal text-muted-foreground">{pluralize(picks.size, "marcada")}</span>
         </h3>
         <a
           href="https://pixabay.com/"
@@ -75,16 +79,28 @@ export function StockImagesSection({
           <p className="mt-1 text-muted-foreground">
             {status.error
               ? `Não foi possível conferir a configuração do Pixabay (${status.error.message}). Se o painel acabou de ser atualizado, reinicie-o pelo lançador.`
-              : "Preencha a chave do Pixabay em Configurações → Geração de sites (PIXABAY_API_KEY). Os arquivos do Drive continuam indo normalmente."}
+              : `Preencha a chave do Pixabay em Configurações → Geração de sites (PIXABAY_API_KEY). ${
+                  engine === "claude"
+                    ? "Os arquivos do projeto continuam indo para o Claude normalmente."
+                    : "Os arquivos do Drive continuam indo normalmente."
+                }`}
           </p>
         </div>
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            Um termo por seção do site. A busca não gasta crédito. As fotos
-            marcadas vão juntas em <b className="font-medium">{STOCK_ZIP_NAME}</b>,
-            uma pasta por seção — o zip conta como um anexo só, qualquer que
-            seja a quantidade de fotos.
+            {engine === "claude" ? (
+              <>
+                Um termo por seção do site. A busca não gasta nada. As fotos marcadas são baixadas para a
+                pasta de trabalho do Claude, junto com o material que ele lê.
+              </>
+            ) : (
+              <>
+                Um termo por seção do site. A busca não gasta crédito. As fotos marcadas vão juntas em{" "}
+                <b className="font-medium">{STOCK_ZIP_NAME}</b>, uma pasta por seção — o zip conta como um anexo
+                só, qualquer que seja a quantidade de fotos.
+              </>
+            )}
           </p>
 
           <div className="space-y-1.5">
@@ -99,7 +115,7 @@ export function StockImagesSection({
                   maxLength={limits?.maxTermChars}
                   placeholder="Busca, ex.: padaria artesanal"
                   aria-label="Termo de busca"
-                  className="h-8 min-w-0 flex-1 text-sm"
+                  className="min-w-0 flex-1"
                 />
                 <Input
                   value={row.section}
@@ -107,7 +123,7 @@ export function StockImagesSection({
                   maxLength={limits?.maxSectionChars}
                   placeholder="Seção"
                   aria-label="Seção do site"
-                  className="h-8 w-28 text-sm"
+                  className="w-28"
                 />
                 <Input
                   type="number"
@@ -117,7 +133,7 @@ export function StockImagesSection({
                   onChange={(event) => update(row.key, { quantity: event.target.value })}
                   aria-label="Quantidade de fotos"
                   title="Quantas fotos vêm marcadas"
-                  className="h-8 w-16 text-sm tabular-nums"
+                  className="w-16 tabular-nums"
                 />
                 <Button
                   variant="ghost"
@@ -145,7 +161,7 @@ export function StockImagesSection({
                 ])
               }
             >
-              <Plus className="size-4" />
+              <Plus />
               Termo
             </Button>
             <Button
@@ -154,7 +170,7 @@ export function StockImagesSection({
               disabled={terms.length === 0 || searching}
               onClick={() => void search.search()}
             >
-              {searching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+              {searching ? <Loader2 className="animate-spin" /> : <Search />}
               Buscar imagens
             </Button>
           </div>
@@ -162,7 +178,7 @@ export function StockImagesSection({
           {error && <p className="text-xs text-destructive">{error}</p>}
           {limits && picks.size > limits.maxImages && (
             <p className="text-xs text-destructive">
-              {picks.size} fotos marcadas — o máximo por envio é {limits.maxImages}.
+              {pluralize(picks.size, "foto marcada", "fotos marcadas")} — o máximo por envio é {limits.maxImages}.
             </p>
           )}
 
@@ -187,14 +203,10 @@ export function StockImagesSection({
           </div>
 
           {stockBlock && (
-            <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer select-none hover:text-foreground">
-                Bloco que vai no fim do prompt
-              </summary>
-              <pre className="mt-1.5 max-h-40 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
-                {stockBlock}
-              </pre>
-            </details>
+            <TechnicalDetails>
+              <p>Bloco que vai no fim do prompt:</p>
+              <TechnicalCode>{stockBlock}</TechnicalCode>
+            </TechnicalDetails>
           )}
         </>
       )}
@@ -253,7 +265,7 @@ function StockGroup({
                     : `${image.tags}${image.user ? ` · foto de ${image.user}` : ""}`
                 }
                 className={cn(
-                  "relative aspect-[3/2] overflow-hidden rounded-md border bg-muted outline-none transition focus-visible:ring-2 focus-visible:ring-ring/60",
+                  "relative aspect-3/2 overflow-hidden rounded-md border bg-muted outline-none transition focus-visible:ring-2 focus-visible:ring-ring/60",
                   on ? "ring-2 ring-primary" : "opacity-80 hover:opacity-100",
                   emOutroGrupo && "cursor-not-allowed opacity-50",
                 )}

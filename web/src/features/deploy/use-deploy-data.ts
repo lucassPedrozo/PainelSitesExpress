@@ -1,7 +1,5 @@
-import { useEffect } from "react";
+import { useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { ApiError } from "@/lib/access-token";
 import {
   deployApi,
   isRunActive,
@@ -16,21 +14,12 @@ const RUN_POLL_INTERVAL_MS = 6_000;
 
 export const DEFAULT_DEPLOY_WORKFLOW = "Deploy-via-FTP.yml";
 
-/**
- * Avisa quando uma leitura falha.
- *
- * O 401 fica de fora: o cliente HTTP já leva o painel de volta à tela da chave
- * de acesso, e um toast aqui só faria ruído por cima disso.
+/*
+ * As leituras devolvem o erro em vez de avisar num toast. Antes uma falha
+ * sumia em segundos e a tela ficava com cara de vazia ("0 repositórios",
+ * "Nenhuma execução ainda"); agora cada lugar que lista mostra o erro com
+ * "Tentar novamente", no próprio lugar.
  */
-export function useErrorToast(error: unknown, title: string) {
-  useEffect(() => {
-    if (!error) return;
-    if (error instanceof ApiError && error.status === 401) return;
-    toast.error(title, {
-      description: error instanceof Error ? error.message : undefined,
-    });
-  }, [error, title]);
-}
 
 /**
  * O que a tela precisa antes de escolher um repositório: a configuração do
@@ -60,13 +49,14 @@ export function useDeployStatus() {
     staleTime: 60_000,
   });
 
-  useErrorToast(repos.error, "Não foi possível carregar os repositórios");
-
   return {
     status: status.data ?? null,
     statusError: status.error,
     repos: repos.data ?? [],
     isLoadingRepos: repos.isFetching,
+    /** A lista chegou ao menos uma vez: só então "nenhum repositório" é verdade. */
+    reposLoaded: repos.data !== undefined,
+    reposError: repos.error,
     deployWorkflowFile:
       status.data?.deployWorkflowFile ?? DEFAULT_DEPLOY_WORKFLOW,
     templateVersion: status.data?.workflowTemplateVersion,
@@ -82,31 +72,52 @@ export function useDeployStatus() {
  *
  * Uma consulta só para a tela inteira — o seletor mostra o domínio ao lado do
  * repositório, o formulário preenche o domínio que já é conhecido e o cartão
- * de publicações lista tudo. `byRepo` e `byDomain` evitam que cada um refaça
- * a busca na lista.
+ * de publicações lista tudo. Os mapas evitam que cada um refaça a busca na
+ * lista, e ficam estáveis entre renderizações (a sugestão de repositório
+ * depende deles).
  */
 export function usePublications() {
+  const queryClient = useQueryClient();
   const publications = useQuery({
     queryKey: queryKeys.publications,
     queryFn: () => deployApi.listPublications(),
     staleTime: 60_000,
   });
 
-  const items = publications.data?.publications ?? [];
-  const byRepo = new Map<string, Publication>(
-    items.map((item) => [item.repoFullName, item]),
-  );
-  const byDomain = new Map<string, Publication>();
-  for (const item of items) {
-    const domain = normalizeDomain(item.domain);
-    if (domain && !byDomain.has(domain)) byDomain.set(domain, item);
-  }
+  const data = publications.data;
+  const derived = useMemo(() => {
+    const items = data?.publications ?? [];
+    const byRepo = new Map<string, Publication>(
+      items.map((item) => [item.repoFullName, item]),
+    );
+    const byDomain = new Map<string, Publication>();
+    for (const item of items) {
+      const domain = normalizeDomain(item.domain);
+      if (domain && !byDomain.has(domain)) byDomain.set(domain, item);
+    }
+    /** Domínio de cada repositório, para o seletor mostrar de quem é o site. */
+    const domains = new Map(
+      items
+        .filter((item) => item.domain)
+        .map((item) => [item.repoFullName, item.domain as string]),
+    );
+    /**
+     * Repositórios que o painel configurou — o que o servidor gravou, e não
+     * o que este navegador lembra: o selo "configurado" do seletor dizia a
+     * verdade só na máquina de quem salvou.
+     */
+    const configured = new Set(
+      items.filter((item) => item.configuredAt).map((item) => item.repoFullName),
+    );
+    return { items, byRepo, byDomain, domains, configured };
+  }, [data]);
 
   return {
-    items,
+    ...derived,
     loading: publications.isPending,
-    byRepo,
-    byDomain,
+    error: publications.error,
+    reload: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.publications }),
   };
 }
 
@@ -147,17 +158,20 @@ export function useRepositoryData({
       (query.state.data ?? []).some(isRunActive) ? RUN_POLL_INTERVAL_MS : false,
   });
 
-  useErrorToast(workflows.error, "Falha ao verificar workflows");
-  // O histórico de execuções é informativo: falhar nele não interrompe o
-  // fluxo, e o recarregamento automático não pode virar fila de avisos.
-
   const files = workflows.data ?? [];
 
   return {
     workflowFiles: files,
     isCheckingWorkflow: workflows.isFetching,
+    /**
+     * A leitura de `.github/workflows` falhou. Sem isto, "nenhum arquivo" e
+     * "não deu para ler" eram a mesma lista vazia — e a tela afirmava que o
+     * workflow de deploy não existia.
+     */
+    workflowsError: workflows.error,
     runs: runs.data ?? [],
     isLoadingRuns: runs.isFetching,
+    runsError: runs.error,
     hasActiveRun: (runs.data ?? []).some(isRunActive),
     /** O gatilho de push lido do workflow de deploy, quando ele existe. */
     detectedAutoDeploy: files.find(

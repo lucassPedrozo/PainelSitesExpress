@@ -15,7 +15,7 @@ O painel tem duas seções, alternadas no cabeçalho:
 | **Projetos** | Coletas do Drive, tags, briefing e geração do site (Lovable ou Claude) |
 | **Deploy**   | Secrets, workflows e publicação dos repositórios da organização |
 
-O botão **Publicar** no card (e no modal) de um projeto que já gerou site leva direto
+O botão **Publicar** na linha (e no diálogo) de um projeto que já gerou site leva direto
 à seção Deploy, com o domínio preenchido a partir do nome da pasta e o repositório
 sugerido a partir do site gerado.
 
@@ -153,7 +153,8 @@ O arquivo `.env` na raiz define:
 | `CLAUDE_MODEL`            | Opcional: modelo do Claude Code; vazio usa o que o motor espera (`claude-opus-5-5`) |
 | `CLAUDE_REASONING_EFFORT`           | Opcional: esforço de raciocínio (`low`, `medium`, `high`, `xhigh`, `max`); vazio usa o que o motor espera |
 | `CLAUDE_REVIEW_ROUNDS`    | Opcional: rodadas de crítica e refino depois da geração, de `1` a `4`; vazio usa o padrão do motor |
-| `CLAUDE_PARALLEL_ADJUSTMENTS` | Opcional: quantos ajustes rodam ao mesmo tempo, ao lado da criação de um site, de `0` (tudo em uma fila só) a `4`; vazio usa `2` |
+| `CLAUDE_PARALLEL_SITES`   | Opcional: quantos sites nascem ao mesmo tempo (briefing, geração, crítica e refino), de `1` a `3`; vazio usa `3` |
+| `CLAUDE_PARALLEL_ADJUSTMENTS` | Opcional: quantos ajustes rodam ao mesmo tempo, ao lado da criação de sites, de `0` (tudo em uma fila só) a `5`; vazio usa `5` |
 | `CLAUDE_ART_DIRECTION`    | Opcional: direção de arte dos sites (`sobria`, `autoral`, `ousada`); vazio usa o padrão do motor |
 | `CLAUDE_MOTION`           | Opcional: movimento dos sites (`discreto`, `expressivo`, `cinematografico`); vazio usa o padrão do motor |
 | `CLAUDE_HUMAN_APPROVAL`   | Escolha da rota criativa: vazio usa o padrão do motor, `1` para depois da direção e espera alguém escolher, `0` segue |
@@ -338,31 +339,55 @@ para as conexões de entrada no painel.
 
 ## Funcionalidades
 
-- **Listagem dos projetos** com o domínio em primeiro plano e **um selo de estado** no
-  canto do card, derivado do próprio fluxo: *Publicação falhou* → *Publicando* →
-  *No ar* → *Prévia falhou* → *Link entregue caiu* → *Entregue* → *Pronto para
-  enviar* → *Parado no Lovable* → *Gerando no Lovable* → *Publicando prévia* → *Link
-  não abre* → *Conectar ao GitHub* → *Site gerado* → *Briefing
-  pronto* / *Material coletado* / *Sem material*. *No ar* vem da publicação do mesmo
-  domínio (com ou sem `www.`) e só vale depois de uma execução de deploy terminar
-  com sucesso no GitHub; com ele o card mostra o domínio em vez do link de preview,
-  que deixou de importar. *Link entregue caiu*
-  existe porque o cliente com link morto é o caso mais urgente, e antes aparecia
-  como *Entregue*, em verde. Antes essa informação vivia espalhada num chip, dois ícones e uma
-  caixa de seleção, e nenhum deles respondia sozinho "em que pé está isso?".
-  Nº de arquivos, volume, subpastas e a distribuição por tipo ficam numa linha
-  discreta sob o título. As tags ficam para as exceções (ver abaixo).
-- **Vista "Fazer agora"** (padrão, lembrada no navegador): os projetos agrupados pelo
-  que falta fazer, na ordem de urgência — *Publicação falhou*, *Prévia falhou*,
-  *Link do cliente caiu*, *Agente esperando resposta*, *Enviar ao cliente*,
-  *Conectar ao GitHub no Lovable*, *Criar ou conferir o link*, *Gerar o site*, *Sem briefing*, *Com o cliente — publicar quando aprovar*,
-  *Em andamento*, *Sem material*. Os que estão no ar ficam fora; a vista **Todos**
-  é a lista por data de antes, e **Finalizados** traz só os que têm a tag
-  "Finalizado". Os finalizados eram um botão à parte, combinado com a vista — e em
-  "Fazer agora" eles sumiam de novo (a fila esconde o que está no ar, e quase todo
-  finalizado está), deixando a lista vazia. Como vista própria, não há combinação a
-  dar errado, e a tag "Finalizado" sai da fileira de tags.
-- **Andamento ao vivo**: o card (e a lista, e o modal) mostra o que está em curso,
+- **Listagem dos projetos** numa tabela (cartões abaixo de 900 px), com o domínio em
+  primeiro plano — o nome só aparece quando é outro — e **um selo de etapa**:
+  *Material*, *Geração*, *Link*, *Cliente*, *Publicação*, *No ar* ou *Arquivos*. Um
+  problema troca o selo pelo dele, em vermelho (*Publicação falhou*, *Prévia falhou*,
+  *Envio falhou*, *Geração falhou*, *Link não abre*, *Link caiu*) ou em âmbar (*Agente
+  parado*, *Interrompida*), para nunca ficar escondido atrás da etapa. A fonte é
+  `web/src/features/projects/stage.ts`: os estados de `project-status.ts` viram
+  etapa, problema e grupo do "Fazer agora", e o selo, os contadores, o filtro, a
+  ordem da lista e o Dashboard leem dali. *No ar* vem da publicação do mesmo domínio
+  (com ou sem `www.`) e só vale depois de uma execução de deploy terminar com sucesso
+  no GitHub. As colunas: projeto (o domínio; embaixo, o nome e o material; depois,
+  os selos da ferramenta e as tags, numa linha só deles), etapa, última atividade
+  (abaixo de 1280 px, sob o selo de etapa), situação (a frase do porquê; o passo por extenso
+  repetia o selo e o botão) e a ação, com o botão sempre da mesma largura e, sob ele, "Abrir site" (o domínio) e
+  "Abrir área de aprovação" (o link do cliente; cinza e desligado quando não há).
+  Sob o nome, a origem e a data: "Pasta do Google Drive · recebida em…" ou "Criado
+  no painel em…". Toda linha (e todo cartão no celular) tem a mesma altura; o que é
+  longo corta. Só a coluna do projeto cresce, e a
+  coluna lateral (fila do Claude e atividade recente) fica ao lado da lista só a
+  partir de 1600 px; abaixo disso, desce para debaixo dela.
+  A última atividade junta o Drive (quando o arquivo entrou na pasta), as gerações, o
+  link, a publicação e o Claude.
+- **A ferramenta do site** aparece ao lado das tags, no projeto e na busca: *Lovable*
+  (gerado pelo painel ou vinculado pelo endereço do editor; o selo abre o editor),
+  *Claude* (motor do painel) ou *Externo* (vinculado só pelo repositório, ou enviado dos
+  arquivos). Um projeto com sites de mais de uma ferramenta mostra todas, a do site atual
+  primeiro, e "Abrir no Lovable" acha o site do Lovable mesmo com um do Claude depois
+  dele (`web/src/features/projects/site-engine.ts`). Buscar "lovable" ou "claude" filtra
+  por ferramenta; o nome do projeto no Lovable também entra na busca. As marcas (Lovable,
+  Claude, Google Drive, Gemini, GitHub) estão em `web/src/components/brand-icons.tsx`,
+  nos desenhos oficiais — o do Lovable é o `icon.svg` do site deles, os outros vêm do
+  simple-icons.
+- **Coleta repetida.** O cliente às vezes manda o formulário de novo, e cada envio vira
+  uma pasta. O site fica registrado na pasta em que foi gerado; a outra, sem site, recebe
+  da API o site do mesmo domínio (`domainSite`, ver `server/src/routes/projects-helpers.js`)
+  e passa a mostrar *Outra coleta* com a ferramenta do site, em vez de pedir *Gerar*. O
+  passo é "Abrir coleta do site". Como os projetos só de arquivos, ela fica fora dos
+  contadores, do Dashboard e do relatório: o site do domínio conta uma vez, na coleta dele.
+- **"Fazer agora"**: no topo, cinco contadores do que depende de alguém da equipe
+  (*Resolver*, *Revisar*, *Gerar*, *Criar link*, *Enviar ao cliente*) e três do que
+  espera o painel ou o cliente (*Em andamento*, *Com o cliente*, *Sem material*);
+  somados, são os projetos ativos. Cada contador filtra a lista, e clicar de novo
+  desfaz. A lista tem três abas: **Ativos**, **No ar** (o que o GitHub confirma) e
+  **Finalizados** (a tag "Finalizado"). Um site no ar com uma publicação nova falhando
+  fica em Ativos, porque é problema. Ao lado da lista, a atividade recente de todos os
+  projetos; a fila do Claude abre pelo botão do topo, que mostra quantos pedidos há. O
+  ritmo dos últimos dias (projetos novos, sites gerados, enviados, no ar) fica só no
+  Dashboard: repetido aqui, eram os mesmos números em dois lugares.
+- **Andamento ao vivo**: a lista (e o diálogo do projeto) mostra o que está em curso,
   com o relógio correndo. Na geração, as quatro fases de toda construção —
   *Planejando*, *Escrevendo o site*, *Conferindo o build*, *Respondendo* —, a última
   ação do agente ("Criando src/components/Hero.tsx") e quantos arquivos ele já
@@ -374,40 +399,41 @@ para as conexões de entrada no painel.
   uma estimativa assim enganaria. A lista se atualiza sozinha a cada 10 s enquanto
   houver algo em curso — antes a área de aprovação ficava de fora, e o link pronto só
   aparecia recarregando a página.
-- **Ações em massa**: a caixa no canto do card (ou a primeira coluna da lista) marca
-  projetos; com algum marcado, clicar no card marca em vez de abrir, e uma barra fixa
+- **Ações em massa**: a primeira coluna da lista marca projetos; com algum marcado,
+  clicar na linha marca em vez de abrir, e uma barra fixa
   no rodapé oferece **Adicionar tag**, **Remover tag**, **Finalizar** / **Reabrir**,
   **Gerar em lote**, **Publicar na área** e **Verificar links** — cada botão diz
   quantos alcança, e só aparece quando serve a algum dos marcados. As tags vão três
   projetos por vez, e o que falhar volta ao que era.
-- **Um botão de próximo passo** no card e na lista, que muda com o selo: *Gerar*,
+- **Um botão de próximo passo** em cada linha, que muda com a etapa: *Gerar*,
   *Conectar GitHub*, *Criar link*, *Verificar link*, *Enviar ao cliente*, *Publicar*,
-  *Responder*,
-  *Acompanhar*, *Ver erro*, *Abrir site*. Fica sempre no mesmo lugar, o
-  primeiro da barra; o resto (gerar outro site, publicar, copiar prompt, abrir no
-  Lovable, renomear, abrir no Drive) mora no menu **…**.
+  *Responder*, *Acompanhar*, *Ver erro*, *Abrir site*. Preenchido quando o passo
+  depende de alguém agora, contornado quando quem anda é o painel ou o cliente,
+  vermelho quando o projeto tem problema. Sem a permissão da chave, fica desligado e a
+  coluna "Próximo passo" diz por quê. O resto (gerar outro site, publicar, copiar
+  prompt, abrir no Lovable, renomear, abrir no Drive) mora no menu **…**, em grupos.
 - **Criar link** abre o editor do Lovable em outra aba e, no painel, o projeto com o
   campo do *Share preview* em foco — ao voltar com o link copiado, é só colar.
 - **Enviar ao cliente** copia uma mensagem pronta para o WhatsApp, com o link curto,
   e registra a entrega, com *Desfazer* no aviso. Substituiu a caixa "pronto" do card e
   o "Marcar como entregue" do modal: o link que abre já está pronto — quem decide isso
   é a sonda do painel.
-- **Gerar com um clique**: o *Gerar* do card (com briefing no Drive) abre uma
+- **Gerar com um clique**: o *Gerar* da linha (com briefing no Drive) abre uma
   confirmação curta com o envio padrão — o briefing como está, os compactados e as
   imagens recomendadas, a assinatura — e avisa o que vale saber antes (site já
   gerado, briefing repetido, anexos cortados pelo teto). *Revisar tudo* abre o
   diálogo completo. Sem briefing, vai direto para o diálogo completo.
-- **Gerar em lote**: pelo grupo *Gerar o site* da vista "Fazer agora" (**Gerar os N
-  em lote**) ou por qualquer seleção (barra de ações). Os projetos são lidos do Drive
+- **Gerar em lote**: pelo contador *Gerar* do "Fazer agora" (ligado, ele oferece
+  **Gerar os N em lote**) ou por qualquer seleção (barra de ações). Os projetos são lidos do Drive
   (três por vez), cada um com o seu envio padrão; os que não têm envio padrão ficam
   de fora com o motivo. O diálogo explica as três etapas antes de qualquer envio:
   **1. envio ao Lovable** — um por vez, uns segundos cada, e só esta etapa precisa da
   aba aberta; **2. construção no Lovable** — todos ao mesmo tempo, lá, com o andamento
-  no card de cada um; **3. aviso de pronto**. Antes o texto dizia "um depois do outro"
+  na linha de cada um; **3. aviso de pronto**. Antes o texto dizia "um depois do outro"
   e parecia que a aba precisava ficar aberta durante toda a construção.
 - **Responder ao agente parado**: quando o agente para esperando alguém, o painel lê
   a pergunta dele (a fala ao usuário, sem os pensamentos e comandos do registro) e o
-  *Responder* do card abre um campo já com "Pode seguir." — é uma mensagem ao
+  *Responder* da linha abre um campo já com "Pode seguir." — é uma mensagem ao
   agente, então gasta crédito e passa pela mesma chave `LOVABLE_ENABLE_GENERATION`.
 - **Publicar sem sair do projeto**: o *Publicar* abre um diálogo com o repositório
   já sugerido, e diz de onde veio a sugestão. Quando o painel
@@ -437,23 +463,58 @@ para as conexões de entrada no painel.
 - **Avisos**: quando um site termina ou para no Lovable, ou uma publicação termina
   (bem ou mal), aparece um aviso. Em outra aba, vira notificação do navegador (a
   permissão é pedida ao gerar ou publicar) e um contador no título da aba.
-- **Visão em lista** em cinco colunas — projeto (com o material embaixo do nome),
-  estado, link e tags, datas, ações. Cabe sem rolagem horizontal.
-- **Ordenação** por data da coleta, nome, última atividade, quantidade de arquivos,
-  volume ou quantidade de tags — em ordem crescente ou decrescente.
-- **Faixas de data** separando a lista quando a ordenação é por data: *Hoje*, *Ontem*,
-  *Últimos 7 dias*, *Últimos 30 dias*, depois por mês no ano corrente e por ano no que
-  é mais antigo, cada faixa com a sua contagem. Nas outras ordenações a lista sai
-  corrida — não há faixa que descreva a sequência. A referência de tempo é o instante
-  da sincronização, o mesmo do rodapé, para o resumo e as faixas nunca discordarem.
-- **Busca** por nome/domínio do projeto, alcançando também o nome dado no painel.
-- **Visualização em grade ou lista**, com as **mesmas ações** nas duas: o próximo
-  passo, o menu **…** e as tags editáveis. A lista é a visão densa e traz as mesmas
-  informações em colunas.
-- **Renomear o projeto** no painel. Quando o cliente não informa o domínio no
-  formulário, a pasta nasce sem nome útil; o apelido dado aqui passa a valer no título,
-  na busca, na ordenação e no atalho de publicação. A pasta no Drive **não** é
-  renomeada — o acesso lá é somente leitura —, e apagar o apelido devolve o nome dela.
+- **Ordenação**: *Coleta mais recente* (o padrão), coleta mais antiga, *Última
+  atividade*, *Prioridade* (o que quebrou primeiro, depois o que espera uma decisão, o
+  que está a um clique do cliente e por fim o que só espera; dentro de cada grupo, o
+  parado há mais tempo) e nome. Sem paginação: são poucas dezenas de projetos, e a
+  busca e os filtros (etapa, contador do "Fazer agora", tags) resolvem.
+- **Faixas de data** separando a lista quando a ordenação é por data (coleta ou
+  última atividade): *Hoje*, *Ontem*, *Últimos 7 dias*, *Últimos 30 dias*, depois por
+  mês no ano corrente e por ano no que é mais antigo, cada faixa com a sua contagem e
+  presa ao topo enquanto rola. Contadas em dias de calendário: à 00h30, a coleta de
+  ontem à noite está em *Ontem*. A referência é o instante da leitura da lista
+  (`date-groups.ts`).
+- **Busca** por nome/domínio do projeto, alcançando também o nome dado no painel. Fora
+  da tela Projetos, a busca do cabeçalho leva à lista já filtrada.
+- **Editar o projeto** (menu **…** → *Editar informações*, permissão *organizar*):
+  domínio, nome no painel, etapa, data de recebimento, responsável e observação
+  interna. Cada campo vazio volta ao cálculo do painel. A pasta no Drive **não** muda —
+  o acesso lá é somente leitura. O que foi corrigido fica em `server/data/painel.json`,
+  sob `details` (`server/src/store/project-details.js`), e a lista já vem da API com o
+  domínio e a data corrigidos — o domínio é o que liga o projeto à publicação, e a data
+  muda a ordem, as faixas e o Dashboard. O responsável aparece na linha, no diálogo e
+  no "Por desenvolvedor" do Dashboard (vence quem gerou o site); a observação, cortada na
+  linha e inteira no diálogo; os dois entram na busca. A **etapa escolhida à mão** troca
+  o selo (com um lápis) e o botão de próximo passo, e vale até acontecer um fato mais
+  novo no projeto — gerar, vincular, enviar ao cliente, publicar a prévia ou o domínio,
+  mandar ao GitHub, uma execução do Claude (`lastFactAt` em `project-status.ts`).
+  Conferências periódicas (o link, o agente) não contam. Rota:
+  `PATCH /api/projects/:id/details`, que confere tudo antes de gravar.
+- **Editar vários de uma vez**: com projetos marcados, a barra de seleção tem
+  *Editar* (responsável — definir ou tirar — e etapa, cada um começando em "Não mudar")
+  e *Ocultar* / *Mostrar*. Cada projeto é gravado sozinho, três por vez; uma falha não
+  desfaz os outros e o aviso diz quantos falharam.
+- **Ocultar projeto** (menu **…** ou barra de seleção): pasta de teste, coleta que não
+  vai virar site. O projeto sai das abas de trabalho, dos contadores do "Fazer agora",
+  da atividade recente, do Dashboard e do relatório para pagamento, e fica na aba
+  **Ocultos** (que só aparece quando há algum), com quem ocultou e quando. "Mostrar de
+  novo" devolve. Gravado em `details.hidden`; a pasta no Drive não muda.
+- **Relatório para pagamento** (Dashboard → *Relatório para pagamento*): os sites que
+  estão nas etapas escolhidas (Material, Geração, Link, Cliente, Publicação, No ar — uma
+  ou várias), com filtro opcional por desenvolvedor e por período, este pela data de
+  envio ao cliente, de publicação, de geração ou de recebimento (os dois dias
+  inclusos). A tela mostra os sites e o total por desenvolvedor antes do download; o
+  arquivo é um CSV que o Excel em português abre direto (separador ";", UTF-8 com a
+  marca, datas dd/mm/aaaa), com etapa, situação ("Pronto para enviar", "Com o cliente",
+  "Publicação falhou"…), se a etapa foi escolhida à mão, desenvolvedor, responsável,
+  quem gerou, motor, as datas de cada passo com quem os fez, repositório, link do
+  cliente, tags, finalizado e observação. As contas são as do Dashboard (`buildRows`):
+  o desenvolvedor é o responsável definido, senão quem gerou o site. Para não pagar
+  duas vezes: um domínio coletado de novo entra uma vez só (a coleta onde o site foi
+  feito), e os projetos com a tag "Finalizado" ficam de fora — os dois por padrão,
+  com a contagem do que saiu na tela. Texto que começa com "=", "+", "-" ou "@"
+  ganha um apóstrofo, para o Excel não o rodar como fórmula. Gerado no navegador, com
+  a lista já carregada (`features/dashboard/payment-report.ts`, com teste).
 - **Modal de arquivos** por projeto, com miniaturas reais do Drive, navegação em
   subpastas (breadcrumb), busca e ordenação próprias.
 - **Pré-visualização do arquivo** dentro do painel (imagem, PDF, vídeo, áudio, texto e
@@ -477,7 +538,7 @@ para as conexões de entrada no painel.
   dentro do zip), por isso só as de até 4 MB a ganham. RAR e 7z continuam só com
   download.
 - **Linha do tempo do projeto**: a aba ao lado de *Arquivos* no modal (ou **Linha do
-  tempo** no menu **…** do card) conta, em ordem, o que aconteceu, quando e por quem:
+  tempo** no menu **…** da linha) conta, em ordem, o que aconteceu, quando e por quem:
   material recebido (a criação da pasta no Drive), briefing recebido, material
   complementado (arquivo que entrou mais de uma hora depois), site gerado ou
   vinculado, construção concluída no Lovable, troca de projeto, área de aprovação
@@ -486,7 +547,7 @@ para as conexões de entrada no painel.
   mostra a hora, o autor e quanto tempo depois do anterior aconteceu — é o que mostra
   onde o projeto ficou parado. No topo: quando foi recebido, **quem gerou o site** e
   quanto levou do recebimento à geração, da geração ao envio ao cliente e do
-  recebimento à última publicação. A linha sai de datas que o painel já guardava,
+  recebimento ao ar (a primeira publicação). A linha sai de datas que o painel já guardava,
   então vale para os projetos antigos; o que faltava passou a ser gravado: quem
   clicou em **Gerar** (`createdBy`, o nome da chave de acesso), quando o agente
   terminou (`agentDoneAt`, só na passagem para "pronto", para as conferências
@@ -494,9 +555,10 @@ para as conexões de entrada no painel.
   pasta (`createdTime` deles — o `modifiedTime` de um upload é a data do arquivo no
   computador do cliente) e quem disparou cada publicação. Os sites gerados antes
   disso aparecem com **responsável não registrado**, e não com um palpite. Sem chaves
-  de acesso configuradas também não há a quem atribuir. *No ar* é a data do último
-  envio bem-sucedido, não a da primeira vez: cada edição no Lovable publica de novo.
-- **Tags** por projeto, com cor e nome livres: aplicadas pelo card ou pelo modal, e
+  de acesso configuradas também não há a quem atribuir. *No ar desde* é a primeira
+  publicação bem-sucedida e *Última publicação* a mais recente — cada edição no Lovable
+  publica de novo —, com esses nomes no projeto, na linha do tempo e no Dashboard.
+- **Tags** por projeto, com cor e nome livres: aplicadas pela linha ou pelo diálogo do projeto, e
   criadas na hora digitando um nome novo no seletor. “Gerenciar tags” abre o CRUD
   completo (criar, renomear, trocar a cor, excluir com confirmação). Servem para as
   **exceções** — *Material incompleto*, *Aguardando cliente*, *Finalizado* —, não para
@@ -523,7 +585,7 @@ para as conexões de entrada no painel.
   o briefing é o que o cliente escreveu e vale como registro. O contador de caracteres
   mostra o texto composto, que é o que realmente é enviado.
 - **Copiar o prompt do Lovable**: quando a pasta tem o arquivo *Informações do Site*, o
-  menu **…** do card tem **Copiar prompt**, e o modal do projeto ganha **Ver prompt**
+  menu **…** da linha tem **Copiar prompt**, e o modal do projeto ganha **Ver prompt**
   (leitura antes de usar) e **Copiar prompt**. O texto é extraído no servidor — PDF via `unpdf`,
   documentos do Google via exportação para texto — e copiado já pronto para colar.
 - **Filtro por tags** na barra de chips: seleção múltipla com modo **Qualquer** (padrão)
@@ -693,7 +755,7 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │       │       ├── environment.js  # o ambiente dos processos filhos, por lista de permissão
 │       │       ├── executor.js     # dispara, lê o stream, decide como terminou
 │       │       ├── guardian.js     # encerra o claude se o painel morrer
-│       │       ├── queue.js        # a criação uma por vez, os ajustes ao lado; pausada depois de um reinício
+│       │       ├── queue.js        # sites e ajustes em cotas próprias; pausada depois de um reinício
 │       │       ├── stream.js       # linhas legíveis e o filtro do que vai à tela
 │       │       ├── workspace.js    # a pasta de trabalho, na pasta de dados
 │       │       ├── motor.js        # a conversa com o pacote do motor
@@ -817,20 +879,22 @@ Drive, GitHub, Lovable ou com o Claude de verdade (o executor é exercitado com 
 valem igual aqui e no CI. O pacote do motor não está no repositório público: no CI
 os testes que dependem dele são pulados, e os das rotas rodam com um motor de mentira.
 
-**Backend (220):** a API de verdade numa porta local (entrada, sessão, bloqueio por
+**Backend (502):** a API de verdade numa porta local (entrada, sessão, bloqueio por
 IP, permissões por chave, política de rede e respostas de erro), o banco do painel
-(criação, migração do nome, recuperação de backup, travas do link do cliente), o
+(criação, migração do nome, recuperação de backup, travas do link do cliente, o que
+a equipe corrige à mão em cada projeto), o
 caminho que gasta crédito no Lovable (clique duplo, resposta incerta, recusa
 explícita, site criado mas não gravado), alcance dos ids do Drive, gravação atômica,
 geração dos workflows (com validação do YAML resultante), classificação do link de
 share e detecção da pasta de build em cada layout suportado.
 
-**Interface (112):** a lista de projetos sobre o cache de consultas (uma busca para
+**Interface (292):** a lista de projetos sobre o cache de consultas (uma busca para
 vários leitores, escrita otimista e desfazimento quando a API recusa), validação do
 formulário de publicação (espelho dos validadores da API), regras do prompt e da
-seleção de anexos, ordenação dos arquivos, faixas de data, o cliente HTTP (recusa,
-sessão vencida, API fora do ar, tempo limite), a precedência do selo de
-estado, o próximo passo de cada etapa, os avisos de site pronto e de publicação, e a
+seleção de anexos, ordenação dos arquivos, filtros, ordem e faixas de data da lista, a formatação de
+datas e plurais, o cliente HTTP (recusa, sessão vencida, API fora do ar, tempo
+limite), a precedência do selo de estado, a etapa e o grupo do "Fazer agora" de cada
+estado, a etapa escolhida à mão e quando ela perde a validade, as contas do Dashboard, o relatório para pagamento, o autor de cada publicação, o próximo passo de cada etapa, os avisos de site pronto e de publicação, e a
 mensagem enviada ao cliente.
 
 ### Como a interface busca dados
@@ -848,7 +912,7 @@ lembrar de avisar os outros. As escritas continuam sendo chamadas diretas de
 
 O arquivo é reconhecido pelo início do nome (`Informações do Site`, tolerante a acento e
 caixa), **no primeiro nível da pasta do projeto** — o mesmo alcance da detecção que
-acende o botão no card. Hoje 34 das 62 coletas têm o arquivo, em dois formatos: PDF
+acende o botão na linha. Hoje 34 das 62 coletas têm o arquivo, em dois formatos: PDF
 (maioria) e documento do Google.
 
 A extração roda no servidor e fica em cache por 10 minutos. O texto vai inteiro para a
@@ -872,7 +936,7 @@ compartilhamento da service account para Editor.
 
 ## Geração do site no Lovable
 
-O botão **Gerar** (no card e no modal do projeto) abre a tela de geração: à esquerda o
+O botão **Gerar** (na linha e no diálogo do projeto) abre a tela de geração: à esquerda o
 prompt, já preenchido com o texto do *Informações do Site* e editável; à direita os
 arquivos da pasta — subpastas incluídas — para marcar o que vai como anexo. Imagens e
 compactados já vêm marcados (compactados primeiro), até o teto de anexos.
@@ -895,8 +959,8 @@ O link só chega uma vez, na resposta do `create_project` — se não for gravad
 recuperá-lo depois vira busca manual dentro do Lovable. Então cada criação bem-sucedida
 é registrada em `server/data/painel.json`, sob `generations`, por pasta do Drive.
 
-O card passa a mostrar um selo verde com o link (`preview_url`, ou `url` quando o
-projeto estiver publicado) e o modal lista todas as gerações daquela coleta — a mesma
+O projeto passa para a etapa *Link* (o site existe, falta o link do cliente) e o
+diálogo lista todas as gerações daquela coleta — a mesma
 pasta pode gerar mais de um site. `DELETE /api/projects/:id/generations/:lovableId`
 remove um registro do painel sem tocar no projeto lá no Lovable.
 
@@ -906,7 +970,7 @@ O `create_project` volta assim que o projeto nasce; o site ainda vai ser constru
 Depois do **Gerar**, a API acompanha o agente sozinha (`get_project` e
 `list_messages`, gratuitas) e grava na geração: **Gerando no Lovable**, **Parado no
 Lovable** (o agente pausou esperando uma resposta no editor — aprovação ou checagem
-de crédito — e não retoma sozinho) ou pronto. O card mostra o selo e a lista se
+de crédito — e não retoma sozinho) ou pronto. A linha mostra o selo e a lista se
 atualiza a cada 20 s enquanto houver site em andamento. O acompanhamento é retomado
 se a API reiniciar e desiste depois de 3 horas.
 
@@ -1103,13 +1167,13 @@ As consultas respondem em JSON na última linha da saída (`scripts/consulta.ts`
 comandos de sempre — validar e telas — respondem pelo código de saída e pelo texto.
 Nada nesse arquivo dispara o Claude.
 
-### O fluxo, pelo card do projeto
+### O fluxo, pela linha do projeto
 
 | Passo | O que acontece | Gasta a assinatura? |
 | --- | --- | --- |
 | **Gerar briefing** | A tela de geração, com o motor Claude marcado, mostra o texto das informações do site, as observações e os arquivos do projeto. *Conferir pedido* é o ensaio: mostra o que seria copiado, a frase e o comando. *Gerar briefing* copia o material marcado para a pasta de trabalho e põe o pedido na fila | Só o *Gerar briefing* |
 | **Revisar e gerar** | O briefing aparece no projeto, com o que a conferência do motor aceitou, avisou ou recusou. Dá para corrigir pelos campos ou pelo JSON e gravar, sem gastar. *Conferir* mostra o pedido; *Gerar site* enfileira | Só o *Gerar site* |
-| **Acompanhar** | O card mostra a etapa e o tempo; a aba **Claude** do projeto, o log ao vivo, com *Cancelar execução*. A **Fila do Claude**, na barra da lista, mostra o que roda, o que espera e o que um reinício interrompeu | Não |
+| **Acompanhar** | A linha mostra a etapa e o tempo; a aba **Claude** do projeto, o log ao vivo, com *Cancelar execução*. A **Fila do Claude**, no topo da tela Projetos e ao lado da lista, mostra o que roda, o que espera e o que um reinício interrompeu | Não |
 | **Escolher a rota** | Com a parada ligada, a geração para em *aguardando aprovação* depois da direção criativa: a direção, as rotas propostas e as fotos de banco aparecem no projeto. *Aprovar e gerar o site* segue com a direção como está; escolher outra rota refaz a direção com ela e volta a esperar a aprovação, agora com a direção nova | Sim, ao seguir |
 | **Criticar e refinar** | Gerado e validado, o site entra em crítica: uma sessão nova do Claude, que não o escreveu, dá notas, aponta problemas e diz se o site está aprovado. Se não está, quem o escreveu é retomado para o refino, e a rodada seguinte começa por outra crítica. A sequência termina quando a crítica aprova ou as rodadas acabam. O painel põe cada passo na fila sozinho | Sim, cada execução |
 | **Receber o site** | Site entregue: etapas, a última crítica, telas, *Validar* e *Fotografar telas* (rodam nesta máquina, sem o Claude) e a linha do GitHub | Não |
@@ -1150,7 +1214,7 @@ disparado e que consome a assinatura, e o botão repete isso.
 Quem pede a geração de um site autoriza a sequência inteira dele: a geração e as
 rodadas de crítica e refino. Os passos seguintes entram na fila sem outro clique, em
 nome de quem pediu. A trava é conferida de novo a cada passo — desligada no meio, a
-sequência para onde está, nada é entregue, e o card oferece *Continuar*, que pede a
+sequência para onde está, nada é entregue, e a linha oferece *Continuar*, que pede a
 confirmação e a trava como qualquer ação que gasta.
 
 Depois de um reinício do painel a fila volta **pausada** e o que rodava aparece como
@@ -1165,7 +1229,7 @@ conta própria. Retomar pede a mesma confirmação e a mesma trava.
 | `environment.js` | O ambiente dos processos filhos, por lista de permissão |
 | `executor.js` | Dispara o claude, digita o pedido pelo stdin, lê o stream, decide como terminou e registra |
 | `guardian.js` | Um processo pequeno entre o painel e o claude: se o painel morre sem aviso, encerra o claude com a árvore inteira |
-| `queue.js` | A fila: a criação de um site uma de cada vez, os ajustes ao lado dela; pausada depois de um reinício |
+| `queue.js` | A fila: uma cota para a criação de sites e outra para os ajustes, o passo seguinte de um site na frente; pausada depois de um reinício |
 | `stream.js` | As linhas legíveis do `stream-json` e o filtro do que vai à tela |
 | `workspace.js` | A pasta de trabalho, dentro da pasta de dados |
 | `motor.js` | A conversa com o pacote do motor, por processos filhos |
@@ -1197,8 +1261,8 @@ As garantias do executor, cada uma com teste:
   motor espera e o esforço que o contrato dele dá ao tipo do pedido (crítica e refino
   usam o da criação). O ensaio mostra o comando pela mesma ordem, e *Testar Claude*
   fica com o modelo das Configurações.
-- **A criação de um site roda uma de cada vez** nesta máquina, com trava em disco e fila: briefing, geração, continuação, crítica e refino. Cada site é comparado com os anteriores, e dois nascendo juntos não se enxergariam.
-- **Os ajustes rodam ao lado da criação**, até `CLAUDE_PARALLEL_ADJUSTMENTS` de uma vez (2 por padrão; `0` volta a uma fila só). Nunca duas execuções no mesmo site. Cada execução anota o projeto em que as ferramentas dela agem em um arquivo próprio (`<dados>/joinvixable/atual/<id>.txt`, passado em `JOINVIXABLE_ATUAL`), e uma não escreve no projeto da outra.
+- **Vários sites nascem ao mesmo tempo**, até `CLAUDE_PARALLEL_SITES` (3 por padrão): briefing, geração, continuação, crítica e refino de cada um seguem sem esperar os outros. Quando uma etapa termina, a vaga continua com o site enquanto o passo seguinte dele entra na fila, e esse passo passa à frente dos pedidos que ainda não começaram: um site novo não para outro no meio. Cada site é comparado com os já entregues; dois nascendo juntos não se enxergam.
+- **Os ajustes rodam ao lado da criação**, em cota própria, até `CLAUDE_PARALLEL_ADJUSTMENTS` de uma vez (5 por padrão; `0` volta a uma fila só, criação e ajustes, um de cada vez). Nunca duas execuções no mesmo site. Cada execução anota o projeto em que as ferramentas dela agem em um arquivo próprio (`<dados>/joinvixable/atual/<id>.txt`, passado em `JOINVIXABLE_ATUAL`), e uma não escreve no projeto da outra.
 - **O tipo do site muda depois de gerado.** No card do site, "Várias páginas" grava `multiplas_paginas` no briefing do projeto (e no do cliente) pela consulta `tipo-de-site`, sem usar o Claude. Ligado, o ajuste recebe as regras de páginas (`prompts/paginas-ajuste.md`) e a validação aceita as páginas que `content.json` listar; num site entregue elas não precisam mais ser as do design brief, então um ajuste cria, tira ou divide páginas. Desligar é recusado enquanto o site tiver outras páginas.
 - **O que é do mesmo build não é refeito.** As telas, as medições e a forma de um site ficam guardadas na sessão dele com o carimbo do `dist` (`telas.json`, `medidas.json`, `forma.json`) e valem enquanto o build for o mesmo; as capturas e as medições usam vários navegadores de uma vez (`navegadores_em_paralelo`, em `joinvixable/config/limits.json`). A validação que o painel pede depois de cada execução só refaz o build quando algum arquivo mudou desde a última que passou (`validacao.json`).
 - **Sucesso é código de saída 0 e a validação do motor passando.** *Aguardando
@@ -1283,10 +1347,10 @@ Lovable e do BetterLinks. Três barreiras separam isso do agente:
 Site entregue — com a sequência de crítica e refino terminada — entra na lista de
 sites do projeto (com `engine: "claude"`). Se quem pediu a geração tem a permissão
 `publicar` e o GitHub está configurado, o painel cria o repositório na organização e
-envia sozinho; senão o card para em **Enviar ao GitHub**
+envia sozinho; senão a linha para em **Enviar ao GitHub**
 e o botão abre o plano do envio — o que vai, o que não vai e o que acontece depois.
 Com a área de aprovação configurada, o envio instala o workflow dela, e cada commit
-publica a prévia. Envio automático que falha não derruba a execução: o card guarda o
+publica a prévia. Envio automático que falha não derruba a execução: a linha guarda o
 motivo e o site continua esperando.
 
 ### Assinatura Joinvix, em três camadas
@@ -1457,6 +1521,36 @@ isolada do painel (dados temporários, sem o `.env` da máquina): cada estado do
 a fila, o lote, o envio e a seção de Configurações, nos dois temas e em largura de
 celular.
 
+## Ajustes pelo Claude em sites do Lovable (edição livre)
+
+Um site feito no Lovable (ou vinculado de fora) que já mora num repositório do GitHub pode receber ajustes pelo Claude Code desta máquina, pela aba **Ajustes** do projeto (ao lado da aba Claude). Dá para alternar: um dia pelo Claude, no outro pelo Lovable — o Lovable sincroniza com o GitHub nos dois sentidos, e o painel sempre parte do que está no GitHub.
+
+**Quando a aba aparece:** o site mais recente do projeto tem repositório (`devArea.repoFullName` ou `repoFullName`) e não é do motor Claude (esse tem os ajustes dele, na aba Claude). É preciso o token do GitHub configurado. Pedir um ajuste pede as permissões `gerar` (gasta a assinatura) e `publicar` (o resultado vai ao GitHub e à área de aprovação do cliente), a trava "Liberar o uso do Claude" ligada e a confirmação de gasto (`confirm: true`).
+
+**Como um ajuste roda** (`server/src/engines/claude/edicao/`), como um pedido `edicao` na mesma fila do Claude, na cota dos ajustes, e nunca dois no mesmo repositório:
+
+1. **preparar** — o painel mantém um clone do repositório em `<dados>/joinvixable/edicao-<dono>--<nome>/` e o alinha com a última versão do branch principal (o que o Lovable sincroniza): `fetch`, `reset --hard`, `clean` (as dependências ficam). Instala as dependências quando o `package.json` ou a trava mudaram (`npm ci --ignore-scripts`; nenhum script do repositório roda só por instalar). As imagens do pedido entram em `.painel-anexos/` (ignorada pelo Git) ou, as de usar no site, em `public/img/ajustes/`.
+2. **editar** — o `claude -p` roda dentro do clone, com o contrato da edição livre (`edicao/contrato.js`): lê e edita qualquer arquivo do clone e roda `npm run build`/`npm run lint`; não roda `git`, não instala pacote, não apaga nem move pelo shell, e não toca em `package.json`, travas de dependência, `vite.config`, `.github/` e `.env`. Nada fora do clone é legível (o banco, o motor, os outros clones, os segredos do painel). As regras do ajuste vão no prompt de sistema; o pedido leva de onde o ajuste parte (quem fez a última alteração) e a memória dos ajustes anteriores. As guardas de sempre valem: login da assinatura (nunca chave de API), sem MCP, sem plugin, sem ferramenta fora do contrato, log filtrado.
+3. **conferir** — o painel confere o que mudou: nada do que é intocável, nenhum import fora do `package.json` (quebraria no GitHub), nenhuma credencial no código, e `npm run build` passando. Sem alteração, o ajuste termina como "sem mudança".
+4. **enviar** — um commit normal, com o autor "Claude (Painel Sites Express)" e a marca `Ajuste-Painel: <id>` no fim da mensagem. Se o GitHub andou durante o ajuste (alguém editou no Lovable), o commit vai para cima do que chegou (rebase só local; o histórico do GitHub nunca é reescrito — o Lovable perderia o que não estava lá) e o build é conferido de novo; mexendo nas mesmas linhas, é **conflito** e nada é enviado. O push publica a área de aprovação sozinho (o workflow dela roda a cada push), e o painel passa a acompanhá-la.
+
+O token do GitHub vai em cada comando que fala com o GitHub, por variável de ambiente do Git (cabeçalho de autorização), com o gerenciador de credenciais da máquina desligado; nunca fica gravado no clone e some de qualquer mensagem.
+
+**Quem fez a última alteração** (`edicao/origem.js`): **Lovable** pelo robô dele (`lovable-dev[bot]` como autor, `gpt-engineer-app[bot]` como committer — visto nos repositórios da organização); **Claude** pela marca `Ajuste-Painel`; **Painel** quando o commit só mexe em `.github/` (os workflows de publicação, que não contam como alteração do site); **Pessoa** em qualquer outro caso, com o nome do autor.
+
+**A memória dos ajustes** fica em `painel.json` → `repoEdits[projectId]` (`store/repo-edits.js`, até 200 por projeto): o pedido, quem pediu, a versão de onde partiu (e quem tinha feito a última alteração), a situação (`queued`, `running`, `pushed`, `unchanged`, `failed`, `conflict`, `cancelled`, `interrupted`), o que o Claude disse ter feito, o commit e os arquivos. O próximo pedido leva os últimos ajustes como contexto. Um ajuste que rodava quando o painel caiu vira "interrompido" e pode ser retomado (parte da versão de agora) ou descartado.
+
+**Cuidado com o Lovable:** não edite o site no Lovable enquanto um ajuste roda. O painel junta o que chegou ao GitHub, mas o que estiver só no editor do Lovable, ainda não sincronizado, pode ser substituído pela versão do GitHub na sincronização seguinte (é o comportamento documentado do Lovable para histórico divergente).
+
+| Rota | Descrição |
+| --- | --- |
+| `GET /api/projects/:id/edits` | A aba: se o projeto pode, o repositório, a última versão já lida, o pedido em andamento e a memória. Não fala com o GitHub |
+| `GET /api/projects/:id/edits/version` | Alinha o clone com o GitHub e devolve a última versão e as alterações recentes, com quem fez cada uma |
+| `POST /api/projects/:id/edits` | Pede um ajuste — **gasta**, exige `gerar`, `publicar` e `confirm: true` |
+| `PUT /api/projects/:id/edits/attachments?name=&draft=` | Sobe uma imagem para o próximo pedido (corpo cru, até 8 MB) |
+| `DELETE /api/projects/:id/edits/attachments?draft=&file=` | Tira uma imagem do rascunho |
+| `GET /api/projects/:id/edits/:editId/log` | O log de um ajuste, refeito do stream guardado |
+
 ## Site feito fora do painel ("Vincular site existente")
 
 Tudo o que o painel faz com um site — prévia na área de aprovação, link do cliente,
@@ -1581,8 +1675,8 @@ de sempre.
 
 O fluxo, sem ninguém pedir:
 
-1. O site é gerado. O card mostra **Conectar ao GitHub** — a conexão é feita no
-   editor do Lovable (o MCP não faz isso), e o botão do card leva até lá.
+1. O site é gerado. A linha mostra **Conectar ao GitHub** — a conexão é feita no
+   editor do Lovable (o MCP não faz isso), e o botão da linha leva até lá.
 2. A varredura (a cada 3 min, `DEV_AREA_WATCH_INTERVAL_MS`) acha o repositório pelo
    nome do projeto no Lovable, grava os secrets `DEV_AREA_FTP_*` e o workflow
    `Area-de-desenvolvimento.yml`. O commit do workflow já é um push, e o push publica.
@@ -1595,7 +1689,7 @@ O fluxo, sem ninguém pedir:
 Entram sozinhos os sites novos: sem link curto nem entrega registrada, e cujo
 repositório ainda não publica no domínio do cliente. Qualquer outro — inclusive o que
 já tem Share preview ou link curto — entra por **Publicar na área de aprovação**, no
-menu **…** do card ou no modal do projeto; conferida a pasta, ela passa a ser o link
+menu **…** da linha ou no diálogo do projeto; conferida a pasta, ela passa a ser o link
 do cliente. Com o site já na área, o mesmo botão publica de novo. A pasta é do
 projeto: gerar o site de novo publica no mesmo endereço, e o workflow sai do
 repositório antigo. Duas coletas com o mesmo nome recebem pastas numeradas.
@@ -1681,7 +1775,7 @@ seguir o redirecionamento e lê a resposta.
 | Outra                           | Não verificado    | Instabilidade — não condena o link      |
 
 **A trava:** registrar a entrega exige estado `alive`. A API recusa com 409 quem
-não tem link ou tem link que não abre, e o card só oferece *Enviar ao cliente* com o
+não tem link ou tem link que não abre, e a linha só oferece *Enviar ao cliente* com o
 link aberto. O botão **Verificar links**, na barra de projetos, roda a varredura em
 todos de uma vez.
 

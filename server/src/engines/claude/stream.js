@@ -115,7 +115,10 @@ export function criarFormatador({ raiz = "" } = {}) {
     const ev = /** @type {any} */ (bruto);
     if (!ev || typeof ev !== "object") return [];
     if (ev.type === "joinvixable") {
-      return ev.subtype === "aviso" ? [{ tipo: "aviso", texto: String(ev.texto) }] : [];
+      if (ev.subtype === "aviso") return [{ tipo: "aviso", texto: String(ev.texto) }];
+      // As etapas que o próprio painel conduz (a edição livre: preparar, conferir, enviar).
+      if (ev.subtype === "etapa") return [{ tipo: "etapa", texto: String(ev.texto) }];
+      return [];
     }
     if (ev.type === "system" && ev.subtype === "init") {
       const mcp = (ev.mcp_servers ?? []).map((m) => `${m.name}${m.status ? ` (${m.status})` : ""}`);

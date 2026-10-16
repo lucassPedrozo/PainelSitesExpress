@@ -1,115 +1,127 @@
 import type { Project } from "@/lib/api";
-import { parseProjectName, projectIdentity } from "@/lib/format";
+import { parseProjectName, projectIdentity, timeOf } from "@/lib/format";
 import { emptyTagFilter, type TagFilter } from "@/features/tags/tag-filter";
-import { projectStatus, type ProjectStage } from "./project-status";
+import { lastActivityOf } from "./last-activity";
+import { PRIORITY, STAGES, tabOf, type Etapa, type ListTab, type WorkGroupKey } from "./stage";
+import { projectStatus } from "./project-status";
+import { engineLabels, engineOf } from "./site-engine";
 
 /*
- * As regras da lista de projetos, sem React: ordenação, filtro, a data que
- * decide as faixas e o resumo do topo. Testadas em project-filters.test.ts.
+ * As regras da lista de projetos, sem React: abas, filtros, contadores do
+ * "Fazer agora" e ordenação. Testadas em project-filters.test.ts.
  */
 
-export type SortKey =
-  | "collected"
-  | "name"
-  | "activity"
-  | "files"
-  | "size"
-  | "tags";
+export type SortKey = "prioridade" | "atividade" | "coleta-recente" | "coleta-antiga" | "nome";
 
 export const sortLabels: Record<SortKey, string> = {
-  collected: "Data da coleta",
-  name: "Nome do projeto",
-  activity: "Última atividade",
-  files: "Quantidade de arquivos",
-  size: "Volume de material",
-  tags: "Quantidade de tags",
+  prioridade: "Prioridade",
+  atividade: "Última atividade",
+  "coleta-recente": "Coleta mais recente",
+  "coleta-antiga": "Coleta mais antiga",
+  nome: "Nome",
 };
 
-const DAY = 86_400_000;
-
-/**
- * Data que manda na ordenação. O agrupamento por faixa usa exatamente a mesma,
- * senão as seções sairiam fora de ordem — ou repetidas.
- */
-export const sortDateOf = (project: Project, sort: SortKey) => {
-  if (sort === "activity") return new Date(project.lastActivity);
-  const { collectedAt } = parseProjectName(project.name);
-  return collectedAt ?? new Date(project.createdTime);
-};
-
-/** As faixas de data só fazem sentido quando a lista está ordenada por data. */
-export const isDateSort = (sort: SortKey) =>
-  sort === "collected" || sort === "activity";
+/** O filtro de etapa: uma das etapas, ou só os que estão com problema. */
+export type EtapaFilter = Etapa | "problema" | null;
 
 export type FilterOptions = {
   query: string;
   tagFilter: TagFilter;
-  /** `true`: só os finalizados (a vista "Finalizados"); `false`: os demais. */
-  showFinished: boolean;
+  tab: ListTab;
   finishedTagId: string | null;
-  /** Só os projetos neste estado — o mesmo do selo do card. */
-  stage?: ProjectStage | null;
+  etapa?: EtapaFilter;
+  /** O contador do "Fazer agora" escolhido. */
+  group?: WorkGroupKey | null;
 };
 
-export function filterProjects(
-  projects: Project[],
-  { query, tagFilter, showFinished, finishedTagId, stage = null }: FilterOptions,
-) {
-  const term = query.trim().toLowerCase();
-
-  return projects.filter((project) => {
-    if (!inFinishedView(project, showFinished, finishedTagId)) return false;
-    if (stage && projectStatus(project).stage !== stage) return false;
-    // A busca alcança os dois nomes e o domínio limpo: quem renomeou procura
-    // pelo apelido, quem lembra da pasta procura pelo nome dela.
-    if (
-      term &&
-      !`${project.name} ${project.alias ?? ""} ${project.domain ?? ""}`
-        .toLowerCase()
-        .includes(term)
-    ) {
-      return false;
-    }
-    if (tagFilter.untaggedOnly) return project.tagIds.length === 0;
-    if (tagFilter.tagIds.length === 0) return true;
-    return tagFilter.matchAll
-      ? tagFilter.tagIds.every((id) => project.tagIds.includes(id))
-      : tagFilter.tagIds.some((id) => project.tagIds.includes(id));
-  });
-}
-
-/** Finalizado sai da lista principal e só aparece quando pedido. */
-const inFinishedView = (
-  project: Project,
-  showFinished: boolean,
-  finishedTagId: string | null,
-) =>
-  !finishedTagId || project.tagIds.includes(finishedTagId) === showFinished;
+/** A data da coleta: a do nome da pasta, ou a criação quando o nome não traz. */
+export const collectedAtOf = (project: Project) =>
+  // A data corrigida à mão vence a do nome da pasta.
+  (project.details?.receivedAt ? new Date(timeOf(project.details.receivedAt) ?? 0) : null) ??
+  parseProjectName(project.name).collectedAt ??
+  new Date(timeOf(project.createdTime) ?? 0);
 
 /**
- * Quantos projetos há em cada estado, com os **outros** filtros aplicados
- * (vista, busca, tags) — o número ao lado de cada etapa é o que aparece ao
- * clicar nela. Antes a contagem ignorava a busca e as tags, e uma etapa com
- * "5" abria uma lista vazia.
+ * A busca alcança o nome da pasta, o apelido, o domínio limpo, o responsável,
+ * a observação, a ferramenta de cada site ("lovable", "claude") e o nome do
+ * projeto no Lovable.
  */
-export function countStages(projects: Project[], options: FilterOptions) {
-  const counts = new Map<ProjectStage, number>();
-  for (const project of filterProjects(projects, { ...options, stage: null })) {
-    const { stage } = projectStatus(project);
-    counts.set(stage, (counts.get(stage) ?? 0) + 1);
+const matchesQuery = (project: Project, term: string) =>
+  !term ||
+  [
+    project.name,
+    project.alias,
+    project.domain,
+    project.details?.responsible,
+    project.details?.note,
+    ...project.generations.flatMap((site) => [engineLabels[engineOf(site)], site.lovableName]),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .includes(term);
+
+const matchesTags = (project: Project, tagFilter: TagFilter) => {
+  if (tagFilter.untaggedOnly) return project.tagIds.length === 0;
+  if (tagFilter.tagIds.length === 0) return true;
+  return tagFilter.matchAll
+    ? tagFilter.tagIds.every((id) => project.tagIds.includes(id))
+    : tagFilter.tagIds.some((id) => project.tagIds.includes(id));
+};
+
+const matchesEtapa = (project: Project, etapa: EtapaFilter) => {
+  if (!etapa) return true;
+  const def = STAGES[projectStatus(project).stage];
+  return etapa === "problema" ? Boolean(def.problem) : def.etapa === etapa;
+};
+
+const matchesGroup = (project: Project, group: WorkGroupKey | null | undefined) =>
+  !group || STAGES[projectStatus(project).stage].group === group;
+
+export function filterProjects(projects: Project[], options: FilterOptions) {
+  const term = options.query.trim().toLowerCase();
+  return projects.filter(
+    (project) =>
+      tabOf(project, options.finishedTagId) === options.tab &&
+      matchesQuery(project, term) &&
+      matchesTags(project, options.tagFilter) &&
+      matchesEtapa(project, options.etapa ?? null) &&
+      matchesGroup(project, options.group),
+  );
+}
+
+/**
+ * Quantos projetos cada contador do "Fazer agora" tem — entre os ativos, com
+ * a busca, as tags e a etapa aplicadas, mas sem o próprio contador. O número
+ * é o que aparece ao clicar nele.
+ */
+export function countGroups(projects: Project[], options: FilterOptions) {
+  const counts = new Map<WorkGroupKey, number>();
+  for (const project of filterProjects(projects, { ...options, tab: "ativos", group: null })) {
+    const group = STAGES[projectStatus(project).stage].group;
+    if (group) counts.set(group, (counts.get(group) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** Quantos há em cada aba, com a busca e as tags aplicadas. */
+export function countTabs(projects: Project[], options: FilterOptions): Record<ListTab, number> {
+  const counts: Record<ListTab, number> = { ativos: 0, "no-ar": 0, finalizados: 0, ocultos: 0 };
+  const term = options.query.trim().toLowerCase();
+  for (const project of projects) {
+    if (!matchesQuery(project, term) || !matchesTags(project, options.tagFilter)) continue;
+    counts[tabOf(project, options.finishedTagId)] += 1;
   }
   return counts;
 }
 
 /**
- * Quantos projetos usam cada tag, com os outros filtros aplicados (vista,
- * busca, etapa). Contada na lista que veio do Drive: o número do banco inclui
- * pastas que já não existem, e por isso "A avaliar" chegava a 81 de 80.
+ * Quantos projetos usam cada tag, com os outros filtros aplicados. Contada na
+ * lista que veio do Drive: o número do banco inclui pastas que já não
+ * existem.
  */
 export function countTags(projects: Project[], options?: FilterOptions) {
-  const base = options
-    ? filterProjects(projects, { ...options, tagFilter: emptyTagFilter })
-    : projects;
+  const base = options ? filterProjects(projects, { ...options, tagFilter: emptyTagFilter }) : projects;
   const counts = new Map<string, number>();
   for (const project of base) {
     for (const id of project.tagIds) counts.set(id, (counts.get(id) ?? 0) + 1);
@@ -117,61 +129,45 @@ export function countTags(projects: Project[], options?: FilterOptions) {
   return counts;
 }
 
-/** Algum filtro além da vista está ligado — busca, etapa ou tags. */
-export const hasActiveFilters = ({ query, tagFilter, stage }: FilterOptions) =>
-  Boolean(query.trim() || stage || tagFilter.tagIds.length || tagFilter.untaggedOnly);
+/** Algum filtro além da aba está ligado — busca, contador, etapa ou tags. */
+export const hasActiveFilters = ({ query, tagFilter, etapa, group }: FilterOptions) =>
+  Boolean(query.trim() || etapa || group || tagFilter.tagIds.length || tagFilter.untaggedOnly);
 
-export function sortProjects(
-  projects: Project[],
-  sort: SortKey,
-  asc: boolean,
-): Project[] {
-  const direction = asc ? 1 : -1;
+/**
+ * Ordena sem mexer no array recebido. Cada chave é calculada uma vez por
+ * projeto (o estado e a última atividade não são baratos).
+ *
+ * Prioridade: o grupo do "Fazer agora" (o que quebrou primeiro) e, dentro
+ * dele, o que está parado há mais tempo.
+ */
+export function sortProjects(projects: Project[], sort: SortKey): Project[] {
+  const keyed = projects.map((project) => ({
+    project,
+    priority: sort === "prioridade" ? priorityIndex(project) : 0,
+    activity: sort === "prioridade" || sort === "atividade" ? (timeOf(lastActivityOf(project)?.at) ?? 0) : 0,
+    collected: sort.startsWith("coleta") ? collectedAtOf(project).getTime() : 0,
+    label: sort === "nome" ? projectIdentity(project).label : "",
+  }));
 
-  return [...projects].sort((a, b) => {
+  keyed.sort((a, b) => {
     switch (sort) {
-      case "name":
-        return (
-          projectIdentity(a).label.localeCompare(
-            projectIdentity(b).label,
-            "pt-BR",
-            { numeric: true },
-          ) * direction
-        );
-      case "activity":
-        return (
-          (new Date(a.lastActivity).getTime() -
-            new Date(b.lastActivity).getTime()) *
-          direction
-        );
-      case "files":
-        return (a.fileCount - b.fileCount) * direction;
-      case "size":
-        return (a.totalSize - b.totalSize) * direction;
-      case "tags":
-        return (
-          (a.tagIds.length - b.tagIds.length ||
-            a.name.localeCompare(b.name, "pt-BR")) * direction
-        );
-      default:
-        return (
-          (sortDateOf(a, "collected").getTime() -
-            sortDateOf(b, "collected").getTime()) *
-          direction
-        );
+      case "prioridade":
+        return a.priority - b.priority || a.activity - b.activity;
+      case "atividade":
+        return b.activity - a.activity;
+      case "coleta-recente":
+        return b.collected - a.collected;
+      case "coleta-antiga":
+        return a.collected - b.collected;
+      case "nome":
+        return a.label.localeCompare(b.label, "pt-BR", { numeric: true });
     }
   });
+  return keyed.map((item) => item.project);
 }
 
-export function summarize(projects: Project[], now: number) {
-  return {
-    total: projects.length,
-    files: projects.reduce((sum, p) => sum + p.fileCount, 0),
-    size: projects.reduce((sum, p) => sum + p.totalSize, 0),
-    recent: projects.filter((p) => {
-      const { collectedAt } = parseProjectName(p.name);
-      const reference = collectedAt ?? new Date(p.createdTime);
-      return now - reference.getTime() <= 30 * DAY;
-    }).length,
-  };
-}
+const priorityIndex = (project: Project) => {
+  const group = STAGES[projectStatus(project).stage].group;
+  // Sem grupo: no ar e só de arquivos, depois de todo o resto.
+  return group ? PRIORITY.indexOf(group) : PRIORITY.length;
+};

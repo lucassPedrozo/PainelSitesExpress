@@ -6,10 +6,10 @@ import { adoptClaudeSite, fetchClaudeAdoptPlan, type Project } from "@/lib/api";
 import { formatBytes, pluralize } from "@/lib/format";
 import { usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { HintWhenDisabled } from "./claude-shared";
-import { errorMessage, semPermissaoDeGerar } from "./claude-text";
+import { claudeBlock, errorMessage } from "./claude-text";
 import { useClaudeRefresh } from "./use-claude";
 
 /**
@@ -46,7 +46,7 @@ export function ClaudeAdoptNotice({ project }: { project: Project }) {
     }
   };
 
-  const semPermissao = can("gerar") ? null : semPermissaoDeGerar;
+  const semPermissao = can("gerar") ? null : claudeBlock.semPermissao;
 
   return (
     <Alert variant="info">
@@ -61,7 +61,7 @@ export function ClaudeAdoptNotice({ project }: { project: Project }) {
         <ul className="mt-2 space-y-1.5">
           {sources.map((source) => (
             <li key={source.path} className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <HintWhenDisabled reason={semPermissao}>
+              <DisabledHint reason={semPermissao}>
                 <Button
                   size="sm"
                   disabled={Boolean(semPermissao) || working !== null}
@@ -70,15 +70,15 @@ export function ClaudeAdoptNotice({ project }: { project: Project }) {
                   {working === source.path ? <Loader2 className="animate-spin" /> : <FolderInput />}
                   Trazer para o motor Claude
                 </Button>
-              </HintWhenDisabled>
+              </DisabledHint>
               <span className="text-xs text-muted-foreground">
-                {source.path ? `Pasta ${source.path}` : "Raiz do projeto"} · {pluralize(source.files, "arquivo")} ·{" "}
-                {formatBytes(source.bytes)}
+                {source.path ? `Pasta ${source.path}` : "Raiz do projeto"} · {pluralize(source.files, "arquivo")}
+                {source.bytes > 0 && ` · ${formatBytes(source.bytes)}`}
               </span>
             </li>
           ))}
         </ul>
-        {semPermissao && <p className="mt-1 text-xs">{semPermissao}.</p>}
+        {semPermissao && <Reason className="mt-1">{semPermissao}</Reason>}
       </AlertDescription>
     </Alert>
   );

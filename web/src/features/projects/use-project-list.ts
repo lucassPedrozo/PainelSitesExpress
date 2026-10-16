@@ -1,112 +1,89 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Generation, Project } from "@/lib/api";
-import {
-  fetchProjects,
-  setProjectName,
-  setProjectTags,
-} from "@/lib/api";
-import { groupByDate, type DatedGroup } from "@/features/projects/date-groups";
+import type { Generation, Project, ProjectDetailsPatch } from "@/lib/api";
+import { fetchProjects, setProjectTags, updateProjectDetails } from "@/lib/api";
 import type { TagFilter } from "@/features/tags/tag-filter";
 import { emptyTagFilter } from "@/features/tags/tag-filter";
 import { queryKeys } from "@/lib/query";
 import type { TagsController } from "@/features/tags/use-tags";
-import type { ProjectStage } from "./project-status";
-import { groupByNextStep, isDone } from "./work-queue";
 import { isInProgress } from "./project-progress";
 import {
-  countStages,
+  countGroups,
+  countTabs,
   countTags,
   filterProjects,
   hasActiveFilters,
-  isDateSort,
-  sortDateOf,
   sortProjects,
-  summarize,
+  type EtapaFilter,
   type FilterOptions,
   type SortKey,
 } from "./project-filters";
+import type { ListTab, WorkGroupKey } from "./stage";
 
 /**
- * A lista de projetos: carga, filtro, ordenação, agrupamento e as escritas
- * otimistas. As regras puras estão em `project-filters.ts`.
- *
- * Isto morava dentro do `App`, que passava de 900 linhas misturando estado,
- * regras e apresentação. Aqui as regras ficam testáveis sem montar a tela — e
- * a tela volta a ser só tela.
+ * A lista de projetos: carga, abas, filtros, contadores, ordenação e as
+ * escritas otimistas. As regras puras estão em `project-filters.ts`.
  */
 
-/**
- * "Fazer agora" agrupa pelo próximo passo; "Todos" é a lista por data;
- * "Finalizados" traz só os que saíram do painel.
- *
- * Os finalizados eram um botão à parte, combinado com a vista — e em "Fazer
- * agora" eles sumiam de novo, porque a fila esconde o que está no ar (e quase
- * todo finalizado está). O resultado era uma lista vazia. Como vista própria,
- * não há combinação a dar errado.
- */
-export type ProjectsView = "queue" | "all" | "finished";
+const TAB_KEY = "painel:projetos:aba";
 
-const VIEW_KEY = "painel:projetos:vista";
-
-const rememberedView = (): ProjectsView => {
+const rememberedTab = (): ListTab => {
   try {
-    const salva = localStorage.getItem(VIEW_KEY);
-    return salva === "all" || salva === "finished" ? salva : "queue";
+    const salva = localStorage.getItem(TAB_KEY);
+    return salva === "no-ar" || salva === "finalizados" ? salva : "ativos";
   } catch {
-    return "queue";
+    return "ativos";
   }
 };
 
 export type ProjectList = {
   projects: Project[];
+  /** O que a tabela mostra: aba, filtros e ordem aplicados. */
   visible: Project[];
-  groups: Array<DatedGroup<Project>> | null;
-  view: ProjectsView;
-  setView: (value: ProjectsView) => void;
-  /** No ar, fora da fila "Fazer agora" — o que a vista "Todos" mostra a mais. */
-  doneCount: number;
-  summary: ReturnType<typeof summarize>;
-  finishedCount: number;
+  tab: ListTab;
+  setTab: (value: ListTab) => void;
+  tabCounts: Record<ListTab, number>;
+  /** Os contadores do "Fazer agora", com os outros filtros aplicados. */
+  groupCounts: Map<WorkGroupKey, number>;
+  group: WorkGroupKey | null;
+  /** Liga um contador; o mesmo de novo desliga. Também leva para a aba Ativos. */
+  toggleGroup: (value: WorkGroupKey) => void;
+  etapa: EtapaFilter;
+  setEtapa: (value: EtapaFilter) => void;
   /** Primeira carga: a tela ainda não tem nada para mostrar. */
   loading: boolean;
   /** Recarregando com dados na tela — o botão gira, a lista continua. */
   refreshing: boolean;
   error: string | null;
   fetchedAt: string | null;
-  now: number;
   query: string;
   setQuery: (value: string) => void;
   sort: SortKey;
   setSort: (value: SortKey) => void;
-  asc: boolean;
-  toggleDirection: () => void;
   tagFilter: TagFilter;
   setTagFilter: (value: TagFilter) => void;
-  /** Estado escolhido no filtro; `null` mostra todos. */
-  stage: ProjectStage | null;
-  setStage: (value: ProjectStage | null) => void;
-  stageCounts: Map<ProjectStage, number>;
   /** Uso de cada tag, com os outros filtros aplicados. */
   tagCounts: Map<string, number>;
-  /** Busca, etapa ou tags ligadas — a vista não conta. */
+  /** Busca, contador, etapa ou tags ligados — a aba não conta. */
   filtersActive: boolean;
-  /** Volta a busca, a etapa e as tags ao padrão; a vista fica. */
+  /** Volta a busca, o contador, a etapa e as tags ao padrão; a aba fica. */
   clearFilters: () => void;
+  /** Mostra um projeto pelo nome, na aba em que ele está. */
+  showProject: (project: Project, tab: ListTab) => void;
   /** Projetos marcados para uma ação em massa. */
   selectedIds: ReadonlySet<string>;
   toggleSelected: (projectId: string) => void;
   setSelected: (projectIds: string[]) => void;
   clearSelection: () => void;
   /** Aplica tags a vários projetos de uma vez; devolve quantos falharam. */
-  applyTagsMany: (
-    projects: Project[],
-    update: (tagIds: string[]) => string[],
-  ) => Promise<number>;
+  applyTagsMany: (projects: Project[], update: (tagIds: string[]) => string[]) => Promise<number>;
   load: (refresh?: boolean) => Promise<void>;
   applyTags: (project: Project, tagIds: string[]) => Promise<void>;
-  applyName: (project: Project, name: string) => Promise<void>;
+  /** Grava o que a equipe corrigiu e relê a lista: domínio, data e etapa mexem em tudo. */
+  applyDetails: (project: Project, patch: ProjectDetailsPatch) => Promise<void>;
+  /** O mesmo em vários projetos; devolve quantos falharam. Relê a lista no fim. */
+  applyDetailsMany: (projects: Project[], patch: ProjectDetailsPatch) => Promise<number>;
   patchGeneration: (project: Project, generation: Generation) => void;
   forgetTag: (tagId: string) => void;
 };
@@ -115,20 +92,13 @@ type ProjectsResponse = Awaited<ReturnType<typeof fetchProjects>>;
 
 export function useProjectList(tags: TagsController): ProjectList {
   const queryClient = useQueryClient();
-  const {
-    data,
-    isPending,
-    isFetching,
-    error: queryError,
-  } = useQuery({
+  const { data, isPending, isFetching, error: queryError } = useQuery({
     queryKey: queryKeys.projects,
     queryFn: () => fetchProjects(),
-    // Enquanto algum site está sendo gerado ou publicado, a lista se atualiza
-    // sozinha: é o acompanhamento na API (do agente e da execução no GitHub)
-    // que muda o selo e o andamento do card. A área de aprovação ficava de
-    // fora, e o link pronto só aparecia recarregando a página.
-    refetchInterval: (query) =>
-      query.state.data?.projects.some(isInProgress) ? 10_000 : false,
+    // Enquanto algo está sendo gerado ou publicado, a lista se atualiza
+    // sozinha: é o acompanhamento na API (do agente, do Claude e da execução
+    // no GitHub) que muda o selo e o andamento.
+    refetchInterval: (query) => (query.state.data?.projects.some(isInProgress) ? 10_000 : false),
     // Continua em outra aba: é de lá que chega o aviso de site pronto.
     refetchIntervalInBackground: true,
   });
@@ -136,20 +106,29 @@ export function useProjectList(tags: TagsController): ProjectList {
   const projects = useMemo(() => data?.projects ?? [], [data]);
   const fetchedAt = data?.fetchedAt ?? null;
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortKey>("collected");
-  const [asc, setAsc] = useState(false);
+  // A coleta mais recente primeiro: é a ordem em que o material chega, e a
+  // das faixas de data (Hoje, Ontem, Últimos 7 dias…).
+  const [sort, setSort] = useState<SortKey>("coleta-recente");
   const [tagFilter, setTagFilter] = useState<TagFilter>(emptyTagFilter);
-  const [stage, setStage] = useState<ProjectStage | null>(null);
-  const [view, setViewState] = useState<ProjectsView>(rememberedView);
-  const setView = useCallback((value: ProjectsView) => {
-    setViewState(value);
+  const [etapa, setEtapa] = useState<EtapaFilter>(null);
+  const [group, setGroup] = useState<WorkGroupKey | null>(null);
+  const [tab, setTabState] = useState<ListTab>(rememberedTab);
+  const setTab = useCallback((value: ListTab) => {
+    setTabState(value);
     try {
-      localStorage.setItem(VIEW_KEY, value);
+      localStorage.setItem(TAB_KEY, value);
     } catch {
-      // Sem armazenamento, a escolha vale só nesta aba.
+      // Sem armazenamento, a escolha vale só nesta aba do navegador.
     }
   }, []);
-  const showFinished = view === "finished";
+  const toggleGroup = useCallback(
+    (value: WorkGroupKey) => {
+      setGroup((current) => (current === value ? null : value));
+      // Os contadores são dos ativos: ligar um em outra aba levaria a uma lista vazia.
+      setTab("ativos");
+    },
+    [setTab],
+  );
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const { recount } = tags;
 
@@ -179,11 +158,7 @@ export function useProjectList(tags: TagsController): ProjectList {
     async (project: Project, tagIds: string[]) => {
       const previous = project.tagIds;
       const patch = (ids: string[]) =>
-        patchProjects((prev) =>
-          prev.map((item) =>
-            item.id === project.id ? { ...item, tagIds: ids } : item,
-          ),
-        );
+        patchProjects((prev) => prev.map((item) => (item.id === project.id ? { ...item, tagIds: ids } : item)));
 
       patch(tagIds);
       recount(previous, tagIds);
@@ -195,8 +170,7 @@ export function useProjectList(tags: TagsController): ProjectList {
         patch(previous);
         recount(tagIds, previous);
         toast.error("Não foi possível salvar as tags", {
-          description:
-            err instanceof Error ? err.message : "Verifique se a API está no ar.",
+          description: err instanceof Error ? err.message : "Verifique se a API está no ar.",
         });
       }
     },
@@ -206,34 +180,42 @@ export function useProjectList(tags: TagsController): ProjectList {
   );
 
   /**
-   * O apelido vale só no painel — a pasta do Drive não é tocada, porque o
-   * acesso lá é somente leitura.
+   * O que a equipe corrige à mão. Não é otimista: o domínio muda a publicação
+   * que o projeto acha, e a data e a etapa, a ordem e os contadores — a lista
+   * volta da API já com tudo isso recalculado. O erro sobe para o formulário,
+   * que o mostra sem fechar.
    */
-  const applyName = useCallback(
-    async (project: Project, name: string) => {
-      const previous = project.alias;
-      const patch = (alias: string | null) =>
-        patchProjects((prev) =>
-          prev.map((item) =>
-            item.id === project.id ? { ...item, alias } : item,
-          ),
-        );
-
-      patch(name || null);
-      try {
-        await setProjectName(project.id, name);
-        toast.success(name ? "Nome atualizado" : "Nome da pasta restaurado");
-      } catch (err) {
-        patch(previous);
-        toast.error("Não foi possível salvar o nome", {
-          description:
-            err instanceof Error
-              ? err.message
-              : "Verifique se a API está no ar.",
-        });
-      }
+  const applyDetails = useCallback(
+    async (project: Project, patch: ProjectDetailsPatch) => {
+      await updateProjectDetails(project.id, patch);
+      await load();
+      toast.success("Projeto atualizado");
     },
-    [patchProjects],
+    [load],
+  );
+
+  /**
+   * Edição em massa: três projetos por vez, como as tags. Cada um é gravado
+   * sozinho, então uma falha não desfaz os outros — e a contagem diz quantos.
+   */
+  const applyDetailsMany = useCallback(
+    async (alvos: Project[], patch: ProjectDetailsPatch) => {
+      let falhas = 0;
+      const fila = [...alvos];
+      const worker = async () => {
+        for (let project = fila.shift(); project; project = fila.shift()) {
+          try {
+            await updateProjectDetails(project.id, patch);
+          } catch {
+            falhas += 1;
+          }
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+      await load();
+      return falhas;
+    },
+    [load],
   );
 
   /** Substitui uma geração já carregada pela versão que a API devolveu. */
@@ -242,12 +224,7 @@ export function useProjectList(tags: TagsController): ProjectList {
       patchProjects((prev) =>
         prev.map((item) =>
           item.id === project.id
-            ? {
-                ...item,
-                generations: item.generations.map((g) =>
-                  g.id === generation.id ? generation : g,
-                ),
-              }
+            ? { ...item, generations: item.generations.map((g) => (g.id === generation.id ? generation : g)) }
             : item,
         ),
       );
@@ -260,63 +237,42 @@ export function useProjectList(tags: TagsController): ProjectList {
     (tagId: string) => {
       patchProjects((prev) =>
         prev.map((project) =>
-          project.tagIds.includes(tagId)
-            ? { ...project, tagIds: project.tagIds.filter((id) => id !== tagId) }
-            : project,
+          project.tagIds.includes(tagId) ? { ...project, tagIds: project.tagIds.filter((id) => id !== tagId) } : project,
         ),
       );
-      setTagFilter((prev) => ({
-        ...prev,
-        tagIds: prev.tagIds.filter((id) => id !== tagId),
-      }));
+      setTagFilter((prev) => ({ ...prev, tagIds: prev.tagIds.filter((id) => id !== tagId) }));
     },
     [patchProjects],
   );
 
-  /**
-   * A referência de tempo é o instante em que os dados foram lidos, não o
-   * relógio de cada render: assim "Hoje" não muda de sentido no meio de uma
-   * interação, e o resumo e as faixas de data nunca discordam.
-   */
-  const now = useMemo(
-    () => (fetchedAt ? new Date(fetchedAt).getTime() : 0),
-    [fetchedAt],
-  );
-
-  const summary = useMemo(() => summarize(projects, now), [projects, now]);
-
-  const finishedCount = useMemo(() => {
-    const finished = tags.finishedTagId;
-    if (!finished) return 0;
-    return projects.filter((p) => p.tagIds.includes(finished)).length;
-  }, [projects, tags.finishedTagId]);
-
   const filterOptions: FilterOptions = useMemo(
-    () => ({ query, tagFilter, showFinished, finishedTagId: tags.finishedTagId, stage }),
-    [query, tagFilter, showFinished, tags.finishedTagId, stage],
+    () => ({ query, tagFilter, tab, finishedTagId: tags.finishedTagId, etapa, group }),
+    [query, tagFilter, tab, tags.finishedTagId, etapa, group],
   );
 
-  // Cada fileira conta com os filtros das outras: o número ao lado de uma
-  // etapa ou tag é o que a lista mostra ao clicar nela.
-  const stageCounts = useMemo(
-    () => countStages(projects, filterOptions),
-    [projects, filterOptions],
-  );
-  const tagCounts = useMemo(
-    () => countTags(projects, filterOptions),
-    [projects, filterOptions],
-  );
-
-  const filtered = useMemo(
-    () => sortProjects(filterProjects(projects, filterOptions), sort, asc),
-    [projects, filterOptions, sort, asc],
+  const groupCounts = useMemo(() => countGroups(projects, filterOptions), [projects, filterOptions]);
+  const tabCounts = useMemo(() => countTabs(projects, filterOptions), [projects, filterOptions]);
+  const tagCounts = useMemo(() => countTags(projects, filterOptions), [projects, filterOptions]);
+  const visible = useMemo(
+    () => sortProjects(filterProjects(projects, filterOptions), sort),
+    [projects, filterOptions, sort],
   );
 
   const clearFilters = useCallback(() => {
     setQuery("");
-    setStage(null);
+    setGroup(null);
+    setEtapa(null);
     setTagFilter(emptyTagFilter);
   }, []);
+
+  const showProject = useCallback(
+    (project: Project, target: ListTab) => {
+      clearFilters();
+      setQuery(project.alias ?? project.name);
+      setTab(target);
+    },
+    [clearFilters, setTab],
+  );
 
   /**
    * Tags em vários projetos: um pedido por projeto, três por vez. Cada um é a
@@ -333,17 +289,13 @@ export function useProjectList(tags: TagsController): ProjectList {
         for (let project = fila.shift(); project; project = fila.shift()) {
           const previous = project.tagIds;
           const next = update(previous);
-          patchProjects((prev) =>
-            prev.map((item) => (item.id === project.id ? { ...item, tagIds: next } : item)),
-          );
+          patchProjects((prev) => prev.map((item) => (item.id === project.id ? { ...item, tagIds: next } : item)));
           recount(previous, next);
           try {
             await setProjectTags(project.id, next);
           } catch {
             falhas += 1;
-            patchProjects((prev) =>
-              prev.map((item) => (item.id === project.id ? { ...item, tagIds: previous } : item)),
-            );
+            patchProjects((prev) => prev.map((item) => (item.id === project.id ? { ...item, tagIds: previous } : item)));
             recount(next, previous);
           }
         }
@@ -365,49 +317,31 @@ export function useProjectList(tags: TagsController): ProjectList {
   const setSelected = useCallback((projectIds: string[]) => setSelectedIds(new Set(projectIds)), []);
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
-  // Na fila, o que está no ar sai — a não ser que o filtro peça justamente ele.
-  const queue = view === "queue" && stage !== "live";
-  const visible = useMemo(
-    () => (queue ? filtered.filter((project) => !isDone(project)) : filtered),
-    [filtered, queue],
-  );
-  const doneCount = filtered.length - visible.length;
-
-  const groups = useMemo(() => {
-    if (queue) return groupByNextStep(visible);
-    return isDateSort(sort)
-      ? groupByDate(visible, (project) => sortDateOf(project, sort), now)
-      : null;
-  }, [queue, visible, sort, now]);
-
   return {
     projects,
     visible,
-    groups,
-    view,
-    setView,
-    doneCount,
-    summary,
-    finishedCount,
+    tab,
+    setTab,
+    tabCounts,
+    groupCounts,
+    group,
+    toggleGroup,
+    etapa,
+    setEtapa,
     loading: isPending,
     refreshing: isFetching && !isPending,
     error: queryError ? (queryError as Error).message : null,
     fetchedAt,
-    now,
     query,
     setQuery,
     sort,
     setSort,
-    asc,
-    toggleDirection: useCallback(() => setAsc((prev) => !prev), []),
     tagFilter,
     setTagFilter,
-    stage,
-    setStage,
-    stageCounts,
     tagCounts,
     filtersActive: hasActiveFilters(filterOptions),
     clearFilters,
+    showProject,
     selectedIds,
     toggleSelected,
     setSelected,
@@ -415,7 +349,8 @@ export function useProjectList(tags: TagsController): ProjectList {
     applyTagsMany,
     load,
     applyTags,
-    applyName,
+    applyDetails,
+    applyDetailsMany,
     patchGeneration,
     forgetTag,
   };

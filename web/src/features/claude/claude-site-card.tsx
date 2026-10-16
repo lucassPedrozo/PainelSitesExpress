@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { ClaudeProjectDetail, ClaudeRoute, ClaudeSite, Project } from "@/lib/api";
+import type { ClaudeProjectDetail, ClaudeRoute, ClaudeSite, Generation, Project } from "@/lib/api";
 import {
   abortClaudeStage,
   adjustClaudeSite,
@@ -31,8 +31,10 @@ import {
   refuseClaudeStockPhoto,
   validateClaudeSite,
 } from "@/lib/api";
-import { formatDateTime, pluralize } from "@/lib/format";
+import { formatDateTime, pluralize, timeOf } from "@/lib/format";
 import { usePermissions } from "@/lib/permissions";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
+import { When } from "@/components/when";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -46,7 +48,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,8 +67,8 @@ import { cn } from "@/lib/utils";
 import { AdjustAttachments, attachmentsPayload, useAdjustAttachments } from "./claude-adjust-attachments";
 import { choicesSentence } from "./claude-options";
 import { ClaudeCritiqueCard, ClaudePipelineLine } from "./claude-pipeline-view";
-import { ConfirmClaudeDialog, HintWhenDisabled } from "./claude-shared";
-import { continueTexts, errorMessage, pausedNotice, semPermissaoDeGerar } from "./claude-text";
+import { ConfirmClaudeDialog, TechnicalDetails } from "./claude-shared";
+import { claudeBlock, continueTexts, errorMessage, pausedNotice } from "./claude-text";
 import { useClaudeOptions, useClaudeRefresh } from "./use-claude";
 
 type Props = {
@@ -71,9 +81,9 @@ type Props = {
 /** Por que o botão que gasta está fora de alcance, se está. */
 function useSpendBlock(detail: ClaudeProjectDetail, busy: boolean) {
   const { can } = usePermissions();
-  if (!can("gerar")) return semPermissaoDeGerar;
-  if (busy) return "Há um pedido deste projeto na fila do Claude.";
-  if (!detail.generation.enabled) return "A geração pelo Claude está desligada neste painel.";
+  if (!can("gerar")) return claudeBlock.semPermissao;
+  if (busy) return claudeBlock.naFila;
+  if (!detail.generation.enabled) return claudeBlock.desligada;
   return null;
 }
 
@@ -160,10 +170,10 @@ export function ClaudeApprovalCard({ project, detail, busy }: Props) {
           <h4 className="text-xs font-medium text-muted-foreground">
             Fotos de banco propostas · {site.fotosPropostas.length}
           </h4>
-          <ul className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-2">
+          <ul className="grid grid-files gap-2">
             {site.fotosPropostas.map((foto) => (
               <li key={foto.ref} className="flex flex-col overflow-hidden rounded-lg border bg-card">
-                <div className="grid aspect-[4/3] place-items-center bg-muted/40">
+                <div className="grid aspect-4/3 place-items-center bg-muted/40">
                   {foto.miniatura ? (
                     <img
                       src={claudeImageUrl(project.id, "miniatura", foto.miniatura)}
@@ -236,7 +246,7 @@ export function ClaudeApprovalCard({ project, detail, busy }: Props) {
                 <p className="text-sm font-medium">{rota.nome}</p>
                 <p className="text-xs leading-relaxed text-muted-foreground">{rota.ideia}</p>
                 <div className="mt-auto flex pt-1.5">
-                  <HintWhenDisabled reason={bloqueio}>
+                  <DisabledHint reason={bloqueio}>
                     {rota.escolhida ? (
                       <Button
                         size="sm"
@@ -261,7 +271,7 @@ export function ClaudeApprovalCard({ project, detail, busy }: Props) {
                         Usar esta rota
                       </Button>
                     )}
-                  </HintWhenDisabled>
+                  </DisabledHint>
                 </div>
               </li>
             ))}
@@ -275,16 +285,16 @@ export function ClaudeApprovalCard({ project, detail, busy }: Props) {
 
       {(bloqueio || !escolhida) && (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {bloqueio && <p className="mr-auto text-xs text-muted-foreground">{bloqueio}</p>}
+          {bloqueio && <Reason className="mr-auto">{bloqueio}</Reason>}
           {/* Sem rota marcada como escolhida (um site de antes das rotas), o
               botão de aprovar fica aqui, como sempre ficou. */}
           {!escolhida && (
-            <HintWhenDisabled reason={bloqueio}>
+            <DisabledHint reason={bloqueio}>
               <Button size="sm" disabled={Boolean(bloqueio) || working !== null} onClick={() => setConfirming("approve")}>
                 {working === "approve" ? <Loader2 className="animate-spin" /> : <CheckCheck />}
                 Aprovar e gerar o site
               </Button>
-            </HintWhenDisabled>
+            </DisabledHint>
           )}
         </div>
       )}
@@ -335,12 +345,16 @@ export function ClaudeContinueCard({ project, detail, busy }: Props) {
   const [confirming, setConfirming] = useState<"continue" | "abort" | null>(null);
   const [working, setWorking] = useState<"continue" | "abort" | null>(null);
   const aberta = claudeStageLabel(site.etapaAberta);
-  const etapa = aberta ?? "etapa";
+  /** "a etapa de revisão"; sem o nome da etapa, só "a etapa aberta" — nunca "etapa de etapa". */
+  const aEtapa = aberta ? `a etapa de ${aberta}` : "a etapa aberta";
   const { fase, rodada, rodadas } = site.pipeline;
   const daRodada = fase === "critica" || fase === "refino" ? claudeRoundLabel(rodada, rodadas) : null;
   // Uma etapa de ajuste aberta não tem passo seguinte: só dá para encerrá-la.
   const textos = site.proximo ? continueTexts(site.proximo, { aberta, rodada: daRodada }) : null;
   const parou = site.proximo && !aberta ? pausedNotice(site.proximo, daRodada) : null;
+  const encerrarBloqueado = !can("gerar") ? claudeBlock.semPermissao : busy ? claudeBlock.naFila : null;
+  // O motivo escrito é o do botão que está na tela: sem passo seguinte, só o de encerrar.
+  const motivo = textos ? bloqueio : aberta ? encerrarBloqueado : null;
 
   const continuar = async () => {
     requestNotificationPermission();
@@ -380,7 +394,7 @@ export function ClaudeContinueCard({ project, detail, busy }: Props) {
       ) : (
         <Alert variant="destructive">
           <TriangleAlert />
-          <AlertTitle>A execução terminou com a etapa de {etapa} aberta</AlertTitle>
+          <AlertTitle>A execução terminou com {aEtapa} aberta</AlertTitle>
           <AlertDescription>
             {site.proximo === "criticar"
               ? "O Claude parou antes de entregar o parecer. Rode a crítica de novo, ou encerre a etapa."
@@ -393,27 +407,27 @@ export function ClaudeContinueCard({ project, detail, busy }: Props) {
         </Alert>
       )}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {bloqueio && <p className="mr-auto text-xs text-muted-foreground">{bloqueio}</p>}
+        {motivo && <Reason className="mr-auto">{motivo}</Reason>}
         {aberta && (
-          <HintWhenDisabled reason={!can("gerar") ? semPermissaoDeGerar : busy ? "Há um pedido deste projeto na fila do Claude." : null}>
+          <DisabledHint reason={encerrarBloqueado}>
             <Button
               variant="outline"
               size="sm"
-              disabled={!can("gerar") || busy || working !== null}
+              disabled={Boolean(encerrarBloqueado) || working !== null}
               onClick={() => setConfirming("abort")}
             >
               {working === "abort" ? <Loader2 className="animate-spin" /> : <Square />}
               Encerrar etapa
             </Button>
-          </HintWhenDisabled>
+          </DisabledHint>
         )}
         {textos && (
-          <HintWhenDisabled reason={bloqueio}>
+          <DisabledHint reason={bloqueio}>
             <Button size="sm" disabled={Boolean(bloqueio) || working !== null} onClick={() => setConfirming("continue")}>
               {working === "continue" ? <Loader2 className="animate-spin" /> : <Play />}
               {textos.button}
             </Button>
-          </HintWhenDisabled>
+          </DisabledHint>
         )}
       </div>
 
@@ -432,7 +446,7 @@ export function ClaudeContinueCard({ project, detail, busy }: Props) {
       <AlertDialog open={confirming === "abort"} onOpenChange={(open) => !open && setConfirming(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Encerrar a etapa de {etapa}?</AlertDialogTitle>
+            <AlertDialogTitle>Encerrar {aEtapa}?</AlertDialogTitle>
             <AlertDialogDescription>
               A etapa é fechada como falha e não dá mais para continuá-la. O que já foi escrito fica no site.
               Isto não usa o Claude.
@@ -457,8 +471,36 @@ export function ClaudeContinueCard({ project, detail, busy }: Props) {
 const stageVariant = { aberta: "warning", concluida: "success", falhou: "destructive" } as const;
 const stageStatus = { aberta: "Aberta", concluida: "Concluída", falhou: "Falhou" } as const;
 
+/** O site no GitHub: o registro dele no painel e se há versão validada esperando o envio. */
+type GitHubState = { site: Generation; validado: number | null; enviado: number | null; pendente: boolean };
+
+function githubState(project: Project): GitHubState | null {
+  const site = [...project.generations].reverse().find((item) => isClaudeSite(item));
+  // Sem o registro do site, ele ainda não foi gerado e validado: não há o que enviar.
+  if (!site) return null;
+  // Datas comparadas pelo instante, e não como texto: dois formatos de ISO
+  // davam "depois" errado.
+  const validado = timeOf(site.claudeValidatedAt);
+  const enviado = timeOf(site.claudePushedAt);
+  const pendente = !site.repoFullName || (validado !== null && (enviado === null || validado > enviado));
+  return { site, validado, enviado, pendente };
+}
+
 /** O site no motor: o que já foi feito nele e o que dá para pedir agora. */
-export function ClaudeSiteCard({ project, detail, busy, onPush }: Props & { onPush: () => void }) {
+export function ClaudeSiteCard({
+  project,
+  detail,
+  busy,
+  onPush,
+  primary = true,
+}: Props & {
+  onPush: () => void;
+  /**
+   * O próximo passo está neste cartão. Falso quando outro cartão logo acima
+   * pede a decisão (continuar, aprovar): aqui tudo fica secundário.
+   */
+  primary?: boolean;
+}) {
   const refresh = useClaudeRefresh();
   const { can } = usePermissions();
   const site = detail.site!;
@@ -472,17 +514,19 @@ export function ClaudeSiteCard({ project, detail, busy, onPush }: Props & { onPu
   const opcoes = useClaudeOptions(project.id);
   /** Muda a cada captura: o navegador busca a imagem nova, com o mesmo nome. */
   const [versao, setVersao] = useState(0);
+  const github = githubState(project);
 
   const semPermissao = !can("gerar");
-  const localBloqueado = semPermissao
-    ? semPermissaoDeGerar
-    : busy
-      ? "Há um pedido deste projeto na fila do Claude."
-      : null;
+  // O que trava tudo o que mexe no site — escrito uma vez, no topo do cartão,
+  // e não um por botão.
+  const localBloqueado = busy ? claudeBlock.naFila : semPermissao ? claudeBlock.semPermissao : null;
   // O ajuste só vale num site já entregue: com etapa aberta, esperando
   // aprovação ou ainda nas rodadas de crítica e refino, o motor o recusa — e a
   // tela nem oferece.
   const ajustavel = site.entregue && !site.etapaAberta && !site.aguardandoAprovacao;
+  // Uma ação principal só: o envio ao GitHub quando há versão esperando; senão, o ajuste.
+  const githubPrincipal = primary && Boolean(github?.pendente);
+  const ajustePrincipal = primary && !github?.pendente && !bloqueio;
 
   /** Página única ou várias páginas: não gasta, e vale para o próximo ajuste. */
   const mudarTipo = async (variasPaginas: boolean) => {
@@ -508,7 +552,7 @@ export function ClaudeSiteCard({ project, detail, busy, onPush }: Props & { onPu
       setPedido("");
       anexos.reset();
       await refresh();
-      toast.success("Ajuste na fila do Claude", { description: "O card mostra o andamento." });
+      toast.success("Ajuste na fila do Claude", { description: "A aba Claude mostra o andamento." });
     } catch (err) {
       toast.error("O ajuste não entrou na fila", { description: errorMessage(err) });
     } finally {
@@ -543,149 +587,23 @@ export function ClaudeSiteCard({ project, detail, busy, onPush }: Props & { onPu
     }
   };
 
+  // A crítica ganha a coluna da direita quando há o que fazer à esquerda; sem
+  // ações (o site ainda nas rodadas), ela ocupa a largura toda.
+  const temAcoes = Boolean(github) || ajustavel;
+
   return (
-    <section aria-labelledby="claude-site" className="space-y-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h3 id="claude-site" className="text-sm font-medium">
+    <section aria-labelledby="claude-site" className="space-y-5">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h3 id="claude-site" className="text-section">
           Site
         </h3>
         <Badge variant={site.entregue ? "success" : "outline"}>{site.situacao}</Badge>
         <span className="font-mono text-xs text-muted-foreground">{site.slug}</span>
-      </div>
-
-      {/* Onde o site está, do briefing à entrega — e, logo abaixo, o que a
-          última crítica disse dele: é o motivo de ainda haver trabalho. */}
-      <ClaudePipelineLine site={site} running={detail.project?.queue?.estado === "rodando"} />
-
-      {site.critica && <ClaudeCritiqueCard critica={site.critica} />}
-
-      {site.etapas.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full min-w-[32rem] text-xs">
-            <thead className="bg-muted/40 text-left text-muted-foreground">
-              <tr>
-                <th className="px-3 py-1.5 font-medium">Etapa</th>
-                <th className="px-3 py-1.5 font-medium">Situação</th>
-                <th className="px-3 py-1.5 font-medium">Chamadas</th>
-                <th className="px-3 py-1.5 font-medium">Builds</th>
-                <th className="px-3 py-1.5 font-medium">Início</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {site.etapas.map((etapa) => (
-                <tr key={etapa.n}>
-                  <td className="px-3 py-1.5 first-letter:uppercase">
-                    {claudeStageLabel(etapa.etapa)}
-                    {etapa.rodada ? ` · rodada ${etapa.rodada}` : null}
-                    {etapa.pedido && (
-                      <span className="block max-w-xs truncate text-muted-foreground normal-case" title={etapa.pedido}>
-                        {etapa.pedido}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <Badge variant={stageVariant[etapa.status]}>{stageStatus[etapa.status]}</Badge>
-                    {etapa.motivoFalha && (
-                      <span className="mt-0.5 block max-w-xs truncate text-muted-foreground" title={etapa.motivoFalha}>
-                        {etapa.motivoFalha}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 tabular-nums">
-                    {etapa.chamadas} de {etapa.limite}
-                  </td>
-                  <td className="px-3 py-1.5 tabular-nums">
-                    {etapa.builds}
-                    {etapa.errosBuild > 0 && ` · ${pluralize(etapa.errosBuild, "erro")}`}
-                  </td>
-                  <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{formatDateTime(etapa.inicio)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <GitHubRow project={project} detail={detail} busy={busy} onPush={onPush} />
-
-      {ajustavel && (
-        <div className="space-y-1.5">
-          <Label htmlFor="claude-ajuste" className="text-sm font-medium">
-            Pedir um ajuste
-          </Label>
-          {/* Um motor de antes desta opção não diz o tipo do site: a tela não oferece o que ele não sabe mudar. */}
-          {site.multiplasPaginas !== undefined && (
-            <div className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-lg border px-3 py-2">
-              <HintWhenDisabled reason={localBloqueado}>
-                <Switch
-                  id="claude-varias-paginas"
-                  className="mt-0.5"
-                  checked={site.multiplasPaginas}
-                  disabled={Boolean(localBloqueado) || working !== null}
-                  onCheckedChange={(valor) => void mudarTipo(valor)}
-                />
-              </HintWhenDisabled>
-              <div className="min-w-0 flex-1 basis-64">
-                <Label htmlFor="claude-varias-paginas" className="text-sm">
-                  Várias páginas
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {site.multiplasPaginas
-                    ? site.paginas?.length
-                      ? `O site tem a página inicial e mais ${pluralize(site.paginas.length, "página")} (${site.paginas.join(", ")}). Um ajuste pode criar, tirar ou dividir páginas.`
-                      : "O site ainda tem só a página inicial. Peça as páginas novas em um ajuste: ele já pode criá-las."
-                    : "Site de página única: um ajuste que peça páginas novas é recusado. Ligue para o próximo ajuste poder criá-las; ligar não gasta nem muda o site."}
-                </p>
-              </div>
-            </div>
-          )}
-          <Textarea
-            id="claude-ajuste"
-            rows={3}
-            value={pedido}
-            disabled={semPermissao || busy}
-            onChange={(event) => setPedido(event.target.value)}
-            onPaste={(event) => {
-              // Uma captura de tela colada vira anexo; texto colado segue normal.
-              const imagens = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
-              if (!imagens.length) return;
-              event.preventDefault();
-              void anexos.add(imagens);
-            }}
-            placeholder="O que deve mudar no site: “troque a foto do topo pela fachada” ou “deixe o texto dos serviços mais curto”."
-            className="max-h-48 resize-y text-sm leading-relaxed"
-          />
-          <AdjustAttachments attachments={anexos} disabled={semPermissao || busy || working !== null} />
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="mr-auto min-w-0 flex-1 basis-64 space-y-0.5 text-xs text-muted-foreground">
-              {bloqueio && <p>{bloqueio}</p>}
-              {opcoes.data && (
-                <p>
-                  O ajuste roda com {choicesSentence(opcoes.data.options, opcoes.data.defaults)}. Para trocar, grave
-                  outros em “Opções do site”, no briefing abaixo.
-                </p>
-              )}
-            </div>
-            <HintWhenDisabled reason={bloqueio}>
-              <Button
-                size="sm"
-                disabled={Boolean(bloqueio) || !pedido.trim() || working !== null || anexos.uploading}
-                onClick={() => setConfirming(true)}
-              >
-                {working === "adjust" ? <Loader2 className="animate-spin" /> : <PencilLine />}
-                Pedir ajuste
-              </Button>
-            </HintWhenDisabled>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h4 className="mr-auto text-xs font-medium text-muted-foreground">
-            Conferir nesta máquina · não usa o Claude
-          </h4>
-          <HintWhenDisabled reason={localBloqueado}>
+        {/* Conferir não gasta: fica no cabeçalho, ao alcance, sem competir
+            com a ação principal do site. */}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Conferir sem usar o Claude:</span>
+          <DisabledHint reason={localBloqueado}>
             <Button
               variant="outline"
               size="sm"
@@ -696,8 +614,8 @@ export function ClaudeSiteCard({ project, detail, busy, onPush }: Props & { onPu
               {working === "validate" ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
               Validar
             </Button>
-          </HintWhenDisabled>
-          <HintWhenDisabled reason={localBloqueado}>
+          </DisabledHint>
+          <DisabledHint reason={localBloqueado}>
             <Button
               variant="outline"
               size="sm"
@@ -708,21 +626,127 @@ export function ClaudeSiteCard({ project, detail, busy, onPush }: Props & { onPu
               {working === "telas" ? <Loader2 className="animate-spin" /> : <Camera />}
               Fotografar telas
             </Button>
-          </HintWhenDisabled>
+          </DisabledHint>
         </div>
+      </header>
 
-        {validacao && (
-          <Alert variant={validacao.ok ? "success" : "destructive"}>
-            {validacao.ok ? <ShieldCheck /> : <TriangleAlert />}
-            <AlertTitle>{validacao.ok ? "Build e validação passaram" : "A validação apontou problemas"}</AlertTitle>
-            <AlertDescription>
-              <pre className="max-h-48 overflow-y-auto font-mono text-xs whitespace-pre-wrap">{validacao.texto}</pre>
-            </AlertDescription>
-          </Alert>
+      {localBloqueado && <Reason>{localBloqueado}</Reason>}
+
+      {/* Onde o site está, do briefing à entrega. */}
+      <ClaudePipelineLine site={site} running={detail.project?.queue?.estado === "rodando"} />
+
+      {validacao && (
+        <Alert variant={validacao.ok ? "success" : "destructive"}>
+          {validacao.ok ? <ShieldCheck /> : <TriangleAlert />}
+          <AlertTitle>{validacao.ok ? "Build e validação passaram" : "A validação apontou problemas"}</AlertTitle>
+          <AlertDescription>
+            <pre className="max-h-48 overflow-y-auto font-mono text-xs whitespace-pre-wrap">{validacao.texto}</pre>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* À esquerda o que se faz com o site; à direita o que a última crítica
+          disse dele — o motivo de ainda haver trabalho, ou de ter acabado. */}
+      <div
+        className={cn(
+          "grid items-start gap-x-8 gap-y-6",
+          temAcoes && site.critica && "@4xl:grid-cols-[minmax(0,1fr)_minmax(0,25rem)]",
         )}
+      >
+        {temAcoes && (
+          <div className="min-w-0 space-y-6">
+            {github && (
+              <GitHubRow
+                state={github}
+                push={detail.project?.push ?? null}
+                busy={busy}
+                principal={githubPrincipal}
+                onPush={onPush}
+              />
+            )}
+
+            {ajustavel && (
+              <div className="space-y-2">
+                <Label htmlFor="claude-ajuste" className="text-sm font-semibold">
+                  Pedir um ajuste
+                </Label>
+                <Textarea
+                  id="claude-ajuste"
+                  rows={4}
+                  value={pedido}
+                  disabled={semPermissao || busy}
+                  onChange={(event) => setPedido(event.target.value)}
+                  onPaste={(event) => {
+                    // Uma captura de tela colada vira anexo; texto colado segue normal.
+                    const imagens = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
+                    if (!imagens.length) return;
+                    event.preventDefault();
+                    void anexos.add(imagens);
+                  }}
+                  placeholder="O que deve mudar no site: “troque a foto do topo pela fachada” ou “deixe o texto dos serviços mais curto”."
+                  className="max-h-60 resize-y text-sm leading-relaxed"
+                />
+                <AdjustAttachments attachments={anexos} disabled={semPermissao || busy || working !== null} />
+                {/* Um motor de antes desta opção não diz o tipo do site: a tela não oferece o que ele não sabe mudar. */}
+                {site.multiplasPaginas !== undefined && (
+                  <div className="flex items-start gap-3 rounded-lg bg-muted/40 px-3 py-2.5">
+                    <DisabledHint reason={localBloqueado}>
+                      <Switch
+                        id="claude-varias-paginas"
+                        className="mt-0.5"
+                        checked={site.multiplasPaginas}
+                        disabled={Boolean(localBloqueado) || working !== null}
+                        onCheckedChange={(valor) => void mudarTipo(valor)}
+                      />
+                    </DisabledHint>
+                    <div className="min-w-0 flex-1">
+                      <Label htmlFor="claude-varias-paginas" className="text-sm">
+                        Várias páginas
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        {site.multiplasPaginas
+                          ? site.paginas?.length
+                            ? `O site tem a página inicial e mais ${pluralize(site.paginas.length, "página")} (${site.paginas.join(", ")}). Um ajuste pode criar, tirar ou dividir páginas.`
+                            : "O site ainda tem só a página inicial. Peça as páginas novas em um ajuste: ele já pode criá-las."
+                          : "Site de página única: um ajuste que peça páginas novas é recusado. Ligue para o próximo ajuste poder criá-las; ligar não gasta nem muda o site."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                  <div className="mr-auto min-w-0 flex-1 basis-64 space-y-0.5 text-xs text-muted-foreground">
+                    {/* O que já está escrito no topo do cartão não se repete aqui. */}
+                    {bloqueio && bloqueio !== localBloqueado && <Reason>{bloqueio}</Reason>}
+                    {opcoes.data && (
+                      <p>
+                        O ajuste roda com {choicesSentence(opcoes.data.options, opcoes.data.defaults)}. Para trocar, grave
+                        outros em “Opções do site”, no briefing abaixo.
+                      </p>
+                    )}
+                  </div>
+                  <DisabledHint reason={bloqueio}>
+                    <Button
+                      variant={ajustePrincipal ? "default" : "outline"}
+                      size="sm"
+                      disabled={Boolean(bloqueio) || !pedido.trim() || working !== null || anexos.uploading}
+                      onClick={() => setConfirming(true)}
+                    >
+                      {working === "adjust" ? <Loader2 className="animate-spin" /> : <PencilLine />}
+                      Pedir ajuste
+                    </Button>
+                  </DisabledHint>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {site.critica && <ClaudeCritiqueCard critica={site.critica} />}
       </div>
 
       <Gallery project={project} arquivos={site.telas} versao={versao} />
+
+      {site.etapas.length > 0 && <StagesHistory etapas={site.etapas} />}
 
       <ConfirmClaudeDialog
         open={confirming}
@@ -740,25 +764,94 @@ export function ClaudeSiteCard({ project, detail, busy, onPush }: Props & { onPu
 }
 
 /**
+ * As etapas do motor, com chamadas e builds: é consulta técnica, então fica
+ * recolhida. Abre sozinha quando a etapa mais recente falhou — o motivo da
+ * falha vem escrito inteiro, e não só no `title`.
+ */
+function StagesHistory({ etapas }: { etapas: ClaudeSite["etapas"] }) {
+  const falhas = etapas.filter((etapa) => etapa.status === "falhou").length;
+  const ultimaFalhou = etapas.at(-1)?.status === "falhou";
+  return (
+    <TechnicalDetails
+      open={ultimaFalhou}
+      label={
+        <>
+          Histórico técnico · {pluralize(etapas.length, "etapa")}
+          {falhas > 0 && ` · ${pluralize(falhas, "falhou", "falharam")}`}
+        </>
+      }
+    >
+      <div className="overflow-x-auto rounded-lg border text-foreground">
+        <table className="w-full min-w-lg text-xs">
+          <thead className="bg-muted/40 text-left text-muted-foreground">
+            <tr>
+              <th className="px-3 py-1.5 font-medium">Etapa</th>
+              <th className="px-3 py-1.5 font-medium">Situação</th>
+              <th className="px-3 py-1.5 font-medium">Chamadas</th>
+              <th className="px-3 py-1.5 font-medium">Builds</th>
+              <th className="px-3 py-1.5 font-medium">Início</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {etapas.map((etapa) => (
+              <tr key={etapa.n} className="align-top">
+                <td className="px-3 py-1.5 first-letter:uppercase">
+                  {claudeStageLabel(etapa.etapa)}
+                  {etapa.rodada ? ` · rodada ${etapa.rodada}` : null}
+                  {etapa.pedido && (
+                    <span className="block max-w-xs truncate text-muted-foreground normal-case" title={etapa.pedido}>
+                      {etapa.pedido}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-1.5">
+                  <Badge variant={stageVariant[etapa.status]}>{stageStatus[etapa.status]}</Badge>
+                  {etapa.motivoFalha && (
+                    <span className="mt-0.5 block max-w-xs break-words text-muted-foreground">{etapa.motivoFalha}</span>
+                  )}
+                </td>
+                <td className="px-3 py-1.5 tabular-nums">
+                  {etapa.chamadas} de {etapa.limite}
+                </td>
+                <td className="px-3 py-1.5 tabular-nums">
+                  {etapa.builds}
+                  {etapa.errosBuild > 0 && ` · ${pluralize(etapa.errosBuild, "erro")}`}
+                </td>
+                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{formatDateTime(etapa.inicio)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </TechnicalDetails>
+  );
+}
+
+/**
  * O site no GitHub: se a versão validada já foi, quando, e o botão para
  * mandar a que falta. O envio automático só acontece quando quem pediu a
  * geração também pode publicar; senão o site espera aqui.
  */
-function GitHubRow({ project, detail, busy, onPush }: Props & { onPush: () => void }) {
+function GitHubRow({
+  state,
+  push,
+  busy,
+  principal,
+  onPush,
+}: {
+  state: GitHubState;
+  push: NonNullable<ClaudeProjectDetail["project"]>["push"] | null;
+  /** O motivo, quando há pedido na fila, já está escrito no topo do cartão. */
+  busy: boolean;
+  /** É o próximo passo do site: o botão vem preenchido. */
+  principal: boolean;
+  onPush: () => void;
+}) {
   const { can } = usePermissions();
-  const site = [...project.generations].reverse().find((item) => isClaudeSite(item));
-  // Sem o registro do site, ele ainda não foi gerado e validado: não há o que enviar.
-  if (!site) return null;
-
-  const push = detail.project?.push ?? null;
-  const pendente =
-    !site.repoFullName ||
-    Boolean(site.claudeValidatedAt && (!site.claudePushedAt || site.claudeValidatedAt > site.claudePushedAt));
-  const motivo = !can("publicar")
-    ? "Esta chave de acesso não tem permissão para publicar sites"
-    : busy
-      ? "Há um pedido deste projeto na fila do Claude."
-      : null;
+  const { site, validado, enviado, pendente } = state;
+  const semPublicar = !can("publicar");
+  const motivo = semPublicar ? claudeBlock.semPublicar : busy ? claudeBlock.naFila : null;
+  const quem = push?.automatic ? ", pelo painel" : push?.by ? `, por ${push.by}` : "";
 
   return (
     <div className="space-y-2">
@@ -771,19 +864,35 @@ function GitHubRow({ project, detail, busy, onPush }: Props & { onPush: () => vo
             )}
           </p>
           <p className="text-xs text-muted-foreground">
-            {!site.repoFullName
-              ? "O site foi gerado e validado, e ainda não está no GitHub."
-              : pendente
-                ? "Há uma versão validada depois do último envio: o link do cliente segue com a anterior."
-                : `Versão validada enviada em ${formatDateTime(site.claudePushedAt)}${push?.automatic ? ", pelo painel" : push?.by ? `, por ${push.by}` : ""}.`}
+            {!site.repoFullName ? (
+              validado !== null ? (
+                "O site foi gerado e validado, e ainda não está no GitHub."
+              ) : (
+                "O site ainda não está no GitHub. Ele é validado no envio."
+              )
+            ) : pendente ? (
+              enviado === null ? (
+                "Há uma versão validada que ainda não foi ao GitHub: o link do cliente segue com a anterior."
+              ) : (
+                "Há uma versão validada depois do último envio: o link do cliente segue com a anterior."
+              )
+            ) : enviado !== null ? (
+              <>
+                {validado !== null ? "Versão validada enviada" : "Enviado"} <When at={site.claudePushedAt} />
+                {quem}.
+              </>
+            ) : (
+              "O site está no repositório."
+            )}
           </p>
         </div>
-        <HintWhenDisabled reason={motivo}>
-          <Button size="sm" variant={pendente ? "default" : "outline"} disabled={Boolean(motivo)} onClick={onPush}>
+        <DisabledHint reason={motivo}>
+          <Button size="sm" variant={principal ? "default" : "outline"} disabled={Boolean(motivo)} onClick={onPush}>
             <Upload />
             {site.repoFullName ? (pendente ? "Enviar ao GitHub" : "Enviar de novo") : "Enviar ao GitHub"}
           </Button>
-        </HintWhenDisabled>
+        </DisabledHint>
+        {semPublicar && <Reason className="basis-full">{claudeBlock.semPublicar}</Reason>}
       </div>
       {push?.state === "failed" && push.message && (
         <Alert variant="destructive">
@@ -821,15 +930,15 @@ function Gallery({
   const nome = (arquivo: string) => arquivo.replace(/\.png$/i, "").replace(/[-_]+/g, " ");
 
   return (
-    <div className="space-y-2">
-      <h4 className="text-xs font-medium text-muted-foreground">
+    <div className="space-y-2.5">
+      <h4 className="text-sm font-semibold">
         {title}
-        {arquivos.length > 0 && ` · ${arquivos.length}`}
+        {arquivos.length > 0 && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{arquivos.length}</span>}
       </h4>
       {arquivos.length === 0 ? (
         <EmptyNotice icon={<Camera />} title="Nenhuma tela fotografada ainda." className="rounded-lg border py-6" />
       ) : (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2">
+        <ul className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
           {arquivos.map((arquivo, indice) => (
             <li key={arquivo}>
               <button
@@ -842,7 +951,7 @@ function Gallery({
                   src={url(arquivo)}
                   alt=""
                   loading="lazy"
-                  className="aspect-[4/3] w-full bg-muted/40 object-cover object-top transition group-hover:opacity-90"
+                  className="aspect-4/3 w-full bg-muted/40 object-cover object-top transition group-hover:opacity-90"
                 />
                 <span className="block truncate px-2 py-1 text-2xs text-muted-foreground">{nome(arquivo)}</span>
               </button>
@@ -852,37 +961,39 @@ function Gallery({
       )}
 
       <Dialog open={aberta !== null} onOpenChange={(open) => !open && setAberta(null)}>
-        <DialogContent layout="sectioned" className="h-[92vh] sm:max-w-[min(1280px,96vw)]">
+        <DialogContent layout="sectioned" className="h-dialog-tall sm:max-w-7xl">
           {aberta !== null && arquivos[aberta] && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-base first-letter:uppercase">{nome(arquivos[aberta])}</DialogTitle>
+                <DialogTitle className="first-letter:uppercase">{nome(arquivos[aberta])}</DialogTitle>
                 <DialogDescription>
                   {title} · {aberta + 1} de {arquivos.length}
                 </DialogDescription>
               </DialogHeader>
-              <div className="min-h-0 flex-1 overflow-auto bg-muted/30 p-4">
+              <DialogBody className="bg-muted/30 p-4">
                 <img
                   src={url(arquivos[aberta])}
                   alt={`${title}: ${nome(arquivos[aberta])}`}
                   className="mx-auto h-auto max-w-full rounded-md border shadow-sm"
                 />
-              </div>
-              <div className={cn("flex shrink-0 items-center justify-between gap-2 border-t px-6 py-3", arquivos.length < 2 && "hidden")}>
-                <Button variant="outline" size="sm" disabled={aberta === 0} onClick={() => setAberta(aberta - 1)}>
-                  <ChevronLeft />
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={aberta === arquivos.length - 1}
-                  onClick={() => setAberta(aberta + 1)}
-                >
-                  Próxima
-                  <ChevronRight />
-                </Button>
-              </div>
+              </DialogBody>
+              {arquivos.length > 1 && (
+                <DialogFooter className="sm:justify-between">
+                  <Button variant="outline" size="sm" disabled={aberta === 0} onClick={() => setAberta(aberta - 1)}>
+                    <ChevronLeft />
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={aberta === arquivos.length - 1}
+                    onClick={() => setAberta(aberta + 1)}
+                  >
+                    Próxima
+                    <ChevronRight />
+                  </Button>
+                </DialogFooter>
+              )}
             </>
           )}
         </DialogContent>

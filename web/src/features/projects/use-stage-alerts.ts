@@ -63,6 +63,8 @@ export function stageAlerts(
         alerts.push({ projectId: project.id, title: `Briefing recusado: ${nome}`, body: detail, tone: "warning" });
       } else if (stage === "claude-brief-ready") {
         alerts.push({ projectId: project.id, title: `Briefing pronto: ${nome}`, body: "Revise e gere o site.", tone: "success" });
+      } else if (stage === "github-failed") {
+        alerts.push({ projectId: project.id, title: `Envio ao GitHub falhou: ${nome}`, body: detail, tone: "error" });
       } else if (stage === "to-github") {
         alerts.push({ projectId: project.id, title: `Site pronto: ${nome}`, body: "Gerado e validado. Falta enviar ao GitHub.", tone: "success" });
       } else if (stage !== "claude-queued" && stage !== "claude-briefing" && stage !== "claude-building" && stage !== "claude-interrupted") {

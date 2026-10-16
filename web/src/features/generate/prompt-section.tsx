@@ -4,21 +4,21 @@ import type { BuildPackage } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import { OtherBriefsNotice } from "@/features/projects/other-briefs-notice";
-import type { SelectionSummary } from "./generation-prompt";
 
 /** O campo das observações — a faixa "O que vai no envio" foca por este id. */
 export const OBSERVATIONS_INPUT_ID = "observacoes";
 
-/** A coluna do prompt: o briefing editável e as observações do operador. */
+/**
+ * A coluna do prompt: o briefing editável e as observações do operador. O
+ * contador do envio mora no rodapé do diálogo, num lugar só.
+ */
 export function PromptSection({
   pkg,
   prompt,
   onPromptChange,
   observations,
   onObservationsChange,
-  summary,
   assistant,
 }: {
   pkg: BuildPackage;
@@ -26,7 +26,6 @@ export function PromptSection({
   onPromptChange: (value: string) => void;
   observations: string;
   onObservationsChange: (value: string) => void;
-  summary: SelectionSummary;
   /**
    * O assistente (Gemini), logo abaixo das observações que ele preenche. Na
    * faixa do topo ele empurrava as duas colunas para fora da tela; aqui a
@@ -76,7 +75,7 @@ export function PromptSection({
         // e o prompt de 16 mil caracteres cabia em quatro linhas. Em duas
         // colunas, uma altura mínima: sem ela, as observações crescendo
         // esmagavam o briefing até uma fresta.
-        className="max-h-[45vh] min-h-56 flex-1 resize-none overflow-y-auto text-sm leading-relaxed lg:max-h-none lg:min-h-40"
+        className="max-h-96 min-h-56 flex-1 resize-none overflow-y-auto text-sm leading-relaxed lg:max-h-none lg:min-h-40"
       />
 
       <div className="space-y-1.5">
@@ -104,18 +103,6 @@ export function PromptSection({
       </div>
 
       {assistant}
-
-      <p
-        className={cn(
-          "text-xs tabular-nums text-muted-foreground",
-          summary.promptTooLong && "text-destructive",
-        )}
-      >
-        {summary.promptChars.toLocaleString("pt-BR")} de{" "}
-        {pkg.limits.maxPromptChars.toLocaleString("pt-BR")} caracteres no envio
-        {observations.trim() &&
-          ` · ${observations.trim().length.toLocaleString("pt-BR")} de observações`}
-      </p>
     </section>
   );
 }

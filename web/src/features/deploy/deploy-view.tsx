@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { PageColumns, PageSkeleton } from "@/components/page-layout";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/access-token";
 import {
@@ -13,7 +14,6 @@ import type { PreviewContent, ValidationErrors } from "./deploy-types";
 import {
   ChooseRepositoryCard,
   DeployHeader,
-  DeployLoading,
   DeployStatusError,
   SetupRequiredAlert,
 } from "./deploy-placeholders";
@@ -24,7 +24,6 @@ import type { PublishTarget } from "./publish-target";
 import { RepositoryBar } from "./repository-bar";
 import { PublicationsCard } from "./publications-card";
 import { RunsCard } from "./runs-card";
-import { configuredRepositories } from "./settings-store";
 import {
   useDeployStatus,
   usePublications,
@@ -74,21 +73,11 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
   const [deleteResult, setDeleteResult] = useState<DeleteWorkflowResult | null>(
     null,
   );
-  const [configuredRepos, setConfiguredRepos] = useState(configuredRepositories);
 
   const queryClient = useQueryClient();
   const painel = useDeployStatus();
   const repos = painel.repos;
   const publicacoes = usePublications();
-  const repoDomains = useMemo(
-    () =>
-      new Map(
-        publicacoes.items
-          .filter((item) => item.domain)
-          .map((item) => [item.repoFullName, item.domain as string]),
-      ),
-    [publicacoes.items],
-  );
 
   const { target: alvo, suggestion, suggested: sugerido } = useSuggestedRepository({
     target,
@@ -245,7 +234,6 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
       setPublicationResult(result);
       settings.persist();
       setEditing(false);
-      setConfiguredRepos(configuredRepositories());
       toast.success("Publicação configurada", {
         description: "Agora é só “Publicar agora”.",
       });
@@ -329,24 +317,37 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
     }
   };
 
+  /** O cartão de publicar: primário sozinho, rebaixado como passo 2. */
+  const publishCard = (step?: number) => (
+    <PublishCard
+      canDeploy={repositorio.canDeploy}
+      isCheckingWorkflow={repositorio.isCheckingWorkflow}
+      workflowError={repositorio.workflowsError}
+      onRetryWorkflow={() => void repositorio.reloadWorkflows()}
+      dryRun={dryRun}
+      busy={busy}
+      isDispatching={isDispatching}
+      publicationResult={publicationResult}
+      onDeploy={handleDeploy}
+      onDryRunChange={setDryRun}
+      step={step}
+    />
+  );
+
   const status = painel.status;
 
   if (painel.statusError) {
-    return (
-      <DeployStatusError
-        message={(painel.statusError as Error).message}
-        onRetry={() => void painel.reloadStatus()}
-      />
-    );
+    return <DeployStatusError error={painel.statusError} onRetry={() => void painel.reloadStatus()} />;
   }
 
-  if (!status) return <DeployLoading />;
+  if (!status) return <PageSkeleton />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <DeployHeader
         isLoadingRepos={painel.isLoadingRepos}
         configurable={status.configurable}
+        setupRequired={status.setupRequired}
         onReload={() => void painel.reloadRepos()}
         onOpenSettings={() => onOpenSettings?.("github")}
       />
@@ -365,9 +366,12 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
             organization={status.organization}
             repos={repos}
             selectedRepo={selectedRepo}
-            configuredRepos={configuredRepos}
-            repoDomains={repoDomains}
+            configuredRepos={publicacoes.configured}
+            repoDomains={publicacoes.domains}
             loading={painel.isLoadingRepos}
+            // Sem repositório escolhido, o cartão de convite já mostra a falha.
+            loadError={selectedRepo ? painel.reposError : null}
+            onRetry={() => void painel.reloadRepos()}
             error={
               errors.repo ??
               (pendingNotFound
@@ -383,19 +387,48 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
           />
 
           {selectedRepo ? (
-            /* Coluna principal (o que se faz) e trilho lateral (o que o
-               repositório mostra). A proporção 3/2 dá largura aos campos em
-               duas colunas e evita que a esquerda termine muito antes da
-               direita.
-               min-w-0: item de grade nasce com min-width auto, e sem isso um
-               nome longo estica a coluna e a tela ganha rolagem horizontal na
-               janela estreita. */
-            <div className="grid items-start gap-6 xl:grid-cols-5">
-              <div className="min-w-0 space-y-6 xl:col-span-3">
-                {/* Já configurado: publicar vem primeiro e a configuração
-                    vira leitura. Senão (ou ao alterar), o formulário é o
-                    passo 1 e o cartão de publicar, o 2. */}
-                {mostrarFormulario ? (
+            /* O molde da tela de Projetos: o que se faz na coluna principal e,
+               na coluna lateral, o que o repositório mostra (execuções e
+               workflows). As publicações ficam fora da grade, embaixo: com a
+               coluna lateral descendo (abaixo de 1600 px), as execuções vêm
+               logo depois do Publicar, e não depois da lista inteira. */
+            <PageColumns
+              asideLabel="O que o repositório mostra"
+              aside={
+                <>
+                  <RunsCard
+                    runs={repositorio.runs}
+                    isLoading={repositorio.isLoadingRuns}
+                    error={repositorio.runsError}
+                    isLive={repositorio.hasActiveRun}
+                    onRefresh={() => void repositorio.reloadRuns()}
+                  />
+
+                  {/* Detalhe técnico: recolhido e por último. */}
+                  <WorkflowCard
+                    files={repositorio.workflowFiles}
+                    isChecking={repositorio.isCheckingWorkflow}
+                    error={repositorio.workflowsError}
+                    onRetry={() => void repositorio.reloadWorkflows()}
+                    isClearing={isClearing}
+                    busy={busy}
+                    outdatedWorkflows={repositorio.outdatedWorkflows}
+                    deleteResult={deleteResult}
+                    onPreview={previewFile}
+                    onClear={() => setIsClearOpen(true)}
+                  />
+                </>
+              }
+            >
+              {/* Já configurado: publicar vem primeiro e a configuração
+                  vira leitura. Senão (ou ao alterar), o formulário é o
+                  passo 1 e o cartão de publicar, o 2 — rebaixado: com o
+                  formulário aberto a ação principal é salvar, e os dois
+                  botões cheios lado a lado disputavam o clique. Ele não
+                  some porque um repositório com o workflow mas sem
+                  configuração gravada pelo painel continua publicável. */}
+              {mostrarFormulario ? (
+                <>
                   <form onSubmit={handlePublish} noValidate>
                     <PublicationForm
                       settings={settings.settings}
@@ -407,68 +440,36 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
                       onAdvancedOpenChange={setAdvancedOpen}
                       onChange={updateSettings}
                       onCancel={configurada ? () => setEditing(false) : undefined}
+                      step={1}
                     />
                   </form>
-                ) : (
-                  <PublishCard
-                    canDeploy={repositorio.canDeploy}
-                    dryRun={dryRun}
-                    busy={busy}
-                    isDispatching={isDispatching}
-                    publicationResult={publicationResult}
-                    onDeploy={handleDeploy}
-                    onDryRunChange={setDryRun}
-                    showStep={false}
-                  />
-                )}
-
-                {mostrarFormulario ? (
-                  <PublishCard
-                    canDeploy={repositorio.canDeploy}
-                    dryRun={dryRun}
-                    busy={busy}
-                    isDispatching={isDispatching}
-                    publicationResult={publicationResult}
-                    onDeploy={handleDeploy}
-                    onDryRunChange={setDryRun}
-                  />
-                ) : (
-                  publicacaoAtual && (
+                  {publishCard(2)}
+                </>
+              ) : (
+                <>
+                  {publishCard()}
+                  {publicacaoAtual && (
                     <PublicationSummary
                       publication={publicacaoAtual}
                       outdatedWorkflows={repositorio.outdatedWorkflows}
                       disabled={busy}
                       onEdit={() => setEditing(true)}
                     />
-                  )
-                )}
-              </div>
-
-              <div className="min-w-0 space-y-6 xl:col-span-2">
-                <WorkflowCard
-                  files={repositorio.workflowFiles}
-                  isChecking={repositorio.isCheckingWorkflow}
-                  isClearing={isClearing}
-                  busy={busy}
-                  outdatedWorkflows={repositorio.outdatedWorkflows}
-                  deleteResult={deleteResult}
-                  onPreview={previewFile}
-                  onClear={() => setIsClearOpen(true)}
-                />
-
-                <RunsCard
-                  runs={repositorio.runs}
-                  isLoading={repositorio.isLoadingRuns}
-                  isLive={repositorio.hasActiveRun}
-                  onRefresh={() => void repositorio.reloadRuns()}
-                />
-              </div>
-            </div>
+                  )}
+                </>
+              )}
+            </PageColumns>
           ) : (
             <ChooseRepositoryCard
-              disabled={painel.isLoadingRepos || repos.length === 0}
+              // Antes de a lista chegar, o convite espera em vez de dizer
+              // "nenhum repositório"; com erro, quem fala é o erro.
+              loading={painel.isLoadingRepos || (!painel.reposLoaded && !painel.reposError)}
+              error={painel.reposError}
+              repoCount={repos.length}
+              organization={status.organization}
               hasPublications={publicacoes.items.length > 0}
               onChoose={() => setPickerOpen(true)}
+              onRetry={() => void painel.reloadRepos()}
             />
           )}
 
@@ -479,6 +480,8 @@ export function DeployView({ target, onTargetConsumed, onOpenSettings }: DeployV
           <PublicationsCard
             items={publicacoes.items}
             loading={publicacoes.loading}
+            error={publicacoes.error}
+            onRetry={() => void publicacoes.reload()}
             selectedRepoFullName={selectedRepo?.fullName}
             onOpen={(item) => openPublication(item.repoFullName)}
           />

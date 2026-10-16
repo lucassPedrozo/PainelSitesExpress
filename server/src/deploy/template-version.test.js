@@ -17,8 +17,14 @@ import {
  * Este teste prende o conteúdo à versão: mudou o conteúdo, suba
  * WORKFLOW_TEMPLATE_VERSION e DEV_AREA_TEMPLATE_VERSION (e o marcador dos
  * .yml) e grave aqui o par novo.
+ *
+ * 13/6: a assinatura passou a valer também com link para joinvix.com (sem o
+ * ".br"). Só a versão do deploy subiu, por decisão de Lucas em 2026-10-15:
+ * subir a da área de aprovação faria o painel regravar sozinho o workflow de
+ * todos os repositórios com área, um commit e um build em cada. As prévias
+ * pegam o script novo quando a área de um site for configurada de novo.
  */
-const GRAVADO = { versao: "12/6", conteudo: "a93cb6feca9dd92a" };
+const GRAVADO = { versao: "13/6", conteudo: "71b0bd1e7a4ea295" };
 
 const conteudoAtual = () => {
   const arquivos = [

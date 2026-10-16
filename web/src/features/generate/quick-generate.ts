@@ -26,7 +26,8 @@ export function quickPlan(project: Project, pkg: BuildPackage): QuickPlan {
   if (!pkg.prompt.found || !prompt) {
     return {
       ok: false,
-      reason: "Sem briefing no Drive — use “Revisar” para descrever o site.",
+      // "Revisar tudo" só existe com um projeto: no lote, o caminho é gerar este sozinho.
+      reason: "Sem briefing no Drive. Para descrever o site, gere este projeto sozinho e use “Revisar tudo”.",
     };
   }
   if (prompt.length > pkg.limits.maxPromptChars) {

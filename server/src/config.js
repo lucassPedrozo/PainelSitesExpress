@@ -193,6 +193,7 @@ export const devAreaConfig = () => {
 export const claudeConfig = () => {
   const aprovacao = (process.env.CLAUDE_HUMAN_APPROVAL ?? "").trim();
   const rodadas = Number((process.env.CLAUDE_REVIEW_ROUNDS ?? "").trim() || NaN);
+  const sites = Number((process.env.CLAUDE_PARALLEL_SITES ?? "").trim() || NaN);
   const ajustes = Number((process.env.CLAUDE_PARALLEL_ADJUSTMENTS ?? "").trim() || NaN);
   return {
     // Trava do gasto: enquanto for falso, o painel confere o pedido e mostra
@@ -212,10 +213,15 @@ export const claudeConfig = () => {
      */
     reviewRounds: Number.isInteger(rodadas) && rodadas >= 1 && rodadas <= 4 ? rodadas : null,
     /**
-     * Quantos ajustes rodam ao mesmo tempo, ao lado da criação de um site.
-     * Zero: tudo em uma fila só, um de cada vez. `null`: o padrão do painel (2).
+     * Quantos sites nascem ao mesmo tempo (briefing, geração, crítica e
+     * refino), de 1 a 3. `null`: o padrão do painel (3).
      */
-    parallelAdjustments: Number.isInteger(ajustes) && ajustes >= 0 && ajustes <= 4 ? ajustes : null,
+    parallelSites: Number.isInteger(sites) && sites >= 1 && sites <= 3 ? sites : null,
+    /**
+     * Quantos ajustes rodam ao mesmo tempo, ao lado da criação de sites.
+     * Zero: tudo em uma fila só, um de cada vez. `null`: o padrão do painel (5).
+     */
+    parallelAdjustments: Number.isInteger(ajustes) && ajustes >= 0 && ajustes <= 5 ? ajustes : null,
     /** A direção de arte e o movimento dos sites. Vazio: o padrão do motor. */
     artDirection: (process.env.CLAUDE_ART_DIRECTION ?? "").trim(),
     motion: (process.env.CLAUDE_MOTION ?? "").trim(),

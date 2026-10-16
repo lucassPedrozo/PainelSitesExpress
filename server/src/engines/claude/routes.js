@@ -302,3 +302,54 @@ claudeRouter.post("/projects/:id/claude/validate", podeGerar, async (req, res) =
 claudeRouter.post("/projects/:id/claude/captures/:tipo", podeGerar, async (req, res) => {
   res.json(await servicoClaude().capturar(id(req), req.params.tipo));
 });
+
+/* ------------------------------------------------------------------ *
+ * Edição livre: ajustes pelo Claude em sites de repositório (Lovable)
+ * ------------------------------------------------------------------ */
+
+/** A aba "Ajustes": se o projeto pode, o repositório, o pedido em andamento e a memória. Só lê. */
+claudeRouter.get("/projects/:id/edits", async (req, res) => {
+  res.json(await servicoClaude().edicoes(id(req)));
+});
+
+/**
+ * A última versão do site no GitHub e quem fez as alterações recentes
+ * (Lovable, Claude, outra pessoa). Atualiza o clone do painel; não usa o Claude.
+ */
+claudeRouter.get("/projects/:id/edits/version", async (req, res) => {
+  res.json(await servicoClaude().versaoDaEdicao(id(req)));
+});
+
+/**
+ * Pede um ajuste pelo Claude no site de repositório. CONSOME A ASSINATURA, e
+ * o resultado vai ao GitHub (e daí à área de aprovação do cliente): pede as
+ * permissões `gerar` e `publicar`.
+ */
+claudeRouter.post("/projects/:id/edits", podeGerar, requirePermission("publicar"), confirmado, async (req, res) => {
+  res.status(201).json(await servicoClaude().pedirEdicao(id(req), req.body ?? {}, { quem: req.identity?.name ?? null }));
+});
+
+/** Sobe uma imagem para o próximo pedido de ajuste do site de repositório. Não usa o Claude. */
+claudeRouter.put(
+  "/projects/:id/edits/attachments",
+  podeGerar,
+  express.raw({ type: () => true, limit: MAX_BYTES_DO_ANEXO }),
+  async (req, res) => {
+    const salvo = await servicoClaude().anexarNaEdicao(id(req), {
+      rascunho: req.query.draft === undefined ? undefined : String(req.query.draft),
+      nome: String(req.query.name ?? ""),
+      corpo: req.body,
+    });
+    res.status(201).json(salvo);
+  },
+);
+
+claudeRouter.delete("/projects/:id/edits/attachments", podeGerar, async (req, res) => {
+  await servicoClaude().desanexarDaEdicao(id(req), { rascunho: req.query.draft, arquivo: req.query.file });
+  res.status(204).end();
+});
+
+/** O log de um ajuste, refeito do stream guardado. */
+claudeRouter.get("/projects/:id/edits/:editId/log", async (req, res) => {
+  res.json(await servicoClaude().logDaEdicao(id(req), String(req.params.editId)));
+});

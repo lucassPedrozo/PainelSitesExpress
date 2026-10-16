@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { Project } from "@/lib/api";
 import { emptyTagFilter } from "@/features/tags/tag-filter";
 import {
-  countStages,
+  collectedAtOf,
+  countGroups,
+  countTabs,
   countTags,
   filterProjects,
   hasActiveFilters,
-  isDateSort,
-  sortDateOf,
   sortProjects,
-  summarize,
+  type FilterOptions,
 } from "@/features/projects/project-filters";
 
 /** Projeto mínimo — só os campos que estas regras leem. */
@@ -26,254 +26,198 @@ const projeto = (over: Partial<Project> & { id: string }): Project =>
     tagIds: [],
     generations: [],
     brief: null,
+    publication: null,
     webViewLink: "",
     ...over,
   }) as unknown as Project;
 
-const filtroBase = {
+const vivo = {
+  domain: "a.com.br",
+  repoFullName: "org/a",
+  configuredAt: null,
+  lastDeployAt: "2026-09-10T00:00:00.000Z",
+  lastAttempt: null,
+};
+const falhou = {
+  ...vivo,
+  lastAttempt: { at: "2026-09-12T00:00:00.000Z", status: "failure", runUrl: null },
+};
+const gerado = (id: string, extra: object = {}) => ({
+  id,
+  createdAt: "2026-09-05T00:00:00.000Z",
+  agentState: "done",
+  previewState: "unknown",
+  sharePreviewUrl: null,
+  deliveredAt: null,
+  devArea: null,
+  clientUrl: null,
+  ...extra,
+});
+
+const base: FilterOptions = {
   query: "",
   tagFilter: emptyTagFilter,
-  showFinished: false,
-  finishedTagId: null as string | null,
+  tab: "ativos",
+  finishedTagId: "fim",
+  etapa: null,
+  group: null,
 };
 
-describe("filterProjects", () => {
-  it("busca no nome da pasta e no apelido", () => {
+describe("filterProjects — abas", () => {
+  const lista = [
+    projeto({ id: "ativo", brief: { id: "b", name: "Informações do Site", mimeType: "x", createdTime: null } }),
+    projeto({ id: "no-ar", publication: vivo } as never),
+    // No ar, mas com a última publicação falhando: é problema, não descanso.
+    projeto({ id: "no-ar-falhou", publication: falhou } as never),
+    projeto({ id: "finalizado", tagIds: ["fim"], publication: vivo } as never),
+  ];
+
+  it("Ativos é o que não está no ar nem finalizado", () => {
+    expect(filterProjects(lista, base).map((p) => p.id)).toEqual(["ativo", "no-ar-falhou"]);
+  });
+
+  it("No ar e Finalizados são abas próprias, sem se misturar", () => {
+    expect(filterProjects(lista, { ...base, tab: "no-ar" }).map((p) => p.id)).toEqual(["no-ar"]);
+    expect(filterProjects(lista, { ...base, tab: "finalizados" }).map((p) => p.id)).toEqual(["finalizado"]);
+  });
+
+  it("conta cada aba com a busca e as tags aplicadas", () => {
+    expect(countTabs(lista, base)).toEqual({ ativos: 2, "no-ar": 1, finalizados: 1, ocultos: 0 });
+    expect(countTabs(lista, { ...base, query: "inexistente" })).toEqual({ ativos: 0, "no-ar": 0, finalizados: 0, ocultos: 0 });
+  });
+});
+
+describe("filterProjects — busca, tags e etapa", () => {
+  it("busca no nome da pasta, no apelido e no domínio", () => {
     const lista = [
       projeto({ id: "a", name: "[04/09/2026] aurora.eng.br" }),
       projeto({ id: "b", name: "[04/09/2026] Cliente Sem Dominio", alias: "Padaria" }),
     ];
-
-    expect(
-      filterProjects(lista, { ...filtroBase, query: "aurora" }).map((p) => p.id),
-    ).toEqual(["a"]);
+    expect(filterProjects(lista, { ...base, query: "aurora" }).map((p) => p.id)).toEqual(["a"]);
     // O apelido é do painel, mas quem renomeou procura por ele.
-    expect(
-      filterProjects(lista, { ...filtroBase, query: "padaria" }).map((p) => p.id),
-    ).toEqual(["b"]);
+    expect(filterProjects(lista, { ...base, query: "padaria" }).map((p) => p.id)).toEqual(["b"]);
   });
 
-  it("esconde os finalizados até serem pedidos", () => {
-    const lista = [
-      projeto({ id: "a" }),
-      projeto({ id: "fim", tagIds: ["t-fim"] }),
-    ];
-    const base = { ...filtroBase, finishedTagId: "t-fim" };
-
-    expect(filterProjects(lista, base).map((p) => p.id)).toEqual(["a"]);
-    // Pedidos, aparecem *sozinhos* — é uma gaveta, não um acréscimo.
-    expect(
-      filterProjects(lista, { ...base, showFinished: true }).map((p) => p.id),
-    ).toEqual(["fim"]);
-  });
-
-  it("filtra por tag em modo Qualquer e em modo Todas", () => {
+  it("filtra por tag em modo Qualquer e em modo Todas, e acha o que não foi triado", () => {
     const lista = [
       projeto({ id: "ab", tagIds: ["a", "b"] }),
       projeto({ id: "so-a", tagIds: ["a"] }),
+      projeto({ id: "sem" }),
     ];
-
+    const tags = (matchAll: boolean) => ({ ...base, tagFilter: { ...emptyTagFilter, tagIds: ["a", "b"], matchAll } });
+    expect(filterProjects(lista, tags(false)).map((p) => p.id)).toEqual(["ab", "so-a"]);
+    expect(filterProjects(lista, tags(true)).map((p) => p.id)).toEqual(["ab"]);
     expect(
-      filterProjects(lista, {
-        ...filtroBase,
-        tagFilter: { ...emptyTagFilter, tagIds: ["a", "b"], matchAll: false },
-      }).map((p) => p.id),
-    ).toEqual(["ab", "so-a"]);
-
-    expect(
-      filterProjects(lista, {
-        ...filtroBase,
-        tagFilter: { ...emptyTagFilter, tagIds: ["a", "b"], matchAll: true },
-      }).map((p) => p.id),
-    ).toEqual(["ab"]);
+      filterProjects(lista, { ...base, tagFilter: { ...emptyTagFilter, untaggedOnly: true } }).map((p) => p.id),
+    ).toEqual(["sem"]);
   });
 
-  it("acha o que ainda não foi triado", () => {
-    const lista = [projeto({ id: "sem" }), projeto({ id: "com", tagIds: ["a"] })];
-    expect(
-      filterProjects(lista, {
-        ...filtroBase,
-        tagFilter: { ...emptyTagFilter, untaggedOnly: true },
-      }).map((p) => p.id),
-    ).toEqual(["sem"]);
+  it("filtra pela etapa visível, e “com problema” junta os problemas de todas", () => {
+    const lista = [
+      projeto({ id: "vazio", fileCount: 0 }),
+      projeto({ id: "gerar" }),
+      projeto({ id: "link", generations: [gerado("g1")] } as never),
+      projeto({ id: "falhou", publication: falhou } as never),
+    ];
+    expect(filterProjects(lista, { ...base, etapa: "material" }).map((p) => p.id)).toEqual(["vazio"]);
+    expect(filterProjects(lista, { ...base, etapa: "link" }).map((p) => p.id)).toEqual(["link"]);
+    expect(filterProjects(lista, { ...base, etapa: "problema" }).map((p) => p.id)).toEqual(["falhou"]);
+  });
+});
+
+describe("contadores do “Fazer agora”", () => {
+  const lista = [
+    projeto({ id: "vazio", fileCount: 0 }),
+    projeto({ id: "gerar-1" }),
+    projeto({ id: "gerar-2", tagIds: ["t1"] }),
+    projeto({ id: "link", generations: [gerado("g1")] } as never),
+    projeto({ id: "falhou", publication: falhou } as never),
+    projeto({ id: "no-ar", publication: vivo } as never),
+  ];
+
+  it("conta os ativos por grupo; no ar e finalizado ficam fora", () => {
+    const counts = countGroups(lista, base);
+    expect(Object.fromEntries(counts)).toEqual({ "sem-material": 1, gerar: 2, "criar-link": 1, resolver: 1 });
+  });
+
+  it("o número segue a busca e as tags — é o que aparece ao clicar", () => {
+    const counts = countGroups(lista, { ...base, tagFilter: { ...emptyTagFilter, tagIds: ["t1"] } });
+    expect(Object.fromEntries(counts)).toEqual({ gerar: 1 });
+    expect(filterProjects(lista, { ...base, group: "gerar", tagFilter: { ...emptyTagFilter, tagIds: ["t1"] } })).toHaveLength(1);
+  });
+
+  it("o contador escolhido filtra a lista, mas não muda a própria contagem", () => {
+    expect(filterProjects(lista, { ...base, group: "gerar" }).map((p) => p.id)).toEqual(["gerar-1", "gerar-2"]);
+    expect(countGroups(lista, { ...base, group: "gerar" }).get("resolver")).toBe(1);
   });
 });
 
 describe("sortProjects", () => {
-  const lista = [
-    projeto({ id: "meio", name: "[15/08/2026] bravo.com", fileCount: 5, totalSize: 50 }),
-    projeto({ id: "novo", name: "[04/09/2026] alfa.com", fileCount: 1, totalSize: 10 }),
-    projeto({ id: "velho", name: "[01/07/2026] charlie.com", fileCount: 9, totalSize: 90 }),
-  ];
-
-  it("por data da coleta, decrescente por padrão", () => {
-    expect(sortProjects(lista, "collected", false).map((p) => p.id)).toEqual([
-      "novo",
-      "meio",
-      "velho",
-    ]);
-    expect(sortProjects(lista, "collected", true).map((p) => p.id)).toEqual([
-      "velho",
-      "meio",
-      "novo",
-    ]);
+  it("prioridade: o que quebrou primeiro, e dentro do grupo o parado há mais tempo", () => {
+    const lista = [
+      projeto({ id: "gerar-novo", createdTime: "2026-09-10T00:00:00.000Z" }),
+      projeto({ id: "vazio", fileCount: 0 }),
+      projeto({ id: "falhou", publication: falhou } as never),
+      projeto({ id: "gerar-velho", createdTime: "2026-09-01T00:00:00.000Z" }),
+    ];
+    expect(sortProjects(lista, "prioridade").map((p) => p.id)).toEqual(["falhou", "gerar-velho", "gerar-novo", "vazio"]);
   });
 
-  it("por nome, respeitando a ordem do português", () => {
-    expect(sortProjects(lista, "name", true).map((p) => p.id)).toEqual([
-      "novo",
-      "meio",
-      "velho",
-    ]);
+  it("última atividade: o acontecimento mais recente, e não a data dos arquivos do cliente", () => {
+    const lista = [
+      // A pasta mais antiga, mas com um site gerado ontem.
+      projeto({ id: "gerou", createdTime: "2026-09-01T00:00:00.000Z", generations: [gerado("g1", { createdAt: "2026-09-13T00:00:00.000Z" })] } as never),
+      projeto({ id: "recebeu", createdTime: "2026-09-10T00:00:00.000Z" }),
+    ];
+    expect(sortProjects(lista, "atividade").map((p) => p.id)).toEqual(["gerou", "recebeu"]);
   });
 
-  it("por volume e por quantidade de arquivos", () => {
-    expect(sortProjects(lista, "size", true).map((p) => p.id)).toEqual([
-      "novo",
-      "meio",
-      "velho",
-    ]);
-    expect(sortProjects(lista, "files", false).map((p) => p.id)).toEqual([
-      "velho",
-      "meio",
-      "novo",
-    ]);
+  it("coleta: pela data do nome da pasta, nos dois sentidos; nome: na ordem do português", () => {
+    const lista = [
+      projeto({ id: "meio", name: "[15/08/2026] bravo.com" }),
+      projeto({ id: "novo", name: "[04/09/2026] alfa.com" }),
+      projeto({ id: "velho", name: "[01/07/2026] charlie.com" }),
+    ];
+    expect(sortProjects(lista, "coleta-recente").map((p) => p.id)).toEqual(["novo", "meio", "velho"]);
+    expect(sortProjects(lista, "coleta-antiga").map((p) => p.id)).toEqual(["velho", "meio", "novo"]);
+    expect(sortProjects(lista, "nome").map((p) => p.id)).toEqual(["novo", "meio", "velho"]);
   });
 
   it("não altera o array recebido", () => {
-    const antes = lista.map((p) => p.id);
-    sortProjects(lista, "name", true);
-    expect(lista.map((p) => p.id)).toEqual(antes);
+    const lista = [projeto({ id: "b", name: "[01/01/2026] b.com" }), projeto({ id: "a", name: "[02/01/2026] a.com" })];
+    sortProjects(lista, "nome");
+    expect(lista.map((p) => p.id)).toEqual(["b", "a"]);
+  });
+
+  it("a data corrigida à mão vence a do nome da pasta", () => {
+    const corrigida = projeto({
+      id: "x",
+      name: "[01/09/2026] aurora.eng.br",
+      details: { receivedAt: "2026-10-02T12:00:00.000Z" },
+    } as never);
+    expect(collectedAtOf(corrigida).toISOString()).toBe("2026-10-02T12:00:00.000Z");
+  });
+
+  it("a data da coleta cai na criação quando o nome da pasta não traz data", () => {
+    const sem = projeto({ id: "x", name: "Formulário sem data", createdTime: "2026-08-20T12:00:00.000Z" });
+    expect(collectedAtOf(sem).toISOString()).toBe("2026-08-20T12:00:00.000Z");
   });
 });
 
-describe("sortDateOf", () => {
-  it("lê a data da coleta do nome da pasta", () => {
-    const p = projeto({ id: "a", name: "[15/08/2026] x.com" });
-    expect(sortDateOf(p, "collected").toISOString().slice(0, 10)).toBe("2026-08-15");
+describe("tags e filtros ativos", () => {
+  it("tags contam só projetos que existem na lista, na aba aberta", () => {
+    const lista = [projeto({ id: "a", tagIds: ["t1", "t2"] }), projeto({ id: "fim", tagIds: ["t1", "fim"] })];
+    expect(countTags(lista).get("t1")).toBe(2);
+    expect(countTags(lista, base).get("t1")).toBe(1);
+    expect(countTags(lista, { ...base, tab: "finalizados" }).get("t1")).toBe(1);
   });
 
-  it("cai na criação no Drive quando a pasta não traz data", () => {
-    const p = projeto({
-      id: "a",
-      name: "Cliente Sem Dominio",
-      createdTime: "2026-07-02T10:00:00.000Z",
-    });
-    expect(sortDateOf(p, "collected").toISOString().slice(0, 10)).toBe("2026-07-02");
-  });
-
-  it("usa a última atividade quando a ordenação é por atividade", () => {
-    const p = projeto({
-      id: "a",
-      name: "[15/08/2026] x.com",
-      lastActivity: "2026-09-01T00:00:00.000Z",
-    });
-    expect(sortDateOf(p, "activity").toISOString().slice(0, 10)).toBe("2026-09-01");
-  });
-});
-
-describe("isDateSort", () => {
-  it("só as ordenações por data agrupam", () => {
-    expect(isDateSort("collected")).toBe(true);
-    expect(isDateSort("activity")).toBe(true);
-    for (const outra of ["name", "files", "size", "tags"] as const) {
-      expect(isDateSort(outra)).toBe(false);
-    }
-  });
-});
-
-describe("summarize", () => {
-  it("conta as coletas dentro da janela de 30 dias", () => {
-    const agora = Date.parse("2026-09-09T12:00:00.000Z");
-    const lista = [
-      projeto({ id: "recente", name: "[01/09/2026] a.com" }),
-      projeto({ id: "limite", name: "[11/08/2026] b.com" }),
-      projeto({ id: "antigo", name: "[01/06/2026] c.com" }),
-    ];
-
-    const resumo = summarize(lista, agora);
-    expect(resumo.total).toBe(3);
-    expect(resumo.recent).toBe(2);
-  });
-
-  it("soma arquivos e volume", () => {
-    const lista = [
-      projeto({ id: "a", fileCount: 3, totalSize: 100 }),
-      projeto({ id: "b", fileCount: 4, totalSize: 250 }),
-    ];
-    const resumo = summarize(lista, Date.now());
-    expect(resumo.files).toBe(7);
-    expect(resumo.size).toBe(350);
-  });
-});
-
-describe("filtro e contagem por estado", () => {
-  const vivo = {
-    domain: "a.com.br",
-    repoFullName: "org/a",
-    configuredAt: null,
-    lastDeployAt: "2026-09-10T00:00:00.000Z",
-  };
-  const lista = [
-    projeto({ id: "no-ar", publication: vivo } as never),
-    projeto({ id: "vazio", fileCount: 0 }),
-    projeto({ id: "fim", tagIds: ["finalizado"], publication: vivo } as never),
-  ];
-  const base = {
-    query: "",
-    tagFilter: emptyTagFilter,
-    showFinished: false,
-    finishedTagId: "finalizado",
-  };
-
-  it("filtra pelo mesmo estado do selo", () => {
-    const ids = filterProjects(lista, { ...base, stage: "live" }).map((p) => p.id);
-    expect(ids).toEqual(["no-ar"]);
-  });
-
-  it("conta só a lista aberta — finalizado fica de fora", () => {
-    const counts = countStages(lista, base);
-    expect(counts.get("live")).toBe(1);
-    expect(counts.get("empty")).toBe(1);
-  });
-
-  it("tags contam só projetos que existem na lista", () => {
-    const counts = countTags([
-      projeto({ id: "a", tagIds: ["t1", "t2"] }),
-      projeto({ id: "b", tagIds: ["t1"] }),
-    ]);
-    expect(counts.get("t1")).toBe(2);
-    expect(counts.get("t2")).toBe(1);
-  });
-
-  it("a contagem de cada etapa segue a busca e as tags — é o que aparece ao clicar", () => {
-    const comTag = [
-      projeto({ id: "a", tagIds: ["t1"], publication: vivo } as never),
-      projeto({ id: "b", publication: vivo } as never),
-    ];
-    const counts = countStages(comTag, { ...base, tagFilter: { ...emptyTagFilter, tagIds: ["t1"] } });
-    // Antes contava 2 (ignorava a tag), e clicar abria uma lista com 1.
-    expect(counts.get("live")).toBe(1);
-  });
-
-  it("a contagem das tags segue a vista: finalizado escondido não conta", () => {
-    const counts = countTags(
-      [
-        projeto({ id: "a", tagIds: ["t1"] }),
-        projeto({ id: "fim", tagIds: ["t1", "finalizado"] }),
-      ],
-      base,
-    );
-    expect(counts.get("t1")).toBe(1);
-    // Na vista Finalizados, é o contrário.
-    expect(countTags([projeto({ id: "fim", tagIds: ["t1", "finalizado"] })], { ...base, showFinished: true }).get("t1")).toBe(1);
-  });
-
-  it("filtros ativos: a vista não conta, busca, etapa e tags sim", () => {
+  it("a aba não conta como filtro; busca, contador, etapa e tags sim", () => {
     expect(hasActiveFilters(base)).toBe(false);
-    expect(hasActiveFilters({ ...base, showFinished: true })).toBe(false);
+    expect(hasActiveFilters({ ...base, tab: "finalizados" })).toBe(false);
     expect(hasActiveFilters({ ...base, query: " x " })).toBe(true);
-    expect(hasActiveFilters({ ...base, stage: "live" })).toBe(true);
+    expect(hasActiveFilters({ ...base, group: "resolver" })).toBe(true);
+    expect(hasActiveFilters({ ...base, etapa: "link" })).toBe(true);
     expect(hasActiveFilters({ ...base, tagFilter: { ...emptyTagFilter, untaggedOnly: true } })).toBe(true);
   });
 });

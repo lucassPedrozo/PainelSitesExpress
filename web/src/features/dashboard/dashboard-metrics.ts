@@ -1,11 +1,8 @@
 import type { Project } from "@/lib/api";
 import { projectIdentity } from "@/lib/format";
-import { projectStatus, type ProjectStatus } from "@/features/projects/project-status";
-import {
-  projectTimeline,
-  timelineSummary,
-  type TimelineEvent,
-} from "@/features/projects/project-timeline";
+import { liveSinceOf, projectStatus, type ProjectStatus } from "@/features/projects/project-status";
+import { timelineSummary } from "@/features/projects/project-timeline";
+import { ETAPA_ORDER, STAGES, tabOf, type Etapa } from "@/features/projects/stage";
 
 /**
  * Os números do dashboard: cada projeto vira uma linha com os seus marcos
@@ -15,6 +12,10 @@ import {
  * Nada aqui pede dado novo à API: são as mesmas datas que a linha do tempo de
  * um projeto já lê, vistas de uma vez para todos. O que não foi registrado na
  * época continua aparecendo como não registrado, e não como palpite.
+ *
+ * As contas que a tela Projetos também mostra ("ativos", "com problema", a
+ * etapa de cada um) saem da mesma fonte dela (`stage.ts`): antes o Dashboard
+ * tinha regras próprias, e os números das duas telas não batiam.
  */
 
 /** Em que trecho do fluxo o projeto está — a mesma cor no gráfico e na linha. */
@@ -47,9 +48,22 @@ export type DashboardRow = {
   /** Quem disparou a publicação mais recente pelo painel. */
   publishedBy: string | null;
   status: ProjectStatus;
+  /** A etapa de hoje, a mesma do selo. */
+  etapa: Etapa;
+  /** Está na aba Ativos da tela Projetos (nem no ar, nem finalizado). */
+  active: boolean;
+  /** Tem a tag "Finalizado". */
+  finished: boolean;
   phase: Phase;
   receivedAt: number;
+  /**
+   * Quando a geração começou: o clique em "Gerar" do Lovable, ou o material
+   * indo para o Claude. O site do Claude só entra na lista quando é entregue,
+   * e antes o Dashboard dava como "aguardando geração" o que o Claude já fazia.
+   */
   generatedAt: number | null;
+  /** O site foi vinculado de fora: as datas dele não medem trabalho no painel. */
+  linked: boolean;
   deliveredAt: number | null;
   /** A primeira vez que o site foi ao ar — o fim do projeto. */
   liveAt: number | null;
@@ -69,16 +83,26 @@ const timeOf = (iso: string | null | undefined) => {
 
 export function buildRows(projects: Project[], finishedTagId: string | null): DashboardRow[] {
   return projects.flatMap((project) => {
+    // Oculto pela equipe: pasta de teste, coleta que não vira site — fora das contas.
+    if (project.details?.hidden) return [];
     const receivedAt = timeOf(project.createdTime);
     if (receivedAt === null) return [];
+    const status = projectStatus(project);
+    // Projeto só de arquivos não é um site, e a coleta repetida de um domínio
+    // que já tem site não é outro: nenhum dos dois entra no fluxo.
+    if (status.stage === "storage" || status.stage === "other-collection") return [];
 
     const site = project.generations.at(-1);
+    const first = project.generations[0];
     const publication = project.publication;
     // O primeiro site diz quanto o material esperou; o mais recente é o que
     // foi ao cliente — a mesma leitura da linha do tempo do projeto.
-    const generatedAt = timeOf(project.generations[0]?.createdAt);
+    const generatedAt =
+      timeOf(project.claude?.material?.copiedAt) ??
+      (first?.engine === "claude" ? null : timeOf(first?.createdAt)) ??
+      timeOf(first?.createdAt);
     const deliveredAt = timeOf(site?.deliveredAt);
-    const liveAt = timeOf(publication?.firstDeployAt ?? publication?.lastDeployAt);
+    const liveAt = timeOf(liveSinceOf(project));
 
     const tagged = Boolean(finishedTagId && project.tagIds.includes(finishedTagId));
     const closed = liveAt !== null || tagged;
@@ -93,9 +117,13 @@ export function buildRows(projects: Project[], finishedTagId: string | null): Da
       {
         project,
         label: projectIdentity(project).label,
-        developerKey: site ? (by ?? UNREGISTERED) : UNASSIGNED,
+        // O responsável definido na tela Projetos vence quem gerou o site.
+        developerKey: project.details?.responsible ?? (site ? (by ?? UNREGISTERED) : UNASSIGNED),
         publishedBy: lastDeploy?.by ?? publication?.configuredBy ?? null,
-        status: projectStatus(project),
+        status,
+        etapa: STAGES[status.stage].etapa,
+        active: tabOf(project, finishedTagId) === "ativos",
+        finished: tagged,
         phase: closed
           ? "done"
           : deliveredAt !== null
@@ -105,6 +133,7 @@ export function buildRows(projects: Project[], finishedTagId: string | null): Da
               : "waiting",
         receivedAt,
         generatedAt,
+        linked: first?.origin === "linked",
         deliveredAt,
         liveAt,
         closed,
@@ -187,13 +216,20 @@ const within = (time: number | null, start: number | null) =>
 /* ---- Resumo ----------------------------------------------------------- */
 
 export type DashboardSummary = {
-  /** Em aberto agora, e quantos deles ainda esperam a geração. */
-  open: number;
-  waiting: number;
-  /** Em aberto e pedindo ação de alguém. */
-  attention: number;
-  /** Recebidos e postos no ar dentro do período. */
+  /** Na aba Ativos da tela Projetos. */
+  active: number;
+  /** Ativos esperando alguém da equipe (os cinco primeiros contadores). */
+  acting: number;
+  /** Com problema: o contador "Resolver". */
+  problems: number;
+  /** Recebidos e postos no ar dentro do período (cada domínio uma vez). */
   received: number;
+  /** Dos recebidos, quantos foram criados no painel (o resto são coletas do Drive). */
+  receivedInPanel: number;
+  /** Sites cuja geração começou no período — vinculados de fora não contam. */
+  generated: number;
+  /** Links enviados ao cliente no período. */
+  delivered: number;
   live: number;
   /** Mediana do recebimento ao ar, dos que foram ao ar no período. */
   medianToLive: number | null;
@@ -201,29 +237,53 @@ export type DashboardSummary = {
   medianToGenerate: number | null;
 };
 
+const ACTING = new Set(["resolver", "revisar", "gerar", "criar-link", "enviar"]);
+
+/**
+ * Uma recoleta do mesmo domínio herda a publicação dele (é o mesmo site do
+ * cliente): no ar, ele conta uma vez só — antes "Foram ao ar" contava duas.
+ */
+const byDomain = (rows: DashboardRow[]) => {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const domain = row.project.publication?.domain?.replace(/^www\./, "").toLowerCase();
+    if (!domain) return true;
+    if (seen.has(domain)) return false;
+    seen.add(domain);
+    return true;
+  });
+};
+
 export function summarize(rows: DashboardRow[], start: number | null): DashboardSummary {
-  const open = rows.filter((row) => !row.closed);
-  const live = rows.filter((row) => within(row.liveAt, start));
+  const active = rows.filter((row) => row.active);
+  const live = byDomain(rows.filter((row) => within(row.liveAt, start)));
+  const received = rows.filter((row) => within(row.receivedAt, start));
+  const group = (row: DashboardRow) => STAGES[row.status.stage].group;
   return {
-    open: open.length,
-    waiting: open.filter((row) => row.phase === "waiting").length,
-    attention: open.filter((row) => row.status.attention).length,
-    received: rows.filter((row) => within(row.receivedAt, start)).length,
+    active: active.length,
+    acting: active.filter((row) => ACTING.has(group(row) ?? "")).length,
+    problems: active.filter((row) => group(row) === "resolver").length,
+    received: received.length,
+    receivedInPanel: received.filter((row) => row.project.source === "panel").length,
+    generated: rows.filter((row) => !row.linked && within(row.generatedAt, start)).length,
+    delivered: rows.filter((row) => within(row.deliveredAt, start)).length,
     live: live.length,
     medianToLive: median(live.flatMap((row) => timeToLive(row) ?? [])),
+    // Um site vinculado tem a "geração" no clique do vínculo: não mede espera.
     medianToGenerate: median(
       rows
-        .filter((row) => within(row.generatedAt, start))
+        .filter((row) => !row.linked && within(row.generatedAt, start))
         .map((row) => row.generatedAt! - row.receivedAt)
         .filter((ms) => ms >= 0),
     ),
   };
 }
 
-export const phaseCounts = (rows: DashboardRow[]) =>
-  PHASES.map((phase) => ({
-    phase,
-    count: rows.filter((row) => row.phase === phase).length,
+/** Quantos estão em cada etapa hoje — as mesmas do selo, fora os finalizados. */
+export const etapaCounts = (rows: DashboardRow[]) =>
+  ETAPA_ORDER.filter((etapa) => etapa !== "arquivos").map((etapa) => ({
+    etapa,
+    count: rows.filter((row) => !row.finished && row.etapa === etapa).length,
   }));
 
 /* ---- Por desenvolvedor ------------------------------------------------ */
@@ -257,8 +317,10 @@ export function byDeveloper(rows: DashboardRow[]): DeveloperStats[] {
       open: items.filter((row) => !row.closed).length,
       delivered: items.filter((row) => row.deliveredAt !== null).length,
       live: items.filter((row) => row.liveAt !== null).length,
+      // O vinculado nasce já entregue: geração e envio no mesmo clique.
       medianToDeliver: median(
         items.flatMap((row) => {
+          if (row.linked) return [];
           const from = timeOf(row.project.generations.at(-1)?.createdAt);
           return from !== null && row.deliveredAt !== null && row.deliveredAt >= from
             ? [row.deliveredAt - from]
@@ -274,23 +336,6 @@ export function byDeveloper(rows: DashboardRow[]): DeveloperStats[] {
         b.total - a.total ||
         a.name.localeCompare(b.name, "pt-BR"),
     );
-}
-
-/* ---- Atividade recente ------------------------------------------------ */
-
-export type ActivityEvent = TimelineEvent & { row: DashboardRow };
-
-/** Os acontecimentos de todos os projetos, do mais recente ao mais antigo. */
-export function recentActivity(
-  rows: DashboardRow[],
-  start: number | null,
-  limit: number,
-): ActivityEvent[] {
-  return rows
-    .flatMap((row) => projectTimeline(row.project).map((event) => ({ ...event, row })))
-    .filter((event) => within(Date.parse(event.at), start))
-    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
-    .slice(0, limit);
 }
 
 /* ---- Eixo do tempo ---------------------------------------------------- */

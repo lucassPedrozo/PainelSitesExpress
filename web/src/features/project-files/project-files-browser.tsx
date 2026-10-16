@@ -4,9 +4,9 @@ import { Segmented } from "@/components/segmented";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
-  ArrowDownAZ,
-  ArrowUpAZ,
-  Bot,
+  ArrowDownUp,
+  ChevronRight,
+  ClipboardList,
   Download,
   FolderOpen,
   FolderUp,
@@ -27,7 +27,8 @@ import type { TagsController } from "@/features/tags/use-tags";
 import type { ProjectActionHandlers } from "@/features/projects/project-actions";
 import { ProjectTimeline } from "@/features/projects/project-timeline-view";
 import { ClaudePanel } from "@/features/claude/claude-panel";
-import { ClientLink } from "@/features/project-files/client-link";
+import { RepoEditsPanel } from "@/features/repo-edits/repo-edits-panel";
+import { repoEditableOf } from "@/features/projects/site-engine";
 import { FilePreviewDialog } from "@/features/project-files/file-preview-dialog";
 import {
   AlertDialog,
@@ -40,16 +41,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyNotice } from "@/components/page-header";
+import { EmptyNotice, ErrorNotice } from "@/components/page-header";
 import { cn } from "@/lib/utils";
 import { archiveChildren, archivePath, isZipFile } from "./archive-entries";
 import { FileCard, FileTable } from "./file-list";
@@ -60,13 +63,18 @@ import {
   type FileSort,
 } from "./file-sorting";
 import { ProjectFilesHeader, type Crumb } from "./project-files-header";
+import { ProjectSummary } from "./project-summary";
+import { nextStep } from "@/features/projects/next-step";
 import { itemsFromInput, uploadItems } from "./upload";
+import { ClaudeIcon } from "@/components/brand-icons";
+import { PencilLine } from "lucide-react";
 
 /**
- * As faces do modal do projeto: o material, o histórico e o que o motor
- * Claude tem dele (briefing, execução em andamento, site).
+ * As faces do diálogo do projeto: o resumo (link do cliente, material,
+ * publicação), os arquivos, o histórico, os ajustes pelo Claude num site de
+ * repositório (o do Lovable) e o que o motor Claude tem dele.
  */
-export type ProjectTab = "files" | "timeline" | "claude";
+export type ProjectTab = "summary" | "files" | "timeline" | "edits" | "claude";
 
 /**
  * Navegação pelos arquivos de um projeto, e a linha do tempo dele.
@@ -126,8 +134,6 @@ export function ProjectFilesBrowser({
   const zipName = zip
     ? trail.find((crumb) => crumb.archive?.fileId === zip.fileId)?.name
     : undefined;
-  /** A geração mais recente é a que vai ao cliente; as antigas ficam na lista. */
-  const site = project.generations.at(-1);
 
   const folder = useQuery({
     queryKey: queryKeys.folderFiles(current.id),
@@ -252,41 +258,35 @@ export function ProjectFilesBrowser({
       <ProjectFilesHeader
         project={project}
         tags={tags}
-        trail={trail}
-        onNavigateTo={(index) => setTrail((prev) => prev.slice(0, index + 1))}
         actions={actions}
         onTagsChange={onTagsChange}
-        claudeOpen={tab === "claude"}
+        // Na aba Claude o passo do motor (e o envio do site dele ao GitHub) já
+        // está no cartão: o cabeçalho não repete o botão.
+        stepInView={tab === "claude" && ["claude", "push-claude"].includes(nextStep(project).kind)}
       />
 
-      {/* O modal é onde o link do cliente cabe: precisa de campo de colar,
-          estado e explicação, que não entram no card. */}
-      {site?.id && (
-        <div className="border-b px-6 py-4">
-          <ClientLink
-            project={project}
-            generation={site}
-            focusInput={focusShareInput}
-            onUpdated={(atualizada) => onGenerationChange(project, atualizada)}
-          />
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-6 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-6 py-2.5">
         <Segmented
+          // No celular as quatro abas não cabem: rolam de lado, em vez de a última sumir.
+          className="max-w-full overflow-x-auto"
           label="O que ver do projeto"
           value={tab}
           onChange={onTabChange}
           options={[
+            { value: "summary", label: "Resumo", icon: <ClipboardList /> },
             { value: "files", label: "Arquivos", icon: <FolderOpen /> },
             { value: "timeline", label: "Linha do tempo", icon: <History /> },
-            { value: "claude", label: "Claude", icon: <Bot /> },
+            // Só quando o site mora num repositório e não é do motor: ajustes pelo Claude no site do Lovable.
+            ...(repoEditableOf(project) || tab === "edits"
+              ? [{ value: "edits" as const, label: "Ajustes", icon: <PencilLine />, title: "Ajustes pelo Claude no site do repositório (Lovable)" }]
+              : []),
+            { value: "claude", label: "Claude", icon: <ClaudeIcon /> },
           ]}
         />
 
         {tab === "files" && (
           <>
-            <div className="relative min-w-52 flex-1">
+            <div className="relative min-w-44 flex-1">
               <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
@@ -297,32 +297,30 @@ export function ProjectFilesBrowser({
               />
             </div>
 
-            <Select value={sort} onValueChange={(value) => setSort(value as FileSort)}>
-              <SelectTrigger className="w-40" aria-label="Ordenar arquivos por">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(fileSortLabels).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setAsc((prev) => !prev)}
-              aria-label={asc ? "Ordem crescente — inverter" : "Ordem decrescente — inverter"}
-              title={asc ? "Ordem crescente" : "Ordem decrescente"}
-            >
-              {asc ? (
-                <ArrowDownAZ className="size-4" />
-              ) : (
-                <ArrowUpAZ className="size-4" />
-              )}
-            </Button>
+            {/* A ordem e a direção num menu só: eram dois controles fixos na
+                barra, para uma escolha que quase ninguém muda. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" aria-label={`Ordenar arquivos: ${fileSortLabels[sort]}`} title="Ordenar">
+                  <ArrowDownUp />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={sort} onValueChange={(value) => setSort(value as FileSort)}>
+                  {Object.entries(fileSortLabels).map(([value, label]) => (
+                    <DropdownMenuRadioItem key={value} value={value}>
+                      {label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup value={asc ? "asc" : "desc"} onValueChange={(value) => setAsc(value === "asc")}>
+                  <DropdownMenuRadioItem value="asc">Crescente</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="desc">Decrescente</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Segmented
               label="Exibição dos arquivos"
@@ -342,7 +340,7 @@ export function ProjectFilesBrowser({
               aria-label="Recarregar arquivos"
               title="Recarregar"
             >
-              <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
+              <RefreshCw className={cn(isFetching && "animate-spin")} />
             </Button>
 
             {editable && (
@@ -364,7 +362,7 @@ export function ProjectFilesBrowser({
                   aria-label="Enviar uma pasta"
                   title="Envia uma pasta inteira, com as subpastas (node_modules e .git ficam de fora)"
                 >
-                  <FolderUp className="size-4" />
+                  <FolderUp />
                 </Button>
                 <input
                   ref={filesInput}
@@ -398,9 +396,23 @@ export function ProjectFilesBrowser({
         )}
       </div>
 
-      {tab === "timeline" ? (
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+      {tab === "summary" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <ProjectSummary
+            project={project}
+            focusShareInput={focusShareInput}
+            actions={actions}
+            onGenerationChange={onGenerationChange}
+            onOpenTab={onTabChange}
+          />
+        </div>
+      ) : tab === "timeline" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           <ProjectTimeline project={project} />
+        </div>
+      ) : tab === "edits" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          <RepoEditsPanel project={project} />
         </div>
       ) : tab === "claude" ? (
         <div className="flex-1 overflow-y-auto px-6 py-4">
@@ -412,9 +424,40 @@ export function ProjectFilesBrowser({
         </div>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {/* A trilha só aparece dentro de uma subpasta: na raiz ela repetia o nome do projeto. */}
+              {trail.length > 1 && (
+                <nav aria-label="Pasta aberta" className="flex min-w-0 flex-wrap items-center gap-1">
+                  {trail.map((crumb, index) => (
+                    <span key={crumb.id} className="flex items-center gap-1">
+                      {index > 0 && <ChevronRight className="size-3 opacity-60" aria-hidden />}
+                      <button
+                        type="button"
+                        onClick={() => setTrail((prev) => prev.slice(0, index + 1))}
+                        disabled={index === trail.length - 1}
+                        aria-current={index === trail.length - 1 ? "location" : undefined}
+                        className={cn(
+                          "max-w-56 truncate rounded px-1 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                          index === trail.length - 1 ? "font-medium text-foreground" : "hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        {crumb.name}
+                      </button>
+                    </span>
+                  ))}
+                </nav>
+              )}
+              {!isPending && !error && (
+                <span className="ml-auto tabular-nums">
+                  {pluralize(visible.length, "item", "itens")}
+                  {query ? ` de ${files.length}` : ""}
+                  {totalBytes(visible) > 0 ? ` · ${formatBytes(totalBytes(visible))}` : ""}
+                </span>
+              )}
+            </div>
             {/* Dentro de um zip: de qual arquivo é a lista, e a saída para tê-lo
-                inteiro — o clique no card agora entra nele em vez de baixá-lo. */}
+                inteiro — o clique no card entra nele em vez de baixá-lo. */}
             {zip && (
               <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 <Archive className="size-3.5 shrink-0" />
@@ -424,7 +467,7 @@ export function ProjectFilesBrowser({
                     <>
                       {" · "}
                       {archive.data.truncated
-                        ? `os primeiros ${archive.data.entries.length.toLocaleString("pt-BR")} de ${pluralize(archive.data.total, "arquivo")}`
+                        ? `os primeiros ${pluralize(archive.data.entries.length, "arquivo")} de ${archive.data.total.toLocaleString("pt-BR")}`
                         : pluralize(archive.data.total, "arquivo")}
                     </>
                   )}
@@ -440,22 +483,17 @@ export function ProjectFilesBrowser({
               </div>
             )}
             {isPending ? (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+              <div className="grid grid-files gap-3">
                 {Array.from({ length: 8 }).map((_, index) => (
                   <Skeleton key={index} className="h-44 rounded-lg" />
                 ))}
               </div>
             ) : error ? (
-              <EmptyNotice
+              <ErrorNotice
                 className="py-16"
-                icon={<FolderOpen />}
                 title={zip ? "Não foi possível abrir o .zip" : "Não foi possível carregar os arquivos"}
-                description={(error as Error).message}
-                action={
-                  <Button variant="outline" size="sm" onClick={() => void reload()}>
-                    Tentar novamente
-                  </Button>
-                }
+                error={error}
+                onRetry={() => void reload()}
               />
             ) : visible.length === 0 ? (
               <EmptyNotice
@@ -481,7 +519,7 @@ export function ProjectFilesBrowser({
                 }
               />
             ) : view === "grid" ? (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+              <div className="grid grid-files gap-3">
                 {visible.map((file) => (
                   <FileCard
                     key={file.id}
@@ -496,13 +534,6 @@ export function ProjectFilesBrowser({
             )}
           </div>
 
-          <div className="flex items-center justify-between border-t px-6 py-3 text-xs text-muted-foreground">
-            <span>
-              {pluralize(visible.length, "item", "itens")}
-              {query ? ` de ${files.length}` : ""}
-            </span>
-            <span>{formatBytes(totalBytes(visible))}</span>
-          </div>
         </>
       )}
 

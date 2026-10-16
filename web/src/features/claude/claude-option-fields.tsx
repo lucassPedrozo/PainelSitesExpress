@@ -1,14 +1,18 @@
 import { useState, type ReactNode } from "react";
+import { CircleHelp } from "lucide-react";
 import type { ClaudeEffort, ClaudeOptions, ClaudeRunChoices } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
   EFFORT_HELP,
+  EFFORT_HINT,
   MODEL_HELP,
+  MODEL_HINT,
   OUTRO_MODELO,
   PADRAO,
   defaultLabel,
@@ -20,9 +24,50 @@ import { errorMessage } from "./claude-text";
 import type { useClaudeOptions } from "./use-claude";
 
 /**
+ * A explicação longa de uma opção, no "?" ao lado do rótulo: no hover vem
+ * como dica; no toque e no teclado, o clique abre o texto inteiro.
+ */
+export function HelpTip({ children }: { children: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground"
+          // Genérico de propósito: com o nome do campo, o botão disputaria o
+          // rótulo com o próprio campo.
+          aria-label="Mais sobre esta opção"
+          title={children}
+        >
+          <CircleHelp />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="text-xs leading-relaxed">
+        {children}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** O rótulo de um campo, com o "?" da explicação longa quando há. */
+export function OptionLabel({ id, label, help }: { id: string; label: string; help?: string }) {
+  return (
+    // A dica fica fora do <label>: dentro, o nome dela entraria no nome do campo.
+    <div className="flex min-h-6 items-center gap-1">
+      <Label htmlFor={id} className="text-xs">
+        {label}
+      </Label>
+      {help && <HelpTip>{help}</HelpTip>}
+    </div>
+  );
+}
+
+/**
  * Uma opção com "padrão do painel": a primeira escolha do seletor não escolhe
- * nada (`null`) e diz o que o padrão é hoje. Embaixo, uma frase com o que a
- * opção muda no site.
+ * nada (`null`) e diz o que o padrão é hoje. Embaixo, uma frase curta com o
+ * que a opção muda no site; a explicação inteira fica no "?" do rótulo.
  */
 export function OptionSelect({
   id,
@@ -32,6 +77,7 @@ export function OptionSelect({
   defaultText,
   options,
   help,
+  moreHelp,
   disabled = false,
   className,
   children,
@@ -44,7 +90,10 @@ export function OptionSelect({
   /** O que o padrão é hoje, para o rótulo "Padrão do painel (…)". */
   defaultText: string | null;
   options: Array<{ value: string; label: string }>;
+  /** Uma frase curta, à vista. */
   help?: ReactNode;
+  /** A explicação longa, no "?" ao lado do rótulo. */
+  moreHelp?: string;
   disabled?: boolean;
   className?: string;
   /** Um controle a mais, entre o seletor e a frase (a caixa de "outro modelo"). */
@@ -52,9 +101,7 @@ export function OptionSelect({
 }) {
   return (
     <div className={cn("min-w-0 space-y-1", className)}>
-      <Label htmlFor={id} className="text-xs">
-        {label}
-      </Label>
+      <OptionLabel id={id} label={label} help={moreHelp} />
       <Select
         value={value ?? PADRAO}
         onValueChange={(escolhido) => onChange(escolhido === PADRAO ? null : escolhido)}
@@ -103,13 +150,15 @@ export function RunChoicesFields({
 }) {
   if (query.error) {
     return (
-      <p className={cn("text-xs text-muted-foreground", className)}>
-        Não foi possível ler o modelo e o esforço deste projeto ({errorMessage(query.error)}). O pedido segue com
-        os que estiverem gravados.{" "}
-        <Button variant="link" size="xs" className="h-auto p-0" onClick={() => void query.refetch()}>
+      <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground", className)}>
+        <p>
+          Não foi possível ler o modelo e o esforço deste projeto ({errorMessage(query.error)}). O pedido segue
+          com os que estiverem gravados.
+        </p>
+        <Button type="button" variant="link" size="xs" onClick={() => void query.refetch()}>
           Tentar novamente
         </Button>
-      </p>
+      </div>
     );
   }
   if (!query.data || !value) {
@@ -169,8 +218,9 @@ function Fields({
         help={
           modelo === OUTRO_MODELO
             ? "O id ou o apelido de um modelo do Claude Code. Vazio, vale o padrão do painel; o painel confere o id ao conferir o pedido."
-            : MODEL_HELP
+            : MODEL_HINT
         }
+        moreHelp={MODEL_HELP}
         disabled={disabled}
       >
         {modelo === OUTRO_MODELO && (
@@ -197,7 +247,8 @@ function Fields({
         onChange={(escolhido) => onChange({ ...value, esforco: escolhido as ClaudeEffort | null })}
         defaultText={effortLabel(defaults.esforco)}
         options={defaults.esforcos.map((nivel) => ({ value: nivel, label: effortLabel(nivel) }))}
-        help={EFFORT_HELP}
+        help={EFFORT_HINT}
+        moreHelp={EFFORT_HELP}
         disabled={disabled}
       />
     </div>

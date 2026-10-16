@@ -1,24 +1,16 @@
-import { ChevronRight } from "lucide-react";
-import { StageBadge } from "@/features/projects/stage-badge";
+import { StickyNote } from "lucide-react";
 import type { Project } from "@/lib/api";
 import { projectIdentity } from "@/lib/format";
 import type { TagsController } from "@/features/tags/use-tags";
-import { ViewBriefButton } from "@/features/projects/brief-prompt";
-import {
-  ProjectActions,
-  type ProjectActionHandlers,
-} from "@/features/projects/project-actions";
-import { nextStep } from "@/features/projects/next-step";
+import { ProjectActions, useStepBlock, type ProjectActionHandlers } from "@/features/projects/project-actions";
 import { isInProgress } from "@/features/projects/project-progress";
 import { ProjectProgress } from "@/features/projects/project-progress-view";
-import { projectStatus } from "@/features/projects/project-status";
 import { ProjectTags } from "@/features/projects/project-tags";
-import { Badge } from "@/components/ui/badge";
-import {
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { SiteEngineBadges } from "@/features/projects/site-engine-badge";
+import { StageBadge } from "@/features/projects/stage-badge";
+import { stageOf, toneClass } from "@/features/projects/stage";
+import { Reason } from "@/components/disabled-hint";
+import { DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 export type Crumb = {
@@ -37,97 +29,81 @@ export type Crumb = {
 };
 
 /**
- * Cabeçalho do diálogo: identidade do projeto, o que dá para fazer com ele e
- * o caminho da pasta aberta.
+ * O cabeçalho do diálogo do projeto: quem ele é, em que etapa está, o que
+ * fazer agora (o quê e por quê) e a ação — uma só, a mesma da lista. Antes
+ * o cabeçalho tinha ainda o "Coletado em", o "Ver prompt" e a trilha de
+ * pastas; o que não é do projeto inteiro desceu para a aba em que ele vale.
  */
 export function ProjectFilesHeader({
   project,
   tags,
-  trail,
-  onNavigateTo,
   actions,
   onTagsChange,
-  claudeOpen = false,
+  stepInView = false,
 }: {
   project: Project;
   tags: TagsController;
-  /** A aba do Claude está aberta: o passo que só levaria até ela não aparece. */
-  claudeOpen?: boolean;
-  trail: Crumb[];
-  /** Voltar para um nível do caminho (índice dentro da trilha). */
-  onNavigateTo: (index: number) => void;
   actions: ProjectActionHandlers;
   onTagsChange: (project: Project, tagIds: string[]) => void;
+  /** A aba aberta já é o destino do passo (a do Claude): o botão não aparece. */
+  stepInView?: boolean;
 }) {
   const meta = projectIdentity(project);
-  const status = projectStatus(project);
+  const stage = stageOf(project);
+  const { step, reason } = useStepBlock(project, Boolean(actions.onPublishToApprovalArea));
+  const titulo = meta.domain ?? meta.label;
+  const subtitulo = [
+    meta.label !== titulo ? meta.label : null,
+    project.source === "panel" ? "Criado no painel" : null,
+    project.details?.responsible ? `Responsável: ${project.details.responsible}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const emCurso = isInProgress(project);
 
   return (
-    <DialogHeader className="gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <DialogTitle className="text-lg">{meta.label}</DialogTitle>
-        <StageBadge project={project} />
-        {meta.collectedAt && (
-          <Badge variant="secondary">
-            Coletado em {meta.collectedAt.toLocaleDateString("pt-BR")}
-          </Badge>
-        )}
-        {/* O mesmo próximo passo e o mesmo menu do card: antes o destaque
-            aqui era sempre "Gerar site", mesmo com o site pronto e o card
-            pedindo "Enviar ao cliente". */}
-        <div className="ml-auto flex items-center gap-1">
-          {project.brief && <ViewBriefButton project={project} />}
-          <ProjectActions
-            project={project}
-            {...actions}
-            stepInView={claudeOpen && nextStep(project).kind === "claude"}
-          />
+    <DialogHeader className="gap-3">
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+        {/* Até 15rem o título divide a linha com as ações; abaixo disso as ações
+            descem, em vez de espremer o domínio e o selo. */}
+        <div className="min-w-0 flex-1 basis-60 space-y-0.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <DialogTitle className="min-w-0 truncate text-section" title={project.name || titulo}>
+              {titulo}
+            </DialogTitle>
+            <StageBadge view={stage} />
+            <SiteEngineBadges project={project} />
+          </div>
+          {subtitulo && <p className="truncate text-xs text-muted-foreground">{subtitulo}</p>}
         </div>
+        <ProjectActions project={project} {...actions} size="default" stepInView={stepInView} />
       </div>
 
-      {/* O que falta, por extenso — no card cabe uma linha; aqui cabe a
-          frase inteira. Com algo em curso, o andamento toma o lugar. */}
+      {/* O que fazer agora, por extenso. Com algo em curso, o andamento toma o
+          lugar: é ele que diz o que está acontecendo. */}
       {emCurso ? (
-        <ProjectProgress project={project} className="max-w-xl" />
+        <ProjectProgress project={project} className="max-w-2xl" />
       ) : (
-        <p className="text-sm text-muted-foreground">{status.detail}</p>
+        <div className="space-y-0.5 text-sm">
+          <p className={cn("font-medium", stage.problem && toneClass[stage.tone].text)}>{step.what}</p>
+          <DialogDescription>{stage.detail}</DialogDescription>
+          {reason && <Reason className="pt-1">{reason}</Reason>}
+        </div>
+      )}
+      {emCurso && <DialogDescription className="sr-only">{stage.detail}</DialogDescription>}
+
+      {/* A observação interna inteira: na lista ela vem cortada. */}
+      {project.details?.note && (
+        <p className="flex max-w-3xl items-start gap-1.5 rounded-md bg-muted/60 px-2.5 py-1.5 text-xs text-muted-foreground">
+          <StickyNote className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span className="whitespace-pre-wrap">
+            <span className="sr-only">Observação interna: </span>
+            {project.details.note}
+          </span>
+        </p>
       )}
 
-      {/* O mesmo componente do card: mesma aparência e a mesma regra de
-          permissão (sem "organizar", as tags aparecem sem o "x"). */}
       <ProjectTags project={project} tags={tags} onChange={onTagsChange} />
-
-      {/* A trilha só ajuda dentro de uma subpasta. Na raiz ela repetia o nome
-          da pasta logo abaixo do título; fica só para leitores de tela, que
-          usam a descrição do diálogo. */}
-      <DialogDescription asChild>
-        <div
-          className={cn(
-            "flex items-center gap-1 text-xs",
-            trail.length <= 1 && "sr-only",
-          )}
-        >
-          {trail.map((crumb, index) => (
-            <span key={crumb.id} className="flex items-center gap-1">
-              {index > 0 && <ChevronRight className="size-3 opacity-60" />}
-              <button
-                type="button"
-                onClick={() => onNavigateTo(index)}
-                disabled={index === trail.length - 1}
-                className={cn(
-                  "max-w-56 truncate rounded px-1 py-0.5",
-                  index === trail.length - 1
-                    ? "font-medium text-foreground"
-                    : "hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {crumb.name}
-              </button>
-            </span>
-          ))}
-        </div>
-      </DialogDescription>
     </DialogHeader>
   );
 }

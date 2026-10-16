@@ -10,13 +10,13 @@ A API inteira roda atrás de uma política de rede própria: escuta só em `127.
 
 ## Funcionalidades
 
-- Listagem dos projetos do Drive com o domínio em primeiro plano, selo de estado e um botão de próximo passo que muda conforme a etapa: *Gerar*, *Criar link*, *Enviar ao cliente*, *Publicar*
-- Vista "Fazer agora", que agrupa os projetos pelo que falta fazer, e ações em massa sobre vários projetos de uma vez
+- Listagem dos projetos numa tabela com o domínio em primeiro plano, o selo da etapa (ou do problema, em vermelho ou âmbar) e um botão de próximo passo que muda conforme a etapa: *Gerar*, *Criar link*, *Enviar ao cliente*, *Publicar*
+- "Fazer agora": contadores do que falta fazer, que filtram a lista, e ações em massa sobre vários projetos de uma vez
 - Geração do site no Lovable via MCP (OAuth), com o briefing do Drive como prompt, anexos (imagem, PDF, vídeo, áudio, compactado) e observações adicionais
 - Assistente na tela de geração (Gemini, nível gratuito): resumo do briefing, o que falta, complementos prontos para as observações e buscas sugeridas no banco de imagens — tudo sugestão, nada entra no envio sem um clique
 - Geração em lote, acompanhamento ao vivo do andamento e resposta ao agente do Lovable quando ele para esperando alguém
 - Motor Claude: o Claude Code desta máquina, pelo login da assinatura, lê o material do projeto e escreve o briefing; depois de revisado na tela, escreve o site, que passa por rodadas de crítica (feitas por uma sessão que não o escreveu) e de refino antes de ser entregue. O painel mostra o ensaio do pedido antes de gastar, enfileira cada passo da sequência, acompanha com log ao vivo, fila única e cancelamento, deixa escolher o modelo e o esforço por projeto e a rota criativa quando a geração para na direção, e envia o site entregue ao GitHub
-- Executor do Claude isolado: ambiente por lista de permissão, ferramentas e comandos em lista fechada, sem MCP e sem rede além dos domínios citados no briefing, a criação de um site uma de cada vez com os ajustes rodando ao lado, e fila que volta pausada depois de um reinício
+- Executor do Claude isolado: ambiente por lista de permissão, ferramentas e comandos em lista fechada, sem MCP e sem rede além dos domínios citados no briefing, até três sites criados e cinco ajustes rodando ao mesmo tempo, sem que um pare o outro, e fila que volta pausada depois de um reinício
 - Travas de custo: sem `LOVABLE_ENABLE_GENERATION=1` nenhuma chamada que debita crédito é feita, e sem `CLAUDE_ENABLE_GENERATION=1` o Claude Code nunca é disparado
 - Assinatura Joinvix garantida em todo site gerado, em três camadas: no Lovable, prompt, verificação no código e script no build; no motor Claude, componente travado no kit do site, validação do motor e o mesmo script no build
 - Área de aprovação: cada site é publicado numa pasta de um domínio próprio a cada push, e esse é o link que o cliente recebe
@@ -26,7 +26,10 @@ A API inteira roda atrás de uma política de rede própria: escuta só em `127.
 - Detecção automática do build (Vite, React Router, Next export, Astro, TanStack Start) e do gerenciador de pacotes
 - Pré-visualização dos arquivos do Drive dentro do painel, com miniaturas servidas por proxy autenticado — inclusive o conteúdo dos `.zip`, aberto como pasta sem baixar o compactado inteiro
 - Linha do tempo de cada projeto: do recebimento do material ao site no ar, com a hora, o autor e o intervalo de cada passo, e quem gerou o site
-- Tags com cor e nome livres, filtros por tag, busca, ordenação e faixas de data
+- Tags com cor e nome livres, filtros por etapa e por tag, busca, ordenação e faixas de data (Hoje, Ontem, Últimos 7 dias…)
+- Edição do projeto no painel: domínio, nome, etapa (vale até o próximo fato registrado), data de recebimento, responsável e observação interna
+- Edição em massa (responsável e etapa) e projetos ocultos, que saem da lista, dos contadores e do Dashboard
+- Relatório para pagamento no Dashboard: os sites nas etapas escolhidas, por desenvolvedor e período, conferido na tela e baixado em planilha (CSV para o Excel)
 - Tela de Configurações que grava o `.env` com validação completa antes de escrever, sem nunca devolver um segredo ao navegador
 - Chaves de acesso individuais com permissões granulares (organizar, gerar, publicar, configurar, administrar)
 - Banco local em JSON com escrita atômica, backup diário rotativo e recuperação automática a partir da cópia mais recente legível

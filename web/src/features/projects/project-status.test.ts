@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Generation, Project } from "@/lib/api";
-import { projectStatus, stageClass } from "@/features/projects/project-status";
+import { projectStatus } from "@/features/projects/project-status";
 
 /**
  * A ordem dos estados é a do fluxo de trabalho, e ela decide o que o operador
@@ -67,7 +67,8 @@ describe("projectStatus — precedência", () => {
       }),
     );
     expect(s.stage).toBe("live");
-    expect(s.detail).toContain("cliente.com.br");
+    // O domínio é o título da linha: a frase diz só desde quando.
+    expect(s.detail).toMatch(/^Publicado no domínio/);
     expect(s.attention).toBe(false);
   });
 
@@ -206,7 +207,7 @@ describe("projectStatus — precedência", () => {
       }),
     );
     expect(naoVerificado.stage).toBe("generated");
-    expect(naoVerificado.detail).toContain("verificado");
+    expect(naoVerificado.detail).toContain("não foi conferido");
   });
 });
 
@@ -244,28 +245,6 @@ describe("projectStatus — antes de gerar", () => {
       }),
     );
     expect(s.stage).toBe("generated");
-  });
-});
-
-describe("stageClass", () => {
-  it("cobre todos os estados", () => {
-    for (const estado of [
-      "deploy-failed",
-      "deploying",
-      "live",
-      "delivered-broken",
-      "delivered",
-      "ready",
-      "awaiting-input",
-      "building",
-      "link-broken",
-      "generated",
-      "briefed",
-      "empty",
-      "collected",
-    ] as const) {
-      expect(stageClass[estado]).toBeTruthy();
-    }
   });
 });
 

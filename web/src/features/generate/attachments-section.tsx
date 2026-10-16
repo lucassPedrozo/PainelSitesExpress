@@ -67,8 +67,12 @@ export function AttachmentsSection({
 
       <div className="min-h-40 flex-1 space-y-1 overflow-y-auto rounded-lg border p-1">
         {visible.length === 0 ? (
+          // Pasta vazia e busca sem resultado pedem coisas diferentes: subir
+          // material, ou trocar o termo.
           <p className="p-6 text-center text-sm text-muted-foreground">
-            Nenhum arquivo encontrado.
+            {pkg.files.length === 0
+              ? "A pasta do projeto ainda não tem arquivos para anexar."
+              : `Nenhum arquivo com “${query.trim()}” no nome ou na subpasta.`}
           </p>
         ) : (
           visible.map((file) => (
@@ -84,7 +88,7 @@ export function AttachmentsSection({
 
       <p className="text-xs text-muted-foreground">
         {summary.capped &&
-          `Esta coleta tem ${pluralize(summary.recommended, "imagem", "imagens")}; vêm marcadas as ${pkg.limits.maxAttachments} primeiras, o teto por envio. `}
+          `Esta coleta tem ${pluralize(summary.recommended, "imagem ou compactado", "imagens e compactados")}; vêm marcados os ${pkg.limits.maxAttachments} primeiros, o teto por envio. `}
         {summary.blocked > 0 &&
           `${pluralize(summary.blocked, "arquivo passa", "arquivos passam")} do limite de tamanho. `}
         Imagens e compactados vêm marcados; vídeo e áudio podem ir, mas o Lovable

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Loader2 } from "lucide-react";
 import type { DriveFile } from "@/lib/api";
 import { fileContentUrl } from "@/lib/api";
 import { formatBytes, formatDateTime, kindLabels } from "@/lib/format";
@@ -42,7 +42,7 @@ export function FilePreviewDialog({
 
   return (
     <Dialog open={Boolean(file)} onOpenChange={onOpenChange}>
-      <DialogContent layout="sectioned" className="h-[92vh] max-w-[min(1200px,95vw)] sm:max-w-[min(1200px,95vw)]">
+      <DialogContent layout="sectioned" className="h-dialog-tall sm:max-w-6xl">
         {file && (
           /* A chave reinicia o indicador de carregamento a cada arquivo: antes
              um efeito o religava depois da troca, e a imagem anterior aparecia
@@ -72,6 +72,7 @@ function PreviewFrame({
   hasNext?: boolean;
 }) {
   const [loading, setLoading] = useState(true);
+  const loaded = useCallback(() => setLoading(false), []);
 
   return (
     <>
@@ -83,10 +84,11 @@ function PreviewFrame({
           </DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <Badge variant="secondary">{kindLabels[file.kind]}</Badge>
-            <span>{formatBytes(file.size)}</span>
+            {/* Documento do Google não tem tamanho: some, em vez de um "—" solto. */}
+            {Number(file.size) > 0 && <span>{formatBytes(file.size)}</span>}
             {file.modifiedTime && (
               <>
-                <span aria-hidden>·</span>
+                {Number(file.size) > 0 && <span aria-hidden>·</span>}
                 <span>Modificado em {formatDateTime(file.modifiedTime)}</span>
               </>
             )}
@@ -100,11 +102,11 @@ function PreviewFrame({
             ) : null}
           </DialogDescription>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="mr-8 flex items-center gap-1">
           {!file.archive?.blocked && (
             <Button asChild variant="ghost" size="icon" aria-label="Baixar" title="Baixar">
               <a href={fileContentUrl(file, true)} download>
-                <Download className="size-4" />
+                <Download />
               </a>
             </Button>
           )}
@@ -112,7 +114,7 @@ function PreviewFrame({
           {file.webViewLink && (
             <Button asChild variant="ghost" size="icon" aria-label="Abrir no Drive" title="Abrir no Drive">
               <a href={file.webViewLink} target="_blank" rel="noreferrer">
-                <ExternalLink className="size-4" />
+                <ExternalLink />
               </a>
             </Button>
           )}
@@ -121,11 +123,11 @@ function PreviewFrame({
 
       <div className="relative flex flex-1 items-center justify-center overflow-auto bg-muted/40 p-4">
         {loading && (
-          <div className="absolute inset-0 grid place-items-center">
-            <div className="size-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+          <div className="absolute inset-0 grid place-items-center" aria-busy="true" aria-label="Carregando a pré-visualização">
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
           </div>
         )}
-        <PreviewBody file={file} onLoaded={() => setLoading(false)} />
+        <PreviewBody file={file} onLoaded={loaded} />
 
         {onNavigate && (
           <>
@@ -200,8 +202,8 @@ function PreviewBody({
     );
   }
 
-  onLoaded();
   return (
+    <LoadedOnMount onLoaded={onLoaded}>
     <div className="flex flex-col items-center gap-3 text-center">
       <FileIcon kind={file.kind} className="size-10" />
       <p className="max-w-sm text-sm text-muted-foreground">
@@ -214,20 +216,29 @@ function PreviewBody({
         {!file.archive?.blocked && (
           <Button asChild variant="outline" size="sm">
             <a href={fileContentUrl(file, true)} download>
-              <Download className="size-4" /> Baixar
+              <Download /> Baixar
             </a>
           </Button>
         )}
         {file.webViewLink && (
-          <Button asChild size="sm">
+          <Button asChild variant="outline" size="sm">
             <a href={file.webViewLink} target="_blank" rel="noreferrer">
-              <ExternalLink className="size-4" /> Abrir no Drive
+              <ExternalLink /> Abrir no Drive
             </a>
           </Button>
         )}
       </div>
     </div>
+    </LoadedOnMount>
   );
+}
+
+/** Avisa que terminou de carregar depois de montar — nunca durante o render. */
+function LoadedOnMount({ onLoaded, children }: { onLoaded: () => void; children: ReactNode }) {
+  useEffect(() => {
+    onLoaded();
+  }, [onLoaded]);
+  return <>{children}</>;
 }
 
 function NavButton({
@@ -239,19 +250,19 @@ function NavButton({
   disabled?: boolean;
   onClick: () => void;
 }) {
+  if (disabled) return null;
   const Icon = side === "left" ? ChevronLeft : ChevronRight;
   return (
-    <Button
-      variant="secondary"
-      size="icon"
-      disabled={disabled}
-      onClick={onClick}
-      aria-label={side === "left" ? "Arquivo anterior" : "Próximo arquivo"}
-      className={`absolute top-1/2 -translate-y-1/2 rounded-full shadow-md ${
-        side === "left" ? "left-3" : "right-3"
-      } ${disabled ? "opacity-0" : ""}`}
-    >
-      <Icon className="size-4" />
-    </Button>
+    <div className={side === "left" ? "absolute top-1/2 left-3 -translate-y-1/2" : "absolute top-1/2 right-3 -translate-y-1/2"}>
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={onClick}
+        aria-label={side === "left" ? "Arquivo anterior" : "Próximo arquivo"}
+        title={side === "left" ? "Anterior (←)" : "Próximo (→)"}
+      >
+        <Icon />
+      </Button>
+    </div>
   );
 }

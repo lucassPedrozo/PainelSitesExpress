@@ -209,18 +209,31 @@ export const SETTINGS_SCHEMA = [
         help: "Depois de gerado, o site é criticado por outra sessão do Claude, que não o escreveu, e refinado por quem o escreveu com o que a crítica apontou. Cada rodada são duas execuções a mais; a sequência termina antes se a crítica aprovar o site. É o padrão de todos os projetos; cada site pode escolher outro número na revisão do briefing.",
       },
       {
+        key: "CLAUDE_PARALLEL_SITES",
+        label: "Sites criados ao mesmo tempo",
+        type: "select",
+        options: [
+          { value: "", label: "Padrão (3 sites)" },
+          { value: "1", label: "1 site" },
+          { value: "2", label: "2 sites" },
+          { value: "3", label: "3 sites" },
+        ],
+        help: "Quantos sites passam pela criação (briefing, geração, crítica e refino) ao mesmo tempo. Cada site segue as próprias etapas sem esperar os outros: o passo seguinte de um site em andamento passa à frente de um site novo na fila. Sites que nascem juntos não se comparam entre si, só com os já entregues. Mais execuções juntas consomem a assinatura mais depressa e pesam mais nesta máquina.",
+      },
+      {
         key: "CLAUDE_PARALLEL_ADJUSTMENTS",
         label: "Ajustes ao mesmo tempo",
         type: "select",
         options: [
-          { value: "", label: "Padrão (2 ajustes)" },
+          { value: "", label: "Padrão (5 ajustes)" },
           { value: "0", label: "Nenhum: tudo em uma fila só" },
           { value: "1", label: "1 ajuste" },
           { value: "2", label: "2 ajustes" },
           { value: "3", label: "3 ajustes" },
           { value: "4", label: "4 ajustes" },
+          { value: "5", label: "5 ajustes" },
         ],
-        help: "O ajuste de um site já entregue não espera a criação de outro: roda ao lado dela, e até esta quantidade de ajustes roda junta. A criação (briefing, geração, crítica e refino) continua uma de cada vez, e nunca há duas execuções no mesmo site. Mais execuções juntas consomem a assinatura mais depressa e pesam mais nesta máquina.",
+        help: "O ajuste de um site já entregue não espera a criação de outros: roda ao lado dela, e até esta quantidade de ajustes roda junta. Nunca há duas execuções no mesmo site. “Nenhum” põe tudo, criação e ajustes, em uma fila só, um de cada vez. Mais execuções juntas consomem a assinatura mais depressa e pesam mais nesta máquina.",
       },
       {
         key: "CLAUDE_ART_DIRECTION",

@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Check, ChevronRight, Circle, CircleDot, Loader2, Minus } from "lucide-react";
 import type { ClaudeCritique, ClaudeSite } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   MUITOS_PROBLEMAS,
@@ -79,30 +81,34 @@ export function ClaudePipelineLine({
 
 const severityVariant = { grave: "destructive", media: "warning", leve: "outline" } as const;
 
+/** Parecer mais longo que isto começa encurtado, com "Ler o parecer inteiro". */
+const PARECER_CURTO = 280;
+
 /**
- * O parecer da última crítica: o veredito, o resumo, as notas e os problemas
+ * O parecer da última crítica: o veredito, as notas, o resumo e os problemas
  * por gravidade. É o que diz por que o site ainda está sendo trabalhado — ou
- * por que foi dado por pronto.
+ * por que foi dado por pronto. Cabe numa coluna estreita (as notas em duas
+ * colunas, o parecer encurtado) e se abre quando tem a largura toda.
  */
 export function ClaudeCritiqueCard({ critica }: { critica: ClaudeCritique }) {
   const notas = critiqueScores(critica.notas);
   const grupos = critiqueGroups(critica.problemas);
   const aprovado = critica.veredito === "aprovado";
+  const longo = critica.resumo.length > PARECER_CURTO;
+  const [inteiro, setInteiro] = useState(false);
 
   return (
-    <section aria-labelledby="claude-critica" className="space-y-3 rounded-lg border p-3">
+    <section aria-labelledby="claude-critica" className="@container space-y-4 rounded-xl border bg-muted/20 p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h4 id="claude-critica" className="text-sm font-medium">
+        <h4 id="claude-critica" className="text-sm font-semibold">
           Última crítica · rodada {critica.rodada}
         </h4>
         <Badge variant={aprovado ? "success" : "warning"}>{aprovado ? "Aprovou o site" : "Pediu refino"}</Badge>
       </div>
 
-      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">{critica.resumo}</p>
-
       {notas.length > 0 && (
         <div className="space-y-1.5">
-          <dl className="grid grid-cols-2 gap-x-4 text-xs sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-x-4 text-xs @lg:grid-cols-4">
             {notas.map((nota) => (
               <div key={nota.key} className="flex items-baseline justify-between gap-2 border-b py-1">
                 <dt className="truncate text-muted-foreground first-letter:uppercase" title={nota.label}>
@@ -115,6 +121,17 @@ export function ClaudeCritiqueCard({ critica }: { critica: ClaudeCritique }) {
           <p className="text-xs text-muted-foreground">{scoresSentence(notas)}</p>
         </div>
       )}
+
+      <div>
+        <p className={cn("max-w-prose text-sm leading-relaxed text-muted-foreground", longo && !inteiro && "line-clamp-5")}>
+          {critica.resumo}
+        </p>
+        {longo && (
+          <Button variant="link" size="xs" className="px-0" aria-expanded={inteiro} onClick={() => setInteiro((valor) => !valor)}>
+            {inteiro ? "Mostrar menos" : "Ler o parecer inteiro"}
+          </Button>
+        )}
+      </div>
 
       {critica.problemas.length > 0 && (
         <details open={critica.problemas.length <= MUITOS_PROBLEMAS} className="text-xs">

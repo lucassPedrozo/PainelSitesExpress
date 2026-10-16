@@ -1,6 +1,6 @@
-import type { Generation, Project } from "@/lib/api";
-import { describeMaterial } from "@/lib/format";
-import { clientUrlOf, latestGeneration } from "./project-status";
+import type { ClaudeSummary, Generation, Project } from "@/lib/api";
+import { describeMaterial, pluralize } from "@/lib/format";
+import { clientUrlOf, latestGeneration, liveSinceOf } from "./project-status";
 
 /**
  * A linha do tempo do projeto: o que aconteceu, quando e por quem — do
@@ -30,7 +30,10 @@ export type TimelineIcon =
   | "configured"
   | "deploy"
   | "live"
-  | "failed";
+  | "failed"
+  | "claude"
+  /** Site gerado no Lovable: a marca dele, como a do Claude nos sites do motor. */
+  | "lovable";
 
 export type TimelineEvent = {
   key: string;
@@ -100,7 +103,7 @@ function generationEvents(site: Generation, index: number): EventInput[] {
     events.push({
       key: `${key}-generated`,
       at: site.createdAt,
-      icon: "generated",
+      icon: "claude",
       tone: "info",
       title: "Site gerado pelo Claude",
       detail: site.claudeSlug ? `Gerado e validado nesta máquina · ${site.claudeSlug}` : "Gerado e validado nesta máquina",
@@ -122,7 +125,7 @@ function generationEvents(site: Generation, index: number): EventInput[] {
     events.push({
       key: `${key}-generated`,
       at: site.createdAt,
-      icon: "generated",
+      icon: "lovable",
       tone: "info",
       title: "Site gerado no Lovable",
       detail:
@@ -242,14 +245,30 @@ function publicationEvents(project: Project): EventInput[] {
     });
   }
 
-  if (publication.lastDeployAt) {
+  // Duas datas, dois nomes: quando o site foi ao ar pela primeira vez (o fim
+  // do projeto, a do Dashboard) e a última publicação — cada edição no
+  // Lovable publica de novo. Antes as duas se chamavam "Site no ar".
+  const desde = liveSinceOf(project);
+  if (desde) {
+    events.push({
+      key: "publication-first",
+      at: desde,
+      icon: "live",
+      tone: "success",
+      // O domínio é o título do projeto em toda tela: a frase não o repete.
+      title: "Site no ar no domínio",
+      detail: "A primeira publicação que terminou com sucesso.",
+      href: `https://${publication.domain}`,
+      hrefLabel: "abrir o site",
+    });
+  }
+  if (publication.lastDeployAt && publication.lastDeployAt !== desde) {
     events.push({
       key: "publication-live",
       at: publication.lastDeployAt,
       icon: "live",
       tone: "success",
-      title: `Site no ar em ${publication.domain}`,
-      // Cada edição no Lovable publica de novo: a data é a do último envio.
+      title: "Publicado de novo no domínio",
       detail: "A publicação mais recente que terminou com sucesso.",
       href: `https://${publication.domain}`,
       hrefLabel: "abrir o site",
@@ -286,8 +305,80 @@ function publicationEvents(project: Project): EventInput[] {
   return events;
 }
 
+/** O que cada execução do Claude deixou, pelo tipo e pelo resultado. */
+function claudeRunTitle(run: NonNullable<ClaudeSummary["lastRun"]>): { title: string; tone: TimelineTone } {
+  if (run.status === "falha") return { title: "Execução do Claude falhou", tone: "danger" };
+  if (run.status === "cancelada") return { title: "Execução do Claude cancelada", tone: "neutral" };
+  if (run.status === "interrompida") return { title: "Execução do Claude interrompida", tone: "danger" };
+  if (run.status === "aguardando_aprovacao") return { title: "Direção criativa pronta para aprovar", tone: "info" };
+  const titles: Record<string, string> = {
+    analisar: "Briefing escrito pelo Claude",
+    cliente: "Site escrito pelo Claude",
+    continuar: "Site escrito pelo Claude",
+    criticar: "Crítica do site concluída",
+    refinar: "Refino do site concluído",
+    ajuste: "Ajuste concluído pelo Claude",
+  };
+  return { title: titles[run.type] ?? "Execução do Claude concluída", tone: "info" };
+}
+
+/**
+ * Os marcos do motor Claude. Sem eles, um projeto há dias no motor tinha como
+ * último acontecimento "Projeto criado". O resumo do card guarda a última
+ * execução, o material copiado, o pedido na fila e o último envio ao GitHub —
+ * é o que entra; a lista completa das execuções fica na aba Claude.
+ */
+function claudeEvents(claude: ClaudeSummary): EventInput[] {
+  const events: EventInput[] = [];
+  if (claude.material) {
+    events.push({
+      key: "claude-material",
+      at: claude.material.copiedAt,
+      icon: "claude",
+      title: "Material enviado ao Claude",
+      detail: pluralize(claude.material.files, "arquivo"),
+      by: claude.material.by,
+    });
+  }
+  if (claude.lastRun) {
+    const { title, tone } = claudeRunTitle(claude.lastRun);
+    events.push({
+      key: `claude-run-${claude.lastRun.id ?? claude.lastRun.at}`,
+      at: claude.lastRun.at,
+      icon: claude.lastRun.status === "falha" ? "failed" : "claude",
+      tone,
+      title,
+      detail: claude.lastRun.status === "falha" ? claude.lastRun.message || null : null,
+    });
+  }
+  if (claude.queue && claude.queue.estado !== "interrompida") {
+    events.push({
+      key: `claude-queue-${claude.queue.id}`,
+      at: claude.queue.criadoEm,
+      icon: "claude",
+      title: "Pedido na fila do Claude",
+      detail: claude.queue.encadeado ? "Posto na fila pelo painel, na sequência do site." : null,
+      by: claude.queue.por,
+    });
+  }
+  if (claude.push) {
+    events.push({
+      key: `claude-push-${claude.push.at}`,
+      at: claude.push.at,
+      icon: claude.push.state === "failed" ? "failed" : "deploy",
+      tone: claude.push.state === "failed" ? "danger" : "neutral",
+      title: claude.push.state === "failed" ? "Envio ao GitHub falhou" : "Site enviado ao GitHub",
+      detail: claude.push.state === "failed" ? claude.push.message : (claude.push.repoFullName ?? null),
+      by: claude.push.automatic ? null : claude.push.by,
+    });
+  }
+  return events;
+}
+
 /** Os acontecimentos do projeto, do mais antigo ao mais recente. */
 export function projectTimeline(project: Project): TimelineEvent[] {
+  const material = describeMaterial(project);
+  const hoje = material === "Pasta vazia" ? "Hoje a pasta está vazia." : `Hoje: ${material}.`;
   const inputs: EventInput[] = [
     {
       key: "received",
@@ -296,10 +387,24 @@ export function projectTimeline(project: Project): TimelineEvent[] {
       title: project.source === "panel" ? "Projeto criado" : "Material recebido",
       detail:
         project.source === "panel"
-          ? `Criado no painel${project.owner ? ` por ${project.owner}` : ""}. Hoje: ${describeMaterial(project)}.`
-          : `Pasta da coleta criada no Drive. Hoje: ${describeMaterial(project)}.`,
+          ? `Criado no painel${project.owner ? ` por ${project.owner}` : ""}. ${hoje}`
+          : `Pasta da coleta criada no Drive. ${hoje}`,
     },
   ];
+
+  // Um documento do Google editado depois de chegar (o briefing corrigido no
+  // próprio Drive): a API diz quando, e é atividade de verdade no projeto.
+  const chegou = timeOf(project.lastAdded) ?? timeOf(project.createdTime);
+  const editado = timeOf(project.lastActivity);
+  if (project.source !== "panel" && editado !== null && chegou !== null && editado - chegou > 60_000) {
+    inputs.push({
+      key: "drive-edited",
+      at: project.lastActivity,
+      icon: "material",
+      title: "Documento editado no Drive",
+      detail: "O arquivo mais recente alterado na pasta.",
+    });
+  }
 
   if (project.brief?.createdTime) {
     inputs.push({
@@ -331,6 +436,7 @@ export function projectTimeline(project: Project): TimelineEvent[] {
   project.generations.forEach((site, index) => {
     inputs.push(...generationEvents(site, index));
   });
+  if (project.claude) inputs.push(...claudeEvents(project.claude));
   inputs.push(...publicationEvents(project));
 
   return inputs
@@ -384,7 +490,7 @@ export function timelineSummary(project: Project): TimelineSummary {
   // foi ao cliente.
   span("Do recebimento à geração", project.createdTime, first?.createdAt);
   span("Da geração ao envio ao cliente", site?.createdAt, site?.deliveredAt);
-  span("Do recebimento à última publicação", project.createdTime, project.publication?.lastDeployAt);
+  span("Do recebimento ao ar", project.createdTime, liveSinceOf(project));
 
   return {
     receivedAt: project.createdTime ?? null,

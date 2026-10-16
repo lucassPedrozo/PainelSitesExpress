@@ -5,166 +5,344 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Larguras próprias do painel: abaixo de 900px a tabela de projetos vira
+ * cartões (`tabela:`), e a partir de 1600px a coluna lateral fica ao lado
+ * da lista (`lateral:`). Abaixo disso a lista tem a largura toda: com a
+ * coluna ao lado num notebook, o nome do projeto ficava em 260px.
+ *
+ * A partir de 1968px (`margem:`) sobra margem à esquerda do contêiner para
+ * as faixas de data da lista: o nome da faixa sai da tabela e vai para a
+ * margem, numa raia de 6rem (`w-lane`) — 1792px de contêiner, 24px de
+ * recuo, 6rem de raia e 1rem de folga até a borda da janela.
+ *
+ * `max-w-wide` é o contêiner de todas as telas (e do cabeçalho): o
+ * conteúdo cresce até 1792px em monitores grandes, no molde da tela de
+ * Projetos.
+ */
+@theme {
+    --breakpoint-tabela: 56.25rem;
+    --breakpoint-lateral: 100rem;
+    --breakpoint-margem: 123rem;
+    --container-wide: 112rem;
+    /* O botão do próximo passo na lista: uma largura só, a do rótulo mais longo. */
+    --spacing-step: 11rem;
+    /* A raia da margem onde ficam as faixas de data da lista (`margem:`). */
+    --spacing-lane: 6rem;
+    /*
+     * A altura de cada projeto na lista: a linha da tabela e o cartão do
+     * celular têm todos a mesma, e o que é longo corta (reticências, "+N").
+     * No toque os botões sobem para 44px, e o cartão cresce junto.
+     */
+    --spacing-row: 7.5rem;
+    --spacing-card: 16.125rem;
+    --spacing-card-touch: 18.375rem;
+
+    /*
+     * Movimento — ver "Motion" no DESIGN.md. Uma curva de chegada só, que
+     * desacelera com confiança (nada de quique); o que sai, sai mais rápido.
+     * Só transform e opacidade. O momento autoral é o gráfico se escrevendo
+     * (draw → wash → settle); o resto é continuidade e resposta, em 150–300ms.
+     */
+    --ease-arrive: cubic-bezier(0.16, 1, 0.3, 1);
+    /* O que chega à tela: esmaece subindo um pouco. Com "reduzir movimento", só esmaece. */
+    --animate-rise: rise 260ms var(--ease-arrive) both;
+    /* A troca de tela: só esmaece, sem deslocar o layout inteiro. */
+    --animate-appear: appear 200ms ease-out both;
+    /* O gráfico: a linha se desenha do dia 1 até hoje, o véu embaixo vem depois, e o ponto de hoje assenta no fim. */
+    --animate-draw: draw 1000ms cubic-bezier(0.45, 0, 0.2, 1) both;
+    --animate-wash: appear 600ms ease-out 300ms both;
+    --animate-settle: settle 360ms var(--ease-arrive) 900ms both;
+
+    @keyframes rise {
+        from {
+            opacity: 0;
+            transform: translateY(var(--rise-from, 6px));
+        }
+    }
+    @keyframes appear {
+        from {
+            opacity: 0;
+        }
+    }
+    @keyframes draw {
+        from {
+            stroke-dashoffset: 1;
+        }
+        to {
+            stroke-dashoffset: 0;
+        }
+    }
+    @keyframes settle {
+        from {
+            opacity: 0;
+            transform: scale(0.3);
+        }
+    }
+}
+
+/*
+ * O sistema do painel — ver DESIGN.md na raiz.
+ *
+ * Toda cor e todo tamanho das telas sai daqui. As telas usam os nomes
+ * (bg-card, text-stage-link, text-page…), nunca um valor solto: assim os dois
+ * temas mudam juntos e o contraste conferido aqui vale em todo lugar.
+ */
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    /* Tons de estado. Antes cada tela escrevia o seu "emerald-500/40",
-       "sky-500/30"… com opacidades diferentes; agora há um tom por
-       significado, usado pelas classes de `lib/tone.ts`. */
-    --color-success: var(--success);
-    --color-warning: var(--warning);
-    --color-info: var(--info);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
+    --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+
     --color-background: var(--background);
-    /* O menor degrau da escala: rótulos de campo, contadores, carimbos de
-       tempo. Substitui os 11px, 10px e 0.7rem soltos pelas telas. */
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-input-focus: var(--input-focus);
+    --color-ring: var(--ring);
+    --color-chart-drive: var(--chart-drive);
+    --color-chart-panel: var(--chart-panel);
+
+    /* Estados: um tom por significado, cada um com a versão suave do fundo. */
+    --color-destructive: var(--destructive);
+    --color-destructive-soft: var(--destructive-soft);
+    --color-destructive-solid: var(--destructive-solid);
+    --color-destructive-solid-foreground: var(--destructive-solid-foreground);
+    --color-success: var(--success);
+    --color-success-soft: var(--success-soft);
+    --color-warning: var(--warning);
+    --color-warning-soft: var(--warning-soft);
+    --color-info: var(--info);
+    --color-info-soft: var(--info-soft);
+
+    /* Um tom por etapa do projeto (features/projects/stage.ts). */
+    --color-stage-material: var(--stage-material);
+    --color-stage-material-soft: var(--stage-material-soft);
+    --color-stage-geracao: var(--stage-geracao);
+    --color-stage-geracao-soft: var(--stage-geracao-soft);
+    --color-stage-link: var(--stage-link);
+    --color-stage-link-soft: var(--stage-link-soft);
+    --color-stage-cliente: var(--stage-cliente);
+    --color-stage-cliente-soft: var(--stage-cliente-soft);
+    --color-stage-publicacao: var(--stage-publicacao);
+    --color-stage-publicacao-soft: var(--stage-publicacao-soft);
+    --color-stage-arquivos: var(--stage-arquivos);
+    --color-stage-arquivos-soft: var(--stage-arquivos-soft);
+
+    /*
+     * Escala tipográfica. O corpo é o text-sm (14/20), a legenda o text-xs
+     * (12/16); estes são os degraus próprios do painel.
+     */
+    --text-page: 1.5rem;
+    --text-page--line-height: 2rem;
+    --text-page--font-weight: 650;
+    --text-page--letter-spacing: -0.015em;
+    --text-section: 1rem;
+    --text-section--line-height: 1.5rem;
+    --text-section--font-weight: 650;
+    --text-ui: 0.8125rem;
+    --text-ui--line-height: 1.125rem;
+    --text-numeral: 1.25rem;
+    --text-numeral--line-height: 1.5rem;
+    --text-numeral--font-weight: 650;
+    /* O menor degrau: carimbos de tempo e contadores dentro de selos. */
     --text-2xs: 0.6875rem;
     --text-2xs--line-height: 1rem;
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
+
+    /* Raios: tag 6px (rounded-sm), botão pequeno e Badge 7px (rounded-md),
+       controle 8px (rounded-lg), cartão e diálogo 12px (rounded-xl). O selo
+       de etapa e os ícones em círculo são rounded-full. */
+    --radius-sm: calc(var(--radius) * 0.75);
+    --radius-md: calc(var(--radius) * 0.875);
     --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+    --radius-xl: calc(var(--radius) * 1.5);
 }
 
-/**
- * Modo claro ancorado no azul da marca (o navy do logo e oklch(0.303 0.036 249)).
- * Os neutros carregam um traco minimo desse matiz — cinza puro ao lado de um
- * logo azul le como descolorido, e a paleta original era acromatica inteira.
- *
- * Duas decisoes sustentam a hierarquia:
- * 1. o fundo da pagina e levemente tingido e o cartao permanece branco puro,
- *    entao o cartao se destaca por si; antes ambos eram branco e so a borda
- *    hairline separava um do outro;
- * 2. `secondary`, `muted` e `accent` deixam de ter o mesmo valor. Como accent e
- *    o estado de hover, empatado com muted ele nao dava retorno nenhum ao mouse.
+/*
+ * Claro. Fundo levemente tingido e cartão branco: o cartão se destaca sozinho,
+ * com uma borda fina. A ação principal é verde-azulada; o azul-marinho da
+ * marca fica no logotipo e no anel de foco. Contraste do texto (WCAG):
+ * principal 17:1, apoio 6:1, ação 5,6:1, etapas e estados de 4,9 a 5,7:1 sobre
+ * o fundo suave do selo.
  */
 :root {
-    --background: oklch(0.967 0.006 250);
-    --foreground: oklch(0.21 0.021 254);
+    --radius: 0.5rem;
+
+    --background: oklch(0.975 0.006 230);
+    --foreground: oklch(0.22 0.025 250);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.21 0.021 254);
+    --card-foreground: oklch(0.22 0.025 250);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.21 0.021 254);
-    --primary: oklch(0.32 0.045 252);
-    --primary-foreground: oklch(0.985 0.003 250);
-    --secondary: oklch(0.939 0.011 252);
-    --secondary-foreground: oklch(0.3 0.035 252);
-    --muted: oklch(0.947 0.009 252);
-    /* Token mais usado do painel (142 ocorrencias). O 0.556 original passava
-       raspando no AA; este escurece o suficiente para o texto de apoio parar
-       de sumir sem competir com o texto principal. */
-    --muted-foreground: oklch(0.505 0.021 254);
-    --accent: oklch(0.921 0.017 250);
-    --accent-foreground: oklch(0.28 0.04 252);
-    /* Escurecido: com 0.577 o texto branco sobre o botao destrutivo ficava
-       abaixo de 4.5:1. */
-    --destructive: oklch(0.52 0.208 27.325);
-    /* 0.52 dava 4.4:1 no selo de etapa (texto de 11px sobre o próprio tom a
-       10%); o mesmo valia para o vermelho no botão destrutivo. */
-    --success: oklch(0.48 0.13 160);
-    --warning: oklch(0.56 0.13 65);
-    --info: oklch(0.52 0.14 245);
-    --border: oklch(0.898 0.009 252);
-    --input: oklch(0.885 0.011 252);
-    /* O anel de foco do teclado, no azul-marinho da marca. O azul vivo de
-       antes lia como o contorno padrão do navegador, não como parte do painel. */
+    --popover-foreground: oklch(0.22 0.025 250);
+    --primary: oklch(0.5 0.095 192);
+    --primary-foreground: oklch(0.995 0.003 192);
+    --secondary: oklch(0.945 0.01 230);
+    --secondary-foreground: oklch(0.28 0.03 250);
+    --muted: oklch(0.955 0.008 235);
+    --muted-foreground: oklch(0.5 0.02 250);
+    --accent: oklch(0.935 0.014 225);
+    --accent-foreground: oklch(0.24 0.03 250);
+    --border: oklch(0.91 0.01 240);
+    --input: oklch(0.87 0.012 240);
+    /* O campo em foco: a mesma borda de 1px, um degrau mais escura. Sem halo em volta. */
+    --input-focus: oklch(0.8 0.015 240);
+    /*
+     * As duas séries do gráfico de projetos novos: os recebidos pelo Drive e
+     * os criados no painel. Azul e laranja da paleta categórica de referência,
+     * conferidos pelo validador (separação para daltonismo e contraste) sobre
+     * o cartão branco; no escuro, os passos da mesma paleta sobre o cartão escuro.
+     */
+    --chart-drive: oklch(0.575 0.163 255.5);
+    --chart-panel: oklch(0.671 0.175 40.6);
     --ring: oklch(0.45 0.07 252);
-    --chart-1: oklch(0.55 0.14 252);
-    --chart-2: oklch(0.68 0.115 215);
-    --chart-3: oklch(0.62 0.125 165);
-    --chart-4: oklch(0.7 0.14 85);
-    --chart-5: oklch(0.58 0.16 300);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0.004 250);
-    --sidebar-foreground: oklch(0.21 0.021 254);
-    --sidebar-primary: oklch(0.32 0.045 252);
-    --sidebar-primary-foreground: oklch(0.985 0.003 250);
-    --sidebar-accent: oklch(0.921 0.017 250);
-    --sidebar-accent-foreground: oklch(0.28 0.04 252);
-    --sidebar-border: oklch(0.898 0.009 252);
-    --sidebar-ring: oklch(0.55 0.132 250);
+
+    --destructive: oklch(0.52 0.19 27);
+    --destructive-soft: oklch(0.96 0.025 27);
+    --destructive-solid: oklch(0.55 0.2 27);
+    --destructive-solid-foreground: oklch(1 0 0);
+    --success: oklch(0.49 0.12 155);
+    --success-soft: oklch(0.96 0.03 155);
+    --warning: oklch(0.53 0.13 65);
+    --warning-soft: oklch(0.965 0.035 75);
+    --info: oklch(0.5 0.15 262);
+    --info-soft: oklch(0.96 0.025 262);
+
+    --stage-material: oklch(0.53 0.13 60);
+    --stage-material-soft: oklch(0.965 0.035 75);
+    --stage-geracao: oklch(0.5 0.15 262);
+    --stage-geracao-soft: oklch(0.96 0.025 262);
+    --stage-link: oklch(0.5 0.09 215);
+    --stage-link-soft: oklch(0.96 0.022 215);
+    --stage-cliente: oklch(0.5 0.15 302);
+    --stage-cliente-soft: oklch(0.96 0.03 302);
+    --stage-publicacao: oklch(0.49 0.12 155);
+    --stage-publicacao-soft: oklch(0.96 0.03 155);
+    --stage-arquivos: oklch(0.5 0.02 250);
+    --stage-arquivos-soft: oklch(0.955 0.008 250);
 }
 
-/**
- * Escuro com o mesmo matiz da marca do claro (azul 250), em vez do cinza puro
- * do tema padrão: sem isso, alternar o tema parecia trocar de produto.
+/*
+ * Escuro: o mesmo matiz frio do claro, para alternar o tema não parecer trocar
+ * de produto. Os tons sobem de claridade (texto 0,8) e os fundos suaves
+ * descem (0,28). Contraste: principal 17:1, apoio 7:1, ação 8:1, etapas e
+ * estados de 6,7 a 8,6:1.
  */
 .dark {
-    --background: oklch(0.17 0.012 255);
-    --foreground: oklch(0.96 0.005 250);
-    --card: oklch(0.215 0.014 255);
-    --card-foreground: oklch(0.96 0.005 250);
-    --popover: oklch(0.235 0.015 255);
-    --popover-foreground: oklch(0.96 0.005 250);
-    --primary: oklch(0.9 0.02 250);
-    --primary-foreground: oklch(0.22 0.03 255);
-    --secondary: oklch(0.28 0.017 255);
-    --secondary-foreground: oklch(0.96 0.005 250);
-    --muted: oklch(0.26 0.015 255);
-    --muted-foreground: oklch(0.72 0.015 252);
-    --accent: oklch(0.3 0.022 255);
-    --accent-foreground: oklch(0.97 0.005 250);
-    --destructive: oklch(0.75 0.17 22);
-    --success: oklch(0.74 0.14 160);
-    --warning: oklch(0.8 0.13 75);
-    --info: oklch(0.74 0.12 240);
+    --background: oklch(0.17 0.012 240);
+    --foreground: oklch(0.96 0.005 240);
+    --card: oklch(0.215 0.014 240);
+    --card-foreground: oklch(0.96 0.005 240);
+    --popover: oklch(0.235 0.015 240);
+    --popover-foreground: oklch(0.96 0.005 240);
+    --primary: oklch(0.74 0.11 188);
+    --primary-foreground: oklch(0.2 0.03 200);
+    --secondary: oklch(0.28 0.017 240);
+    --secondary-foreground: oklch(0.96 0.005 240);
+    --muted: oklch(0.255 0.014 240);
+    --muted-foreground: oklch(0.72 0.015 240);
+    --accent: oklch(0.3 0.02 240);
+    --accent-foreground: oklch(0.97 0.005 240);
     --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
+    --input: oklch(1 0 0 / 16%);
+    --input-focus: oklch(1 0 0 / 26%);
+    --chart-drive: oklch(0.622 0.161 255.1);
+    --chart-panel: oklch(0.622 0.173 40.1);
     --ring: oklch(0.8 0.05 250);
-    --chart-1: oklch(0.7 0.13 252);
-    --chart-2: oklch(0.72 0.11 215);
-    --chart-3: oklch(0.7 0.12 165);
-    --chart-4: oklch(0.78 0.13 85);
-    --chart-5: oklch(0.68 0.15 300);
-    --sidebar: oklch(0.215 0.014 255);
-    --sidebar-foreground: oklch(0.96 0.005 250);
-    --sidebar-primary: oklch(0.65 0.12 250);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.3 0.022 255);
-    --sidebar-accent-foreground: oklch(0.97 0.005 250);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.65 0.12 250);
+
+    --destructive: oklch(0.78 0.15 25);
+    --destructive-soft: oklch(0.28 0.06 25);
+    --destructive-solid: oklch(0.55 0.2 27);
+    --destructive-solid-foreground: oklch(1 0 0);
+    --success: oklch(0.8 0.13 155);
+    --success-soft: oklch(0.28 0.045 155);
+    --warning: oklch(0.83 0.12 75);
+    --warning-soft: oklch(0.28 0.045 70);
+    --info: oklch(0.8 0.11 262);
+    --info-soft: oklch(0.28 0.05 262);
+
+    --stage-material: oklch(0.83 0.12 75);
+    --stage-material-soft: oklch(0.28 0.045 70);
+    --stage-geracao: oklch(0.8 0.11 262);
+    --stage-geracao-soft: oklch(0.28 0.05 262);
+    --stage-link: oklch(0.82 0.09 210);
+    --stage-link-soft: oklch(0.28 0.04 215);
+    --stage-cliente: oklch(0.8 0.12 302);
+    --stage-cliente-soft: oklch(0.28 0.05 302);
+    --stage-publicacao: oklch(0.8 0.13 155);
+    --stage-publicacao-soft: oklch(0.28 0.045 155);
+    --stage-arquivos: oklch(0.72 0.015 240);
+    --stage-arquivos-soft: oklch(0.27 0.012 240);
+}
+
+/*
+ * Os moldes de grade que se repetem nas telas, com nome: a página com a
+ * coluna lateral, o ícone que abre uma linha, o ícone + texto + carimbo.
+ */
+/*
+ * O fio que separa as colunas da lista de projetos: à esquerda da célula,
+ * preso à linha horizontal de cima e curto — 44px, metade da altura útil da
+ * linha (os 120px menos os 16px de recuo em cima e embaixo). Marca onde cada
+ * coluna começa sem fechar a linha numa grade.
+ */
+@utility cell-divider {
+    position: relative;
+    &::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 2.75rem;
+        background: var(--color-border);
+    }
+}
+
+@utility grid-aside {
+  grid-template-columns: minmax(0, 1fr) 20rem;
+}
+@utility grid-lead {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+/* Diálogo alto (geração, log, prévia): uma altura só para todos. */
+@utility h-dialog-tall {
+  height: 90vh;
+  height: 90dvh;
+}
+/* O diálogo do projeto: quase a tela inteira, porque é ali que se trabalha nele. */
+@utility h-dialog-full {
+  height: 94vh;
+  height: 94dvh;
+}
+@utility max-w-dialog {
+  max-width: min(92rem, calc(100% - 2rem));
+}
+@utility grid-files {
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+}
+/* O Gantt do Dashboard: projeto, barra e duração. */
+@utility grid-gantt {
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) 6.5rem;
+}
+@utility grid-icon-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    /* Barras de rolagem no tom do painel (listas, diálogos, a tabela na tela
-       estreita): o cinza padrão do sistema destoava nos dois temas. */
+    /* Barras de rolagem no tom do painel nos dois temas. */
     scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent) transparent;
-    }
+  }
   /* Em tela de toque (ponteiro principal grosso), botões, campos e seletores
      sobem para 44px. No mouse o painel continua denso. */
   @media (pointer: coarse) {
@@ -179,11 +357,34 @@
   }
   ::selection {
     background-color: color-mix(in oklch, var(--ring) 30%, transparent);
-    }
+  }
   body {
     @apply bg-background text-foreground;
-    }
+  }
   html {
     @apply font-sans;
+  }
+  /*
+   * "Reduzir movimento": menos deslocamento, não menos resposta. O que chega
+   * só esmaece (sem subir), menus e diálogos abrem sem zoom nem deslize, o
+   * que desliza (o indicador da seção, a mira do gráfico) muda de lugar sem
+   * viajar, e o gráfico já nasce desenhado. Esmaecer, mudar de cor e os
+   * spinners — que dizem que algo está em curso — continuam.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --rise-from: 0px;
     }
+    *,
+    *::before,
+    *::after {
+      --tw-enter-scale: 1 !important;
+      --tw-exit-scale: 1 !important;
+      --tw-enter-translate-x: 0 !important;
+      --tw-enter-translate-y: 0 !important;
+      --tw-exit-translate-x: 0 !important;
+      --tw-exit-translate-y: 0 !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

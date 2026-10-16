@@ -92,7 +92,7 @@ export function BriefingEditor({
             spellCheck={false}
             aria-invalid={Boolean(erro)}
             onChange={(event) => editarJson(event.target.value)}
-            className="max-h-[50vh] min-h-64 resize-y overflow-y-auto font-mono text-xs leading-relaxed"
+            className="max-h-96 min-h-64 resize-y overflow-y-auto font-mono text-xs leading-relaxed"
           />
           <p className={cn("text-xs", erro ? "text-destructive" : "text-muted-foreground")}>
             {erro ?? "O documento inteiro, como o motor o lê. Campo sem informação fica de fora: apague a chave."}

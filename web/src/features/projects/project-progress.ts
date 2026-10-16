@@ -259,13 +259,5 @@ export function progressOf(project: Project): ProgressModel | null {
 /** Algo em curso pede que a lista se atualize sozinha. */
 export const isInProgress = (project: Project) => progressOf(project) !== null;
 
-/** "45 s", "3 min 12 s", "1 h 05 min". */
-export function formatElapsed(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const horas = Math.floor(total / 3600);
-  const minutos = Math.floor((total % 3600) / 60);
-  const segundos = total % 60;
-  if (horas > 0) return `${horas} h ${String(minutos).padStart(2, "0")} min`;
-  if (minutos > 0) return `${minutos} min ${String(segundos).padStart(2, "0")} s`;
-  return `${segundos} s`;
-}
+/** O cronômetro do andamento — o formato comum do painel. */
+export { formatElapsed } from "@/lib/format";

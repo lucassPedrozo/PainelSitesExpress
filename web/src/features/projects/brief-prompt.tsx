@@ -1,37 +1,50 @@
 import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, ExternalLink, Eye, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Project, ProjectBrief } from "@/lib/api";
 import { fetchProjectBrief } from "@/lib/api";
-import { projectIdentity } from "@/lib/format";
+import { pluralize, projectIdentity } from "@/lib/format";
 import { copyToClipboard } from "@/lib/clipboard";
+import { queryKeys } from "@/lib/query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OtherBriefsNotice } from "./other-briefs-notice";
-import { cn } from "@/lib/utils";
 
-/** Busca o briefing uma vez e reaproveita o texto entre copiar e visualizar. */
+/**
+ * Busca o briefing uma vez e reaproveita o texto entre copiar, visualizar e o
+ * Resumo do projeto, que o mostra pela mesma chave de consulta.
+ */
 function useBrief(project: Project) {
-  const [brief, setBrief] = useState<ProjectBrief | null>(null);
+  const queryClient = useQueryClient();
+  const [brief, setBrief] = useState<ProjectBrief | null>(
+    () => queryClient.getQueryData<ProjectBrief>(queryKeys.brief(project.id)) ?? null,
+  );
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (brief) return brief;
     setLoading(true);
     try {
-      const data = await fetchProjectBrief(project.id);
+      const data = await queryClient.fetchQuery({
+        queryKey: queryKeys.brief(project.id),
+        queryFn: () => fetchProjectBrief(project.id),
+        staleTime: 5 * 60_000,
+      });
       setBrief(data);
       return data;
     } finally {
       setLoading(false);
     }
-  }, [brief, project.id]);
+  }, [brief, project.id, queryClient]);
 
   return { brief, loading, load };
 }
@@ -66,7 +79,7 @@ export function CopyBriefButton({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       toast.success("Prompt copiado", {
-        description: `${data.text.length.toLocaleString("pt-BR")} caracteres de “${data.file.name}”`,
+        description: `${pluralize(data.text.length, "caractere")} de “${data.file.name}”`,
       });
     } catch (err) {
       toast.error("Não foi possível copiar o prompt", {
@@ -85,15 +98,9 @@ export function CopyBriefButton({
         event.stopPropagation();
         void copy();
       }}
-      title={title ?? `Copiar o conteúdo de “${project.brief?.name}”`}
+      title={title ?? (project.brief?.name ? `Copiar o conteúdo de “${project.brief.name}”` : "Copiar o prompt")}
     >
-      {loading ? (
-        <Loader2 className="size-4 animate-spin" />
-      ) : copied ? (
-        <Check className="size-4" />
-      ) : (
-        <Copy className="size-4" />
-      )}
+      {loading ? <Loader2 className="animate-spin" /> : copied ? <Check /> : <Copy />}
       {copied ? "Copiado" : label}
     </Button>
   );
@@ -138,53 +145,47 @@ export function ViewBriefButton({ project }: { project: Project }) {
           void openDialog();
         }}
       >
-        <Eye className="size-4" />
+        <Eye />
         Ver prompt
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent layout="sectioned" className="h-[85vh] sm:max-w-3xl">
+        <DialogContent layout="sectioned" className="h-dialog-tall sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle className="text-base">Prompt — {label}</DialogTitle>
+            <DialogTitle>Prompt de {label}</DialogTitle>
             <DialogDescription className="truncate">
-              {brief ? brief.file.name : "Carregando..."}
+              {brief ? `${brief.file.name} · ${pluralize(brief.text.length, "caractere")}` : "Lendo o briefing no Drive…"}
             </DialogDescription>
             {brief && <OtherBriefsNotice others={brief.others} />}
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto bg-muted/30 px-6 py-4">
+          <DialogBody className="bg-muted/40">
             {loading || !brief ? (
-              <div className="flex h-full items-center justify-center">
+              <div className="flex h-full items-center justify-center" aria-busy="true" aria-label="Carregando o briefing">
                 <Loader2 className="size-6 animate-spin text-muted-foreground" />
               </div>
             ) : (
-              <pre className="font-sans text-sm leading-relaxed whitespace-pre-wrap">
-                {brief.text}
-              </pre>
+              <pre className="font-sans text-sm leading-relaxed whitespace-pre-wrap">{brief.text}</pre>
             )}
-          </div>
+          </DialogBody>
 
-          <div className="flex items-center justify-between gap-2 border-t px-6 py-3">
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {brief ? `${brief.text.length.toLocaleString("pt-BR")} caracteres` : ""}
-            </span>
-            <div className="flex items-center gap-2">
-              {brief && (
-                <Button asChild variant="ghost" size="sm">
-                  <a href={brief.file.webViewLink} target="_blank" rel="noreferrer">
-                    <ExternalLink className="size-4" />
-                    Abrir no Drive
-                  </a>
-                </Button>
-              )}
-              <Button size="sm" disabled={!brief} onClick={() => void copy()}>
-                <span className={cn("contents", copied && "text-current")}>
-                  {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                </span>
-                {copied ? "Copiado" : "Copiar prompt"}
+          <DialogFooter>
+            {brief && (
+              <Button asChild variant="ghost" className="sm:mr-auto">
+                <a href={brief.file.webViewLink} target="_blank" rel="noreferrer">
+                  <ExternalLink />
+                  Abrir no Drive
+                </a>
               </Button>
-            </div>
-          </div>
+            )}
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Fechar
+            </Button>
+            <Button disabled={!brief} onClick={() => void copy()}>
+              {copied ? <Check /> : <Copy />}
+              {copied ? "Copiado" : "Copiar prompt"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

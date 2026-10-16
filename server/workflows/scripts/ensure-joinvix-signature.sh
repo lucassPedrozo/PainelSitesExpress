@@ -30,7 +30,8 @@ fi
 
 # A altura da logo, igual em todo site. Alcanca a imagem dentro do link da
 # assinatura, onde quer que o agente a tenha posto, e a faixa inserida abaixo.
-size_rule='<style id="joinvix-assinatura-tamanho">a[href*="joinvix.com.br"] img,#joinvix-assinatura img{height:45px!important;width:auto!important;max-width:none!important;max-height:none!important}@media (max-width:767px){a[href*="joinvix.com.br"] img,#joinvix-assinatura img{height:36px!important}}</style>'
+# O link vale com ou sem o ".br" (joinvix.com.br ou joinvix.com).
+size_rule='<style id="joinvix-assinatura-tamanho">a[href*="joinvix.com"] img,#joinvix-assinatura img{height:45px!important;width:auto!important;max-width:none!important;max-height:none!important}@media (max-width:767px){a[href*="joinvix.com"] img,#joinvix-assinatura img{height:36px!important}}</style>'
 
 apply_size() {
   local sized=0 page tmp
@@ -53,8 +54,10 @@ apply_size() {
   echo "Altura da logo Joinvix (45px no desktop, 36px no celular) aplicada em $sized pagina(s)."
 }
 
-# O link da assinatura aparece no HTML ou no bundle JS do React.
-if grep -rqiE 'joinvix\.com\.br' "$dist_dir" --include='*.html' --include='*.js'; then
+# O link da assinatura aparece no HTML ou no bundle JS do React, com ou sem o
+# ".br": um rodape que ja tem a logo com link para joinvix.com nao pode ganhar
+# uma segunda faixa embaixo.
+if grep -rqiE 'joinvix\.com' "$dist_dir" --include='*.html' --include='*.js'; then
   echo "Assinatura Joinvix presente no site."
   summary "Assinatura Joinvix: presente no site."
   apply_size

@@ -24,6 +24,7 @@ const chaves = [
   "CLAUDE_MODEL",
   "CLAUDE_REASONING_EFFORT",
   "CLAUDE_REVIEW_ROUNDS",
+  "CLAUDE_PARALLEL_SITES",
   "CLAUDE_PARALLEL_ADJUSTMENTS",
   "CLAUDE_ART_DIRECTION",
   "CLAUDE_MOTION",
@@ -144,6 +145,7 @@ describe("Motor Claude", () => {
       "CLAUDE_MODEL",
       "CLAUDE_REASONING_EFFORT",
       "CLAUDE_REVIEW_ROUNDS",
+      "CLAUDE_PARALLEL_SITES",
       "CLAUDE_PARALLEL_ADJUSTMENTS",
       "CLAUDE_ART_DIRECTION",
       "CLAUDE_MOTION",
@@ -212,6 +214,26 @@ describe("Motor Claude", () => {
       }
     } finally {
       rmSync(pasta, { recursive: true, force: true });
+    }
+  });
+
+  it("sites e ajustes ao mesmo tempo: listas fechadas, e o vazio fica com o padrão do painel", () => {
+    assert.deepEqual(SETTING_FIELDS.get("CLAUDE_PARALLEL_SITES").options.map((opcao) => opcao.value), ["", "1", "2", "3"]);
+    assert.deepEqual(SETTING_FIELDS.get("CLAUDE_PARALLEL_ADJUSTMENTS").options.map((opcao) => opcao.value), ["", "0", "1", "2", "3", "4", "5"]);
+    for (const [chave, valor] of [["CLAUDE_PARALLEL_SITES", "0"], ["CLAUDE_PARALLEL_SITES", "4"], ["CLAUDE_PARALLEL_ADJUSTMENTS", "6"]]) {
+      assert.match(recusa(chave, valor), /Opção inválida/, `${chave}=${valor}`);
+    }
+
+    process.env.CLAUDE_PARALLEL_SITES = "2";
+    process.env.CLAUDE_PARALLEL_ADJUSTMENTS = "5";
+    assert.deepEqual([claudeConfig().parallelSites, claudeConfig().parallelAdjustments], [2, 5]);
+    process.env.CLAUDE_PARALLEL_ADJUSTMENTS = "0";
+    assert.equal(claudeConfig().parallelAdjustments, 0, "zero: tudo em uma fila só");
+    // Um `.env` editado à mão com um número fora da lista vale como vazio.
+    for (const [sites, ajustes] of [["", ""], ["0", "6"], ["4", "-1"], ["1.5", "dois"]]) {
+      process.env.CLAUDE_PARALLEL_SITES = sites;
+      process.env.CLAUDE_PARALLEL_ADJUSTMENTS = ajustes;
+      assert.deepEqual([claudeConfig().parallelSites, claudeConfig().parallelAdjustments], [null, null], `${sites}/${ajustes}`);
     }
   });
 

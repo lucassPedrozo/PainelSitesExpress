@@ -34,7 +34,7 @@ const watching = new Set();
  * "trabalhando" até o acompanhamento desistir.
  *
  * @param {any} raw
- * @returns {{ agentFinished: boolean, screenshotUrl: string | null, name: string | null }}
+ * @returns {{ agentFinished: boolean, screenshotUrl: string | null, name: string | null, createdAt: string | null }}
  */
 export function readProject(raw) {
   const aninhado = raw?.project ?? {};
@@ -42,6 +42,8 @@ export function readProject(raw) {
     agentFinished: Boolean(aninhado.agentFinished ?? raw?.agentFinished),
     screenshotUrl: aninhado.screenshotUrl ?? raw?.latest_screenshot_url ?? null,
     name: typeof raw?.name === "string" && raw.name.trim() ? raw.name.trim() : null,
+    /** Quando o projeto nasceu no Lovable (ISO); `null` se não veio. */
+    createdAt: typeof raw?.created_at === "string" && !Number.isNaN(Date.parse(raw.created_at)) ? new Date(raw.created_at).toISOString() : null,
   };
 }
 

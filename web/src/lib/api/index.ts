@@ -5,6 +5,7 @@
 export * from "./access";
 export * from "./assistant";
 export * from "./claude";
+export * from "./edits";
 export * from "./generations";
 export * from "./lovable";
 export * from "./projects";

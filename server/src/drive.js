@@ -81,37 +81,51 @@ export async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
+const STATS_FIELDS = "nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime)";
+
+/** Documentos, planilhas e apresentações do Google: editados no próprio Drive. */
+const isGoogleNative = (mimeType = "") =>
+  mimeType.startsWith("application/vnd.google-apps.") && mimeType !== FOLDER_MIME;
+
 /**
- * Estatísticas de uma pasta de projeto: contagens, volume, tipos, última
- * atividade e o arquivo de briefing, se houver.
+ * As métricas de uma coleta a partir dos itens dela: os da raiz e os das
+ * subpastas. Pura, para ser testada sem o Drive.
  *
- * Uma consulta por pasta, e não um `OR` de vários `parents`: a busca do Drive
- * devolve resultados incompletos para essas consultas combinadas — arquivos
- * existentes simplesmente não vinham, e a contagem do card saía menor que a
- * realidade. Quem chama controla a concorrência e o cache de cada pasta.
+ * - Arquivos, volume e tipos contam as subpastas: o cliente costuma mandar as
+ *   fotos numa pasta própria, e contar só a raiz dava "Pasta vazia" para uma
+ *   coleta cheia — e um número menor que o da tela de geração, que já descia.
+ * - A última atividade é quando o item mais recente **entrou** na pasta
+ *   (`createdTime`). O `modifiedTime` de um upload é a data do arquivo no
+ *   computador do cliente: uma coleta de hoje aparecia com "atividade há 3
+ *   anos". Nos documentos nativos do Google ele é real (a edição foi no Drive)
+ *   e também conta.
+ * - O briefing é procurado só na raiz, como sempre foi.
+ *
+ * @typedef {{ id?: string, name?: string, mimeType?: string, size?: string | number, createdTime?: string, modifiedTime?: string }} StatsItem
+ * @param {StatsItem[]} rootFiles
+ * @param {StatsItem[]} [nestedFiles]
  */
-export async function statsForFolder(folderId) {
+export function summarizeFolderFiles(rootFiles, nestedFiles = []) {
   const entry = {
     fileCount: 0,
     folderCount: 0,
     size: 0,
+    /** @type {string | null} */
     lastActivity: null,
-    // Quando o último item entrou na pasta. `modifiedTime` não serve para
-    // isso: num upload ele é a data do arquivo no computador do cliente.
+    /** @type {string | null} Quando o último item entrou na pasta. */
     lastAdded: null,
+    /** @type {Record<string, number>} */
     kinds: {},
+    /** @type {{ id: string | undefined, name: string | undefined, mimeType: string | undefined, createdTime: string | null, count: number } | null} */
     brief: null,
   };
+  const later = (current, candidate) => (candidate && (!current || candidate > current) ? candidate : current);
 
-  const files = await listAll({
-    q: `'${folderId}' in parents and trashed = false`,
-    fields: "nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime)",
-  });
+  for (const file of [...rootFiles, ...nestedFiles]) {
+    entry.lastAdded = later(entry.lastAdded, file.createdTime);
+    entry.lastActivity = later(entry.lastActivity, file.createdTime);
+    if (isGoogleNative(file.mimeType)) entry.lastActivity = later(entry.lastActivity, file.modifiedTime);
 
-  for (const file of files) {
-    if (file.createdTime && (!entry.lastAdded || file.createdTime > entry.lastAdded)) {
-      entry.lastAdded = file.createdTime;
-    }
     if (file.mimeType === FOLDER_MIME) entry.folderCount += 1;
     else {
       entry.fileCount += 1;
@@ -119,12 +133,9 @@ export async function statsForFolder(folderId) {
       const kind = kindOf(file.mimeType, file.name);
       entry.kinds[kind] = (entry.kinds[kind] ?? 0) + 1;
     }
-    if (!entry.lastActivity || file.modifiedTime > entry.lastActivity) {
-      entry.lastActivity = file.modifiedTime;
-    }
   }
 
-  const { file: brief, count } = pickBrief(files);
+  const { file: brief, count } = pickBrief(rootFiles);
   if (brief) {
     entry.brief = {
       id: brief.id,
@@ -138,6 +149,38 @@ export async function statsForFolder(folderId) {
   }
 
   return entry;
+}
+
+/**
+ * Estatísticas de uma pasta de projeto: contagens, volume, tipos, última
+ * atividade e o arquivo de briefing, se houver — ver `summarizeFolderFiles`.
+ *
+ * Uma consulta por pasta, e não um `OR` de vários `parents`: a busca do Drive
+ * devolve resultados incompletos para essas consultas combinadas — arquivos
+ * existentes simplesmente não vinham, e a contagem do card saía menor que a
+ * realidade. As subpastas descem com a mesma profundidade da tela de geração
+ * (`walkProjectFiles`), uma consulta por subpasta. Quem chama controla a
+ * concorrência entre projetos e o cache de cada um.
+ */
+export async function statsForFolder(folderId, { maxDepth = 4 } = {}) {
+  const listChildren = (id) =>
+    listAll({ q: `'${id}' in parents and trashed = false`, fields: STATS_FIELDS });
+
+  const rootFiles = await listChildren(folderId);
+  const nested = [];
+  // Um atalho circular faria a descida passear para sempre: cada pasta, uma vez.
+  const seen = new Set([folderId]);
+  let level = rootFiles.filter((file) => file.mimeType === FOLDER_MIME).map((file) => file.id);
+
+  for (let depth = 1; depth < maxDepth && level.length; depth++) {
+    const fresh = level.filter((id) => !seen.has(id));
+    for (const id of fresh) seen.add(id);
+    const children = (await mapWithConcurrency(fresh, 4, listChildren)).flat();
+    nested.push(...children);
+    level = children.filter((file) => file.mimeType === FOLDER_MIME).map((file) => file.id);
+  }
+
+  return summarizeFolderFiles(rootFiles, nested);
 }
 
 /**

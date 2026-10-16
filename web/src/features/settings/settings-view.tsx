@@ -1,7 +1,8 @@
-import { useMemo, useState, useEffect } from "react";
-import { EmptyState, PageHeader } from "@/components/page-header";
+import { createElement, useMemo, useState, useEffect } from "react";
+import { ErrorNotice, PageHeader } from "@/components/page-header";
+import { PageColumns, PageSkeleton } from "@/components/page-layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Loader2, RotateCw, Save, ShieldCheck, Undo2 } from "lucide-react";
+import { ArrowDown, Loader2, RotateCw, Save, ShieldCheck, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchSettings,
@@ -13,48 +14,48 @@ import {
 } from "@/lib/api/settings";
 import { pluralize } from "@/lib/format";
 import { queryKeys } from "@/lib/query";
+import { SectionCard } from "@/components/section-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { FieldRow } from "./settings-field";
-import { FIELD_GRID, initialDrafts, sectionUpdates, type Drafts, type FieldDraft } from "./settings-form";
+import { sectionIcon } from "./section-icons";
+import {
+  engineStatus,
+  FIELD_GRID,
+  initialDrafts,
+  sectionStatus,
+  sectionUpdates,
+  type Drafts,
+  type FieldDraft,
+} from "./settings-form";
 import { ClaudeStateRow, ClaudeTest } from "./settings-claude";
 import { GeminiTest, GithubTest } from "./settings-tests";
 
 /**
  * A tela de configuração: todas as chaves do `.env`, por assunto.
  *
- * Cada seção é um cartão com os campos numa coluna só — nome à esquerda,
- * controle e ajuda à direita —, o estado da integração no título e o teste
- * que ela tem (GitHub, Gemini, Claude) no rodapé. A seção grava sozinha
- * e diz o que só vale depois de reiniciar. Segredos nunca voltam para o
- * navegador: aparece só a dica.
+ * No topo, o estado de cada integração num relance; embaixo, uma seção por
+ * assunto, com os campos numa coluna só — nome à esquerda, controle e ajuda à
+ * direita —, o mesmo selo de estado no título e o teste que ela tem (GitHub,
+ * Gemini, Claude) no rodapé. A seção grava sozinha e diz o que só vale depois
+ * de reiniciar. Segredos nunca voltam para o navegador: aparece só a dica.
  */
 
-/** Seções cujo estado é "configurado" quando os segredos delas estão gravados. */
-const SECOES_COM_ESTADO = new Set(["assistant", "github", "dev-area", "shortlinks"]);
+/*
+ * Onde o topo de uma seção para ao rolar: abaixo do cabeçalho fixo do painel
+ * (56px a partir de `md`; uns 105px no celular, com as seções numa segunda
+ * linha) e com o respiro do topo da página. Um valor só, na variável
+ * --topo-secao, para o menu lateral grudado, o destino dos links e a faixa que
+ * marca a seção atual — antes eram três números soltos (top-24, scroll-mt-24 e
+ * -96px), presos a um cabeçalho que mudou de altura.
+ */
+const TOPO_SECAO = "[--topo-secao:7.5rem] md:[--topo-secao:5rem]";
 
-function sectionStatus(section: SettingSection, engines: EngineStatus[]) {
-  // O motor Claude não tem segredo: o estado dele é o pacote e a trava.
-  if (section.id === "claude") {
-    const motor = engines.find((engine) => engine.id === "claude");
-    if (!motor) return null;
-    if (!motor.available) return { label: "Não instalado", variant: "warning" as const };
-    return motor.details.enabled
-      ? { label: "Uso liberado", variant: "success" as const }
-      : { label: "Uso desligado", variant: "outline" as const };
-  }
-  if (!SECOES_COM_ESTADO.has(section.id)) return null;
-  const segredos = section.fields.filter((campo) => campo.type === "secret");
-  const definidos = segredos.filter((campo) => campo.set).length;
-  if (segredos.length === 0) return null;
-  if (definidos === segredos.length) return { label: "Configurado", variant: "success" as const };
-  if (definidos === 0) return { label: "Não configurado", variant: "outline" as const };
-  return { label: "Incompleto", variant: "warning" as const };
-}
+const TITULO = "Configurações";
+const DESCRICAO = "Credenciais e integrações do painel; senhas e chaves gravadas nunca voltam para a tela.";
 
 export function SettingsView({ focusSection }: { focusSection?: string | null } = {}) {
   const queryClient = useQueryClient();
@@ -105,10 +106,10 @@ export function SettingsView({ focusSection }: { focusSection?: string | null } 
       void queryClient.invalidateQueries({ queryKey: ["claude", "options"] });
       void queryClient.invalidateQueries({ queryKey: ["claude", "project"] });
       setErrors({});
+      // O que só vale depois de reiniciar já aparece na faixa do topo e no
+      // próprio campo: o toast só confirma a gravação, sem repetir o aviso.
       toast.success(pluralize(resposta.saved.length, "configuração gravada", "configurações gravadas"), {
-        description: resposta.restartRequired.length
-          ? `Reinicie o painel para valer: ${resposta.restartRequired.join(", ")}.`
-          : "Já está valendo.",
+        description: resposta.restartRequired.length ? undefined : "Já está valendo.",
       });
       if (resposta.sessionsClosed > 0) {
         toast.info("A chave do administrador mudou", {
@@ -123,22 +124,20 @@ export function SettingsView({ focusSection }: { focusSection?: string | null } 
     },
   });
 
-  if (query.isPending) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-16 rounded-xl" />
-        <Skeleton className="h-72 rounded-xl" />
-      </div>
-    );
-  }
+  if (query.isPending) return <PageSkeleton />;
   if (query.error || !data) {
     return (
-      <EmptyState
-        tone="danger"
-        icon={<AlertTriangle />}
-        title="Não foi possível abrir as configurações"
-        description={query.error instanceof Error ? query.error.message : "Tente novamente."}
-      />
+      <div className="space-y-5">
+        <PageHeader title={TITULO} description={DESCRICAO} />
+        <Card className="py-0">
+          <ErrorNotice
+            title="Não foi possível abrir as configurações"
+            error={query.error}
+            onRetry={query.isFetching ? undefined : () => void query.refetch()}
+            className="py-14"
+          />
+        </Card>
+      </div>
     );
   }
 
@@ -156,55 +155,35 @@ export function SettingsView({ focusSection }: { focusSection?: string | null } 
   );
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
-      <nav className="hidden lg:block" aria-label="Seções da configuração">
-        <ul className="sticky top-24 space-y-0.5 text-sm">
-          {data.sections.map((secao) => (
-            <li key={secao.id}>
-              <a
-                href={`#config-${secao.id}`}
-                aria-current={atual === secao.id ? "location" : undefined}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-3 py-1.5 transition-colors",
-                  atual === secao.id
-                    ? "bg-card font-medium text-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                )}
-              >
-                <span className="truncate">{secao.title}</span>
-                {comMudancas.has(secao.id) && (
-                  <span className="ml-auto size-1.5 shrink-0 rounded-full bg-warning" title="Alterações não salvas" />
-                )}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
+    <div className={cn("space-y-5", TOPO_SECAO)}>
+      <PageHeader title={TITULO} description={DESCRICAO}>
+        <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground" title={data.envPath}>
+          <ShieldCheck className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">
+            Gravado em <code className="font-mono">{data.envPath}</code>
+          </span>
+        </p>
+      </PageHeader>
 
-      {/* Formulário largo demais cansa: o conteúdo para em 56rem. */}
-      <div className="min-w-0 max-w-4xl space-y-8">
-        <PageHeader
-          title="Configurações"
-          description="Credenciais e integrações do painel, gravadas no .env desta máquina. Senhas e chaves nunca voltam para a tela: aparece só uma dica para reconhecer qual está lá."
-        >
-          <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground" title={data.envPath}>
-            <ShieldCheck className="size-3.5 shrink-0" />
-            <span className="truncate">
-              Gravado em <code className="rounded bg-muted px-1 font-mono">{data.envPath}</code>
-            </span>
-          </p>
-        </PageHeader>
+      {pendentes.length > 0 && (
+        <Alert variant="warning">
+          <RotateCw />
+          <AlertTitle>Reinicie o painel para estas mudanças valerem</AlertTitle>
+          <AlertDescription>{pendentes.map((f) => f.label).join(" · ")}</AlertDescription>
+        </Alert>
+      )}
 
-        {pendentes.length > 0 && (
-          <Alert variant="warning">
-            <RotateCw />
-            <AlertTitle>Reinicie o painel para estas mudanças valerem</AlertTitle>
-            <AlertDescription>{pendentes.map((f) => f.label).join(" · ")}</AlertDescription>
-          </Alert>
-        )}
-
+      {/* O molde da tela de Projetos: as seções na coluna principal e, na
+          lateral, o índice com o estado de cada integração — grudado no
+          topo a partir de 1600 px; abaixo disso, antes das seções. */}
+      <PageColumns
+        asideLabel="Seções da configuração"
+        asideFirst
+        asideClassName="md:grid-cols-1 lateral:sticky lateral:top-(--topo-secao)"
+        aside={<SectionIndex sections={data.sections} engines={data.engines} current={atual} changed={comMudancas} />}
+      >
         {data.sections.map((secao) => (
-          <SectionCard
+          <SettingsSection
             key={secao.id}
             section={secao}
             drafts={drafts}
@@ -220,12 +199,75 @@ export function SettingsView({ focusSection }: { focusSection?: string | null } 
             onSave={(updates) => salvar.mutate(updates)}
           />
         ))}
-      </div>
+      </PageColumns>
     </div>
   );
 }
 
-function SectionCard({
+/**
+ * O índice da página e o estado de cada integração num relance, num cartão
+ * só: o clique leva à seção, a seção que está na tela fica marcada e um ponto
+ * diz onde há mudança não salva. Antes eram dois — um menu à esquerda e a
+ * visão das integrações no topo —, com os mesmos nomes.
+ */
+function SectionIndex({
+  sections,
+  engines,
+  current,
+  changed,
+}: {
+  sections: SettingSection[];
+  engines: EngineStatus[];
+  current: string | null;
+  changed: Set<string>;
+}) {
+  return (
+    <SectionCard title="Nesta página" bodyClassName="px-3 pb-3">
+      <ul className="grid gap-x-4 sm:grid-cols-2 lateral:grid-cols-1">
+        {sections.map((section) => {
+          const status = sectionStatus(section, engines);
+          const falta = status?.missing?.length ? `Falta: ${status.missing.join(", ")}` : null;
+          const aqui = current === section.id;
+          return (
+            <li key={section.id}>
+              <a
+                href={`#config-${section.id}`}
+                aria-current={aqui ? "location" : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-md px-2 py-1.5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                  aqui ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground",
+                )}
+              >
+                {createElement(sectionIcon(section.id), { className: "size-4 shrink-0" })}
+                <span className="min-w-0 flex-1">
+                  <span className={cn("block truncate text-sm", aqui && "font-medium")} title={section.title}>
+                    {section.title}
+                  </span>
+                  {falta && (
+                    <span className="block truncate text-2xs text-muted-foreground" title={falta}>
+                      {falta}
+                    </span>
+                  )}
+                </span>
+                {/* O ponto é o único "não salvo" fora da própria seção (que
+                    tem o rodapé com Salvar); o leitor de tela ouve o texto. */}
+                {changed.has(section.id) && (
+                  <>
+                    <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" title="Alterações não salvas" />
+                    <span className="sr-only">, alterações não salvas</span>
+                  </>
+                )}
+                {status && <Badge variant={status.variant}>{status.label}</Badge>}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </SectionCard>
+  );
+}
+
+function SettingsSection({
   section,
   drafts,
   errors,
@@ -249,18 +291,15 @@ function SectionCard({
   const estado = sectionStatus(section, engines);
 
   return (
-    <Card id={`config-${section.id}`} className="scroll-mt-24 gap-0 p-0">
-      <div className="flex flex-wrap items-start gap-x-4 gap-y-2 px-6 py-5">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-base leading-snug font-semibold">{section.title}</h3>
-          <p className="mt-1 max-w-prose text-sm text-muted-foreground">{section.description}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {estado && <Badge variant={estado.variant}>{estado.label}</Badge>}
-          {mudancas > 0 && <Badge variant="warning">Não salvo</Badge>}
-        </div>
-      </div>
-
+    <SectionCard
+      id={`config-${section.id}`}
+      className="scroll-mt-(--topo-secao)"
+      title={section.title}
+      icon={createElement(sectionIcon(section.id))}
+      description={<span className="block max-w-prose">{section.description}</span>}
+      actions={estado && <Badge variant={estado.variant}>{estado.label}</Badge>}
+      bodyClassName="p-0"
+    >
       <div className="divide-y border-t">
         {section.id === "generation" && <EnginesRow engines={engines} />}
         {section.id === "claude" && <ClaudeStateRow />}
@@ -281,9 +320,10 @@ function SectionCard({
       {section.id === "claude" && <ClaudeTest unsaved={mudancas > 0} />}
 
       {/* Salvar mora no rodapé, perto de onde a pessoa acabou de editar —
-          no topo ele sumia da tela nas seções longas. */}
+          no topo ele sumia da tela nas seções longas. É também o único
+          "não salvo" dentro da seção. */}
       {mudancas > 0 && (
-        <div className="flex flex-wrap items-center justify-end gap-2 rounded-b-xl border-t bg-muted/40 px-6 py-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-muted/40 px-5 py-3">
           <span className="mr-auto text-xs text-muted-foreground">
             {pluralize(mudancas, "alteração não salva", "alterações não salvas")} nesta seção
           </span>
@@ -297,38 +337,45 @@ function SectionCard({
           </Button>
         </div>
       )}
-    </Card>
+    </SectionCard>
   );
 }
 
-/** O estado de cada motor de geração, como uma linha da seção. */
+/**
+ * Os motores de geração, um por linha, com o estado de cada um. O Claude tem
+ * seção própria, com a trava e o diagnóstico: aqui fica só o selo e o caminho
+ * até lá — antes a mesma explicação aparecia nas duas seções.
+ */
 function EnginesRow({ engines }: { engines: EngineStatus[] }) {
   return (
     <div className={FIELD_GRID}>
       <div className="md:pt-0.5">
         <p className="text-sm font-medium">Motores</p>
-        <p className="text-2xs text-muted-foreground">O que cada um pode fazer agora</p>
+        <p className="text-2xs text-muted-foreground">Cada geração escolhe o seu</p>
       </div>
-      <ul className="space-y-3">
-        {engines.map((motor) => (
-          <li key={motor.id} className="text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{motor.label}</span>
-              <Badge variant={motor.available ? "success" : "warning"}>
-                {motor.available ? "Disponível" : "Indisponível"}
-              </Badge>
-            </div>
-            <p className="mt-0.5 max-w-prose text-xs text-muted-foreground">{motor.description}</p>
-            {motor.reason && <p className="mt-0.5 text-xs text-warning">{motor.reason}</p>}
-            {motor.id === "claude" && motor.available && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {motor.details.enabled
-                  ? "Uso liberado: cada execução consome a assinatura do Claude Code."
-                  : "Uso desligado: o painel monta e confere o pedido, mas não dispara o Claude Code. A trava fica em Motor Claude."}
-              </p>
-            )}
-          </li>
-        ))}
+      <ul className="space-y-2">
+        {engines.map((motor) => {
+          const estado = engineStatus(motor);
+          return (
+            <li key={motor.id} className="text-sm">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium">{motor.label}</span>
+                <Badge variant={estado.variant}>{estado.label}</Badge>
+                {motor.id === "claude" && (
+                  <Button asChild variant="link" size="xs">
+                    <a href="#config-claude">
+                      Ver em Motor Claude
+                      <ArrowDown />
+                    </a>
+                  </Button>
+                )}
+              </div>
+              {motor.id !== "claude" && (
+                <p className="mt-0.5 max-w-prose text-xs text-muted-foreground">{motor.reason ?? motor.description}</p>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -336,7 +383,7 @@ function EnginesRow({ engines }: { engines: EngineStatus[] }) {
 
 /**
  * A seção que está na tela, para o menu lateral marcar onde a pessoa está —
- * a primeira cujo topo já passou do cabeçalho fixo.
+ * a primeira que cruza a faixa logo abaixo do cabeçalho fixo.
  */
 function useActiveSection(ids: string[]) {
   const [atual, setAtual] = useState<string | null>(null);
@@ -345,6 +392,10 @@ function useActiveSection(ids: string[]) {
     const elementos = ids
       .map((id) => document.getElementById(`config-${id}`))
       .filter((el): el is HTMLElement => el !== null);
+    if (elementos.length === 0) return;
+    // A faixa começa onde um link deixa o topo da seção: o scroll-margin dela,
+    // que é a --topo-secao já em px (o IntersectionObserver não aceita rem).
+    const topo = Math.round(Number.parseFloat(getComputedStyle(elementos[0]).scrollMarginTop) || 0);
     const visiveis = new Map<string, boolean>();
     const observador = new IntersectionObserver(
       (entradas) => {
@@ -354,8 +405,7 @@ function useActiveSection(ids: string[]) {
         const primeira = ids.find((id) => visiveis.get(id));
         if (primeira) setAtual(primeira);
       },
-      // Uma faixa logo abaixo do cabeçalho: a seção que a cruza é a atual.
-      { rootMargin: "-96px 0px -60% 0px" },
+      { rootMargin: `-${topo}px 0px -60% 0px` },
     );
     elementos.forEach((el) => observador.observe(el));
     return () => observador.disconnect();

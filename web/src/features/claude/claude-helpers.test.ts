@@ -198,7 +198,8 @@ describe("lote do Claude — o pedido de cada projeto", () => {
 describe("textos das execuções", () => {
   it("a duração e a estimativa, sempre com o rótulo de quem estimou", () => {
     expect([formatDuration(null), formatDuration(900), formatDuration(59_400), formatDuration(192_000)]).toEqual([null, "1 s", "59 s", "3 min 12 s"]);
-    expect(formatEstimate(0.4242)).toBe("estimativa do Claude Code: US$ 0.42");
+    // No formato daqui: vírgula decimal (o Intl separa "US$" com espaço fixo).
+    expect(formatEstimate(0.4242)?.replace(/\s/g, " ")).toBe("estimativa do Claude Code: US$ 0,42");
     expect(formatEstimate(null)).toBeNull();
   });
 });
@@ -339,7 +340,9 @@ describe("opções do projeto — o padrão do painel aparece, mas não é manda
 describe("textos do pipeline — o pedido, quem o pôs na fila e o que Continuar roda", () => {
   it("os pedidos novos têm nome, e o que saiu do motor não tem mais", () => {
     expect([requestLabels.criticar, requestLabels.refinar, requestLabels.continuar]).toEqual(["Crítica", "Refino", "Continuação"]);
-    expect(Object.keys(requestLabels).sort()).toEqual(["ajuste", "analisar", "cliente", "continuar", "criticar", "refinar"]);
+    expect(Object.keys(requestLabels).sort()).toEqual(["ajuste", "analisar", "cliente", "continuar", "criticar", "edicao", "refinar"]);
+    // O ajuste num site de repositório (o do Lovable), da aba Ajustes.
+    expect(requestLabels.edicao).toBe("Ajuste no repositório");
   });
 
   it("o pedido que o painel pôs na fila sozinho é dito assim, com o nome de quem pediu o site", () => {

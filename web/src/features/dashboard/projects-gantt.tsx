@@ -1,7 +1,8 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { formatDate } from "@/lib/format";
 import { formatSpan } from "@/features/projects/project-timeline";
-import { stageClass } from "@/features/projects/project-status";
+import { stageOf } from "@/features/projects/stage";
+import { StageBadge } from "@/features/projects/stage-badge";
 import { cn } from "@/lib/utils";
 import {
   axisTicks,
@@ -11,9 +12,20 @@ import {
   segmentsOf,
   type DashboardRow,
 } from "./dashboard-metrics";
-import { phaseColor } from "./phase-color";
 
-const GRID = "md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_6.5rem]";
+/**
+ * A cor de cada trecho do fluxo, nos tons das etapas: a espera é cinza de
+ * propósito (ninguém trabalhou no projeto), a produção tem o tom da Geração,
+ * o tempo com o cliente o do Cliente e o ponto "no ar" o da Publicação.
+ */
+export const phaseColor: Record<keyof typeof phaseLabels, string> = {
+  waiting: "bg-muted-foreground/35",
+  production: "bg-stage-geracao",
+  client: "bg-stage-cliente",
+  done: "bg-stage-publicacao",
+};
+
+const GRID = "md:grid-gantt";
 
 type Hover = { row: DashboardRow; x: number; y: number };
 
@@ -102,16 +114,7 @@ export function ProjectsGantt({
                 <span className="min-w-0">
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{row.label}</span>
-                    <span
-                      className={cn(
-                        "inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-2xs font-medium whitespace-nowrap",
-                        stageClass[row.status.stage],
-                        // A linha é estática: o pulso do selo distrairia em dezenas delas.
-                        "animate-none",
-                      )}
-                    >
-                      {row.status.label}
-                    </span>
+                    <StageBadge view={stageOf(row.project)} size="sm" />
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">{developer}</span>
                 </span>
@@ -135,7 +138,7 @@ export function ProjectsGantt({
                         aria-hidden
                         style={style}
                         className={cn(
-                          "absolute top-1.5 h-2 min-w-[3px]",
+                          "absolute top-1.5 h-2 min-w-0.75",
                           phaseColor[segment.phase],
                           index === 0 && segment.from >= start && "rounded-l-full",
                           // Em aberto a barra chega a hoje sem arremate: ela continua.

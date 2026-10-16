@@ -3,6 +3,8 @@ import {
   Archive,
   ArchiveRestore,
   Eye,
+  EyeOff,
+  Pencil,
   Link2,
   Loader2,
   Minus,
@@ -13,7 +15,8 @@ import {
 import { toast } from "sonner";
 import type { Generation, Project } from "@/lib/api";
 import { checkSharePreview, publishToDevArea } from "@/lib/api";
-import { pluralize } from "@/lib/format";
+import { plural, pluralize } from "@/lib/format";
+import { Reason } from "@/components/disabled-hint";
 import { usePermissions } from "@/lib/permissions";
 import type { TagsController } from "@/features/tags/use-tags";
 import { tagDotClass } from "@/features/tags/tag-colors";
@@ -26,10 +29,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { BulkEditDialog } from "./bulk-edit-dialog";
 import { latestGeneration } from "./project-status";
 import type { ProjectList } from "./use-project-list";
-
-const semPermissao = "Esta chave de acesso não tem permissão para isto";
 
 /**
  * Ações sobre vários projetos de uma vez: tags, finalizar, gerar em lote,
@@ -42,6 +44,7 @@ export function BulkActionsBar({
   visible,
   approvalAreaReady,
   onGenerate,
+  responsibles,
 }: {
   list: ProjectList;
   tags: TagsController;
@@ -49,9 +52,12 @@ export function BulkActionsBar({
   visible: Project[];
   approvalAreaReady: boolean;
   onGenerate: (projects: Project[]) => void;
+  /** Os responsáveis já usados — sugestões da edição em massa. */
+  responsibles: string[];
 }) {
   const { can } = usePermissions();
   const [busy, setBusy] = useState<string | null>(null);
+  const [editando, setEditando] = useState<Project[] | null>(null);
 
   const selecionados = list.projects.filter((project) => list.selectedIds.has(project.id));
   if (selecionados.length === 0) return null;
@@ -68,6 +74,25 @@ export function BulkActionsBar({
     selecionados.some((project) => project.tagIds.includes(tag.id)),
   );
 
+  const ocultos = selecionados.filter((project) => project.details?.hidden);
+  const visiveisSel = selecionados.filter((project) => !project.details?.hidden);
+
+  /** Ocultar ou mostrar de uma vez; a seleção some porque os projetos mudam de aba. */
+  const alternarOcultos = (alvos: Project[], ocultar: boolean) =>
+    run("ocultar", async () => {
+      const falhas = await list.applyDetailsMany(alvos, { hidden: ocultar });
+      const feitos = alvos.length - falhas;
+      if (feitos) toast.success(`${projetos(feitos)} ${ocultar ? plural(feitos, "ocultado", "ocultados") : plural(feitos, "voltou à lista", "voltaram à lista")}`);
+      if (falhas) toast.error(`${falhas} de ${projetos(alvos.length)} ${plural(falhas, "falhou", "falharam")}`);
+      list.clearSelection();
+    });
+
+  const editarVarios = async (alvos: Project[], patch: Parameters<ProjectList["applyDetailsMany"]>[1]) => {
+    const falhas = await list.applyDetailsMany(alvos, patch);
+    if (falhas) toast.error(`${falhas} de ${projetos(alvos.length)} não ${plural(falhas, "foi atualizado", "foram atualizados")}`, { description: "Os outros ficaram com a mudança." });
+    else toast.success(`${projetos(alvos.length)} ${plural(alvos.length, "atualizado", "atualizados")}`);
+  };
+
   const run = async (chave: string, action: () => Promise<void>) => {
     setBusy(chave);
     try {
@@ -77,13 +102,13 @@ export function BulkActionsBar({
     }
   };
 
-  const plural = (n: number) => pluralize(n, "projeto");
+  const projetos = (n: number) => pluralize(n, "projeto");
 
   const aplicarTags = (rotulo: string, alvos: Project[], update: (ids: string[]) => string[]) =>
     run("tags", async () => {
       const falhas = await list.applyTagsMany(alvos, update);
-      if (falhas) toast.error(`${rotulo}: ${falhas} de ${alvos.length} falharam`, { description: "Os que falharam voltaram ao que eram." });
-      else toast.success(`${rotulo} — ${plural(alvos.length)}`);
+      if (falhas) toast.error(`${rotulo}: ${falhas} de ${projetos(alvos.length)} ${plural(falhas, "falhou", "falharam")}`, { description: "O que falhou voltou ao que era." });
+      else toast.success(`${rotulo} — ${projetos(alvos.length)}`);
     });
 
   const publicarArea = () =>
@@ -101,13 +126,13 @@ export function BulkActionsBar({
         }
       }
       if (ok) {
-        toast.success(`Publicação iniciada na área de aprovação — ${plural(ok)}`, {
+        toast.success(`Publicação iniciada na área de aprovação — ${projetos(ok)}`, {
           description: "O andamento de cada um aparece no card. O painel avisa quando os links ficarem prontos.",
           duration: 10_000,
         });
       }
       if (erros.length) {
-        toast.error(`${erros.length} não foram publicados`, { description: [...new Set(erros)].slice(0, 2).join(" ") });
+        toast.error(pluralize(erros.length, "projeto não foi publicado", "projetos não foram publicados"), { description: [...new Set(erros)].slice(0, 2).join(" ") });
       }
     });
 
@@ -127,18 +152,28 @@ export function BulkActionsBar({
       }
       const total = contagem.alive + contagem.dead + contagem.unknown;
       if (!total) toast.info("Nenhum dos selecionados tem link de cliente ainda");
-      else if (contagem.dead) toast.error(`${contagem.dead} de ${total} links não abrem`);
-      else toast.success(`${pluralize(total, "link conferido", "links conferidos")}`, { description: contagem.unknown ? `${contagem.unknown} sem resposta.` : "Todos abrem para o cliente." });
+      else if (contagem.dead) toast.error(`${contagem.dead} de ${pluralize(total, "link")} ${plural(contagem.dead, "não abre", "não abrem")}`);
+      else toast.success(`${pluralize(total, "link conferido", "links conferidos")}`, { description: contagem.unknown ? `${pluralize(contagem.unknown, "link")} sem resposta.` : "Todos abrem para o cliente." });
     });
 
+  const naoPode = [
+    !can("organizar") && "editar, ocultar, mexer em tags e finalizar",
+    !can("gerar") && "gerar",
+    !can("publicar") && approvalAreaReady && comSite.length > 0 && "publicar",
+  ].filter(Boolean) as string[];
+
   return (
-    <div className="sticky bottom-3 z-30 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl border bg-popover/95 px-3 py-2 shadow-xl backdrop-blur">
+    <div
+      role="region"
+      aria-label="Ações nos projetos selecionados"
+      className="sticky bottom-3 z-30 mx-auto flex w-fit max-w-full animate-rise flex-wrap items-center gap-1.5 rounded-xl border bg-popover/95 px-3 py-2 shadow-xl backdrop-blur [--rise-from:16px]"
+    >
       <span className="pl-1 text-sm font-medium tabular-nums sm:pr-1">
         {selecionados.length} {selecionados.length === 1 ? "selecionado" : "selecionados"}
       </span>
       {!todosVisiveis && (
         <Button variant="ghost" size="sm" onClick={() => list.setSelected(visible.map((p) => p.id))}>
-          Selecionar os {visible.length} da tela
+          {visible.length === 1 ? "Selecionar o da lista" : `Selecionar os ${visible.length} da lista`}
         </Button>
       )}
 
@@ -154,13 +189,13 @@ export function BulkActionsBar({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" disabled={!can("organizar") || busy !== null} title={can("organizar") ? "Coloca a tag em todos os selecionados" : semPermissao}>
-            <Plus className="size-3.5" />
+          <Button variant="outline" size="sm" disabled={!can("organizar") || busy !== null} title="Coloca a tag em todos os selecionados">
+            <Plus />
             Adicionar tag
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuLabel className="text-xs">Em {plural(selecionados.length)}</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-xs">Em {projetos(selecionados.length)}</DropdownMenuLabel>
           {tags.tags
             .filter((tag) => tag.id !== finalizado)
             .map((tag) => (
@@ -182,8 +217,8 @@ export function BulkActionsBar({
       {tagsPresentes.some((tag) => tag.id !== finalizado) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" disabled={!can("organizar") || busy !== null} title={can("organizar") ? "Tira a tag de todos os selecionados" : semPermissao}>
-              <Minus className="size-3.5" />
+            <Button variant="outline" size="sm" disabled={!can("organizar") || busy !== null} title="Tira a tag de todos os selecionados">
+              <Minus />
               Remover tag
             </Button>
           </DropdownMenuTrigger>
@@ -211,19 +246,55 @@ export function BulkActionsBar({
         </DropdownMenu>
       )}
 
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={!can("organizar") || busy !== null}
+        title="Muda o responsável e a etapa de todos os selecionados"
+        onClick={() => setEditando(selecionados)}
+      >
+        <Pencil />
+        Editar
+      </Button>
+
+      {visiveisSel.length > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!can("organizar") || busy !== null}
+          title="Tira da lista, dos contadores, do Dashboard e do relatório; voltam pela aba Ocultos"
+          onClick={() => void alternarOcultos(visiveisSel, true)}
+        >
+          {busy === "ocultar" ? <Loader2 className="animate-spin" /> : <EyeOff />}
+          Ocultar {visiveisSel.length < selecionados.length ? `(${visiveisSel.length})` : ""}
+        </Button>
+      )}
+      {ocultos.length > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!can("organizar") || busy !== null}
+          title="Volta os ocultos para a lista de trabalho"
+          onClick={() => void alternarOcultos(ocultos, false)}
+        >
+          <Eye />
+          Mostrar {ocultos.length < selecionados.length ? `(${ocultos.length})` : ""}
+        </Button>
+      )}
+
       {finalizado && finalizados.length < selecionados.length && (
         <Button
           variant="outline"
           size="sm"
           disabled={!can("organizar") || busy !== null}
-          title={can("organizar") ? "Marca como finalizados: saem de “Fazer agora” e “Todos” e vão para a vista Finalizados" : semPermissao}
+          title="Marca como finalizados: saem dos ativos e vão para a aba Finalizados"
           onClick={() =>
             void aplicarTags("Finalizados", selecionados, (ids) =>
               ids.includes(finalizado) ? ids : [...ids, finalizado],
             ).then(() => list.clearSelection())
           }
         >
-          <Archive className="size-3.5" />
+          <Archive />
           Finalizar
         </Button>
       )}
@@ -232,14 +303,14 @@ export function BulkActionsBar({
           variant="outline"
           size="sm"
           disabled={!can("organizar") || busy !== null}
-          title={can("organizar") ? "Tira a tag “Finalizado”: voltam para as vistas de trabalho" : semPermissao}
+          title="Tira a tag “Finalizado”: voltam para a lista de trabalho"
           onClick={() =>
             void aplicarTags("Reabertos", finalizados, (ids) => ids.filter((id) => id !== finalizado)).then(() =>
               list.clearSelection(),
             )
           }
         >
-          <ArchiveRestore className="size-3.5" />
+          <ArchiveRestore />
           Reabrir {finalizados.length < selecionados.length ? `(${finalizados.length})` : ""}
         </Button>
       )}
@@ -251,11 +322,9 @@ export function BulkActionsBar({
         size="sm"
         disabled={!can("gerar") || busy !== null}
         title={
-          can("gerar")
-            ? semSite.length < selecionados.length
-              ? `Abre a geração em lote com os ${selecionados.length} selecionados; ${selecionados.length - semSite.length} já têm site e o diálogo avisa. Nada é enviado antes da confirmação.`
-              : "Abre a geração em lote com os selecionados. Nada é enviado antes da confirmação."
-            : semPermissao
+          semSite.length < selecionados.length
+            ? `Abre a geração em lote; ${pluralize(selecionados.length - semSite.length, "já tem", "já têm")} site e o diálogo avisa. Nada é enviado antes da confirmação.`
+            : "Abre a geração em lote com os selecionados. Nada é enviado antes da confirmação."
         }
         onClick={() => onGenerate(selecionados)}
       >
@@ -268,10 +337,10 @@ export function BulkActionsBar({
           variant="outline"
           size="sm"
           disabled={!can("publicar") || busy !== null}
-          title={can("publicar") ? `Publica na área de aprovação os ${comSite.length} que têm site gerado` : semPermissao}
+          title={`Publica na área de aprovação ${comSite.length === 1 ? "o que tem" : `os ${comSite.length} que têm`} site gerado`}
           onClick={() => void publicarArea()}
         >
-          {busy === "area" ? <Loader2 className="size-3.5 animate-spin" /> : <Eye className="size-3.5" />}
+          {busy === "area" ? <Loader2 className="animate-spin" /> : <Eye />}
           Publicar na área ({comSite.length})
         </Button>
       )}
@@ -284,12 +353,20 @@ export function BulkActionsBar({
           title="Confere agora se o link de cliente de cada selecionado abre"
           onClick={() => void verificarLinks()}
         >
-          {busy === "links" ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+          {busy === "links" ? <Loader2 className="animate-spin" /> : <Link2 />}
           Verificar links
         </Button>
       )}
 
-      {busy === "tags" && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+      {busy === "tags" && <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Aplicando as tags" />}
+      {naoPode.length > 0 && <Reason className="basis-full px-1">Sua chave de acesso não pode {naoPode.join(", nem ")}.</Reason>}
+
+      <BulkEditDialog
+        projects={editando}
+        responsibles={responsibles}
+        onOpenChange={(aberto) => !aberto && setEditando(null)}
+        onSubmit={editarVarios}
+      />
 
     </div>
   );

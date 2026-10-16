@@ -1,6 +1,6 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 
 const alertVariants = cva(
   "group/alert relative grid w-full gap-0.5 rounded-lg border px-2.5 py-2 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
@@ -9,12 +9,12 @@ const alertVariants = cva(
       variant: {
         default: "bg-card text-card-foreground",
         destructive:
-          "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+          "border-destructive/25 bg-destructive-soft text-card-foreground *:[svg]:text-destructive",
         /* Faixas de aviso do painel: fundo suave e ícone no tom; o texto segue
            o normal, para ler bem nos dois temas. */
-        warning: "border-warning/30 bg-warning/8 text-card-foreground *:[svg]:text-warning",
-        info: "border-info/25 bg-info/5 text-card-foreground *:[svg]:text-info",
-        success: "border-success/25 bg-success/5 text-card-foreground *:[svg]:text-success",
+        warning: "border-warning/30 bg-warning-soft text-card-foreground *:[svg]:text-warning",
+        info: "border-info/25 bg-info-soft text-card-foreground *:[svg]:text-info",
+        success: "border-success/25 bg-success-soft text-card-foreground *:[svg]:text-success",
       },
     },
     defaultVariants: {

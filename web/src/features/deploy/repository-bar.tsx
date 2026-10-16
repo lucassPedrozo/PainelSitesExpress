@@ -1,9 +1,11 @@
-import { GitBranch, Lock, Unlock } from "lucide-react";
 import type { RepoOption } from "@/lib/api/deploy";
-import { pluralize, relativeTime } from "@/lib/format";
+import { pluralize } from "@/lib/format";
+import { When } from "@/components/when";
+import { errorMessage } from "./deploy-placeholders";
 import type { PublishTarget, RepositorySuggestion } from "./publish-target";
 import { RepositoryPicker } from "./repository-picker";
 import { SuggestionNote } from "./suggestion-note";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 
@@ -11,9 +13,13 @@ type RepositoryBarProps = {
   organization: string;
   repos: RepoOption[];
   selectedRepo?: RepoOption;
+  /** Repositórios que o painel configurou, segundo o servidor. */
   configuredRepos: Set<string>;
   repoDomains: Map<string, string>;
   loading: boolean;
+  /** A leitura da lista falhou: a nota diz isso, em vez de "0 repositórios". */
+  loadError?: unknown;
+  onRetry: () => void;
   error?: string;
   pickerOpen: boolean;
   onPickerOpenChange: (open: boolean) => void;
@@ -38,6 +44,8 @@ export function RepositoryBar({
   configuredRepos,
   repoDomains,
   loading,
+  loadError,
+  onRetry,
   error,
   pickerOpen,
   onPickerOpenChange,
@@ -46,20 +54,32 @@ export function RepositoryBar({
   suggestion,
   overridden = false,
 }: RepositoryBarProps) {
-  const Visibility = selectedRepo?.private ? Lock : Unlock;
+  // O que fica embaixo do seletor, nesta ordem: o erro de validação, a falha
+  // ao ler a lista, o motivo da sugestão (ou a falta dela) quando a tela veio
+  // de um projeto, e a contagem como padrão.
+  const falhaNaLista = loadError ? (
+    <div className="flex flex-wrap items-center gap-x-2 text-xs text-destructive">
+      <span className="min-w-0 truncate" title={errorMessage(loadError) ?? undefined}>
+        Não foi possível ler os repositórios do GitHub
+        {errorMessage(loadError) ? `: ${errorMessage(loadError)}` : "."}
+      </span>
+      <Button type="button" variant="link" size="xs" className="px-0" disabled={loading} onClick={onRetry}>
+        Tentar novamente
+      </Button>
+    </div>
+  ) : null;
 
-  // O que fica embaixo do seletor, nesta ordem: o erro de validação, o motivo
-  // da sugestão (ou a falta dela) quando a tela veio de um projeto, e a
-  // contagem como padrão.
   const nota = error ? (
     <p className="text-xs text-destructive">{error}</p>
+  ) : falhaNaLista ? (
+    falhaNaLista
   ) : target && suggestion && !overridden ? (
     <SuggestionNote suggestion={suggestion} lovableName={null} />
   ) : target && !suggestion && !loading && repos.length > 0 && !selectedRepo ? (
     <p className="text-xs text-warning">
       Nenhum repositório da organização casou com “{target.projectLabel}” — escolha na lista.
     </p>
-  ) : (
+  ) : selectedRepo ? null : (
     <p className="text-xs text-muted-foreground">
       {loading
         ? "Lendo os repositórios do GitHub…"
@@ -68,8 +88,8 @@ export function RepositoryBar({
   );
 
   return (
-    <Card className="flex-row flex-wrap items-start gap-x-5 gap-y-3 px-5 py-4">
-      <div className="min-w-56 flex-1 space-y-1.5 sm:max-w-xl">
+    <Card className="px-5 py-4">
+      <div className="max-w-xl space-y-1.5">
         <Label htmlFor="repository">Repositório do site</Label>
         <RepositoryPicker
           id="repository"
@@ -84,24 +104,18 @@ export function RepositoryBar({
           onOpenChange={onPickerOpenChange}
           onSelect={onSelect}
         />
-        <div id="repository-message" aria-live="polite">
+        <div id="repository-message" aria-live="polite" className="space-y-0.5">
           {nota}
+          {/* Branch, visibilidade e data do repositório: conferência, não
+              decisão — uma linha discreta, no lugar de três selos ao lado. */}
+          {selectedRepo && (
+            <p className="truncate text-xs text-muted-foreground">
+              Branch {selectedRepo.defaultBranch} · {selectedRepo.private ? "privado" : "público"} ·{" "}
+              <When at={selectedRepo.updatedAt} prefix="atualizado" />
+            </p>
+          )}
         </div>
       </div>
-
-      {selectedRepo && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-7 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <GitBranch className="size-3.5" />
-            {selectedRepo.defaultBranch}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Visibility className="size-3.5" />
-            {selectedRepo.private ? "privado" : "público"}
-          </span>
-          <span>atualizado {relativeTime(selectedRepo.updatedAt)}</span>
-        </div>
-      )}
     </Card>
   );
 }

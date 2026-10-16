@@ -1,18 +1,18 @@
 import { useMemo, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import type { Project } from "@/lib/api";
-import { formatDateTime, relativeTime } from "@/lib/format";
-import { toneBadge } from "@/lib/tone";
+import { formatDateTime } from "@/lib/format";
+import { When } from "@/components/when";
 import { cn } from "@/lib/utils";
 import {
   formatSpan,
   projectTimeline,
   timelineSummary,
 } from "./project-timeline";
-import { timelineIcons } from "./timeline-icons";
+import { timelineIcons, timelineToneClass } from "./timeline-icons";
 
-const semRegistro =
-  "O painel passou a guardar quem gera cada site depois desta geração. As próximas trazem o nome da chave de acesso de quem clicou em Gerar.";
+/** Por que não há nome — escrito, e não num `title` que só o mouse via. */
+const semRegistro = "gerações antigas, de antes de o painel guardar quem gerou";
 
 /**
  * A linha do tempo no modal do projeto: no topo, quem gerou e quanto cada
@@ -32,18 +32,8 @@ export function ProjectTimeline({
   return (
     <div className={cn("space-y-5", className)}>
       <dl className="flex flex-wrap gap-x-8 gap-y-3 border-b pb-4">
-        <SummaryItem label="Recebido em">
-          {summary.receivedAt ? (
-            <>
-              {formatDateTime(summary.receivedAt)}
-              <span className="font-normal text-muted-foreground">
-                {" "}
-                · {relativeTime(summary.receivedAt)}
-              </span>
-            </>
-          ) : (
-            "—"
-          )}
+        <SummaryItem label="Recebido">
+          <When at={summary.receivedAt} />
         </SummaryItem>
         <SummaryItem
           label={summary.generation?.linked ? "Vinculado por" : "Responsável pela geração"}
@@ -53,8 +43,8 @@ export function ProjectTimeline({
           ) : summary.generation.by ? (
             summary.generation.by
           ) : (
-            <span className="font-normal text-muted-foreground" title={semRegistro}>
-              Não registrado
+            <span className="font-normal text-muted-foreground">
+              Não registrado <span className="text-xs">({semRegistro})</span>
             </span>
           )}
         </SummaryItem>
@@ -83,8 +73,8 @@ export function ProjectTimeline({
               )}
               <span
                 className={cn(
-                  "relative grid size-7 shrink-0 place-items-center rounded-full border",
-                  toneBadge[event.tone],
+                  "relative grid size-7 shrink-0 place-items-center rounded-full",
+                  timelineToneClass[event.tone],
                 )}
               >
                 <Icon className="size-3.5" />
@@ -111,7 +101,7 @@ export function ProjectTimeline({
                       por <span className="font-medium text-foreground">{event.by}</span>
                     </span>
                   ) : event.byMissing ? (
-                    <span title={semRegistro}>responsável não registrado</span>
+                    <span>responsável não registrado</span>
                   ) : null}
                   {event.href && (
                     <a

@@ -15,12 +15,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 /**
  * Confirmação da limpeza dos workflows.
@@ -58,7 +58,7 @@ export function ClearWorkflowsDialog({
           {files.map((file) => (
             <li key={file.sha} className="flex items-center gap-2">
               <FileCode2 className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{file.name}</span>
+              <span className="truncate" title={file.path}>{file.name}</span>
               {file.templateVersion !== undefined && (
                 <Badge variant="secondary" className="ml-auto">
                   do painel
@@ -79,7 +79,10 @@ export function ClearWorkflowsDialog({
   );
 }
 
-/** O conteúdo atual de um workflow, como está no repositório. */
+/**
+ * O conteúdo atual de um workflow, como está no repositório. Cabeçalho fixo
+ * com o arquivo e o repositório; só o YAML rola.
+ */
 export function WorkflowPreviewDialog({
   preview,
   repoFullName,
@@ -91,19 +94,21 @@ export function WorkflowPreviewDialog({
 }) {
   return (
     <Dialog open={Boolean(preview)} onOpenChange={onClose}>
-      <DialogContent layout="sectioned" className="h-[85vh] sm:max-w-3xl">
+      <DialogContent layout="sectioned" className="h-dialog-tall sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-base">{preview?.name}</DialogTitle>
+          <DialogTitle className="truncate" title={preview?.name}>
+            {preview?.name}
+          </DialogTitle>
           <DialogDescription>
             Conteúdo atual no repositório
             {repoFullName ? ` · ${repoFullName}` : ""}
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="flex-1">
-          <pre className="p-6 font-mono text-xs leading-relaxed">
+        <DialogBody>
+          <pre className="font-mono text-xs leading-relaxed">
             <code>{preview?.content}</code>
           </pre>
-        </ScrollArea>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

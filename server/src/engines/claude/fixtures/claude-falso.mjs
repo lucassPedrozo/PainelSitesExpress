@@ -11,6 +11,13 @@
 //   CLAUDE_FALSO_APROVA_NA rodada em que a crítica aprova o site (vazio: nunca aprova, e todas as rodadas acontecem)
 //   CLAUDE_FALSO_EMPACA    criticar | refinar: esse passo termina sem erro e sem fazer o pipeline andar
 //   CLAUDE_FALSO_FALHA_NO  criticar | refinar: esse passo termina com erro
+//   Na edição livre (o claude roda dentro do clone do repositório de um site):
+//   edicao        troca "Bem-vindo" por "Bem-vindo à Aurora" em src/App.tsx
+//   edicao-nada   termina bem sem mudar arquivo nenhum
+//   edicao-quebra cria src/QUEBRA, que faz o build do repositório de teste falhar
+//   edicao-import importa em src/App.tsx um pacote que o package.json não tem
+//   CLAUDE_FALSO_PRONTO    arquivo que o cenário cria assim que começa
+//   CLAUDE_FALSO_SINAL     arquivo que o cenário espera existir antes de editar (o teste mexe no "GitHub" no meio)
 import { spawnSync } from 'node:child_process'
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -97,6 +104,28 @@ if (cenario === 'sem-sessao' && resume) {
   // O CLI de verdade sai antes de abrir qualquer sessão quando o id não existe.
   process.stderr.write(`No conversation found with session ID: ${resume}\n`)
   process.exit(1)
+}
+
+if (cenario.startsWith('edicao')) {
+  if (process.env.CLAUDE_FALSO_PRONTO) writeFileSync(process.env.CLAUDE_FALSO_PRONTO, 'ok')
+  if (process.env.CLAUDE_FALSO_SINAL) {
+    for (let i = 0; i < 400 && !existsSync(process.env.CLAUDE_FALSO_SINAL); i++) await espera(50)
+  }
+  const app = join(process.cwd(), 'src', 'App.tsx')
+  if (cenario === 'edicao') writeFileSync(app, readFileSync(app, 'utf8').replace('Bem-vindo', 'Bem-vindo à Aurora'))
+  if (cenario === 'edicao-quebra') writeFileSync(join(process.cwd(), 'src', 'QUEBRA'), 'o build do repositório de teste falha com este arquivo')
+  if (cenario === 'edicao-import') writeFileSync(app, `import confete from "pacote-que-nao-existe";\n${readFileSync(app, 'utf8')}`)
+  const resumo = cenario === 'edicao-nada' ? 'O site já faz o que o pedido descreve: nada a mudar.' : 'Título da página inicial trocado em src/App.tsx.'
+  await escrever([
+    inicio(),
+    { type: 'assistant', session_id: sessao, message: { role: 'assistant', content: [{ type: 'tool_use', id: 'e1', name: 'Read', input: { file_path: app } }] } },
+    retorno('e1', 'export default function App() { … }'),
+    bash('e2', 'npm run build'),
+    retorno('e2', 'build ok'),
+    texto(resumo),
+    fim({ result: resumo }),
+  ].map(linha).join(''))
+  process.exit(0)
 }
 
 if (cenario === 'auth') {

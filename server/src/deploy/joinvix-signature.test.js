@@ -38,7 +38,7 @@ const run = (root) =>
     },
   })
 
-const REGRA = /<style id="joinvix-assinatura-tamanho">a\[href\*="joinvix\.com\.br"\] img,#joinvix-assinatura img\{height:45px!important;[^<]*@media \(max-width:767px\)\{[^<]*height:36px!important\}\}<\/style><\/head>/
+const REGRA = /<style id="joinvix-assinatura-tamanho">a\[href\*="joinvix\.com"\] img,#joinvix-assinatura img\{height:45px!important;[^<]*@media \(max-width:767px\)\{[^<]*height:36px!important\}\}<\/style><\/head>/
 
 test('site com a assinatura no bundle: nada é inserido além da regra de altura da logo, em toda página', { skip: !hasBash }, () => {
   const html = '<html><head><title>x</title></head><body><div id="root"></div></body></html>'
@@ -58,6 +58,28 @@ test('site com a assinatura no bundle: nada é inserido além da regra de altura
     // Rodar de novo não repete a regra.
     assert.equal(run(root).status, 0)
     assert.equal(readFileSync(resolve(root, 'dist/index.html'), 'utf8').split('joinvix-assinatura-tamanho').length, 2)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('rodapé com o link sem o ".br", num pedaço carregado depois: é assinatura, e nenhuma faixa entra', { skip: !hasBash }, () => {
+  // O caso de um site no ar: a logo da Joinvix já no rodapé, com link para
+  // joinvix.com, e o passo colava uma segunda faixa, na cor do rodapé, embaixo.
+  const html = '<html><head></head><body><div id="root"></div></body></html>'
+  const root = setup({
+    'dist/index.html': html,
+    'dist/assets/index-a1.js': 'import("./routes-b2.js")',
+    'dist/assets/routes-b2.js': 'jsx("footer",{children:jsx("a",{href:"https://joinvix.com",children:jsx("img",{src:te})})})',
+  })
+  try {
+    const result = run(root)
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /Assinatura Joinvix presente no site\./)
+    const saida = readFileSync(resolve(root, 'dist/index.html'), 'utf8')
+    assert.doesNotMatch(saida, /id="joinvix-assinatura"/)
+    assert.match(saida, REGRA)
+    assert.equal(existsSync(resolve(root, 'dist/joinvix-assinatura.png')), false)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

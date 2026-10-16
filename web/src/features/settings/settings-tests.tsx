@@ -3,9 +3,11 @@ import { CheckCircle2, Loader2, ShieldCheck, TriangleAlert, XCircle } from "luci
 import { toast } from "sonner";
 import { checkGeminiKey, checkGithubAccess, type GeminiKeyCheck } from "@/lib/api/settings";
 import type { AccessCheckResult } from "@/lib/api/deploy";
+import { pluralize } from "@/lib/format";
+import { useMinute } from "@/lib/use-now";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
 import { Button } from "@/components/ui/button";
-import { HintWhenDisabled } from "@/features/claude/claude-shared";
-import type { Drafts } from "./settings-form";
+import { tokenValidity, type Drafts } from "./settings-form";
 
 /**
  * Os testes sem efeito colateral de cada seção: GitHub (só lê) e chave do
@@ -40,15 +42,15 @@ export function TestFooter({
   children?: ReactNode;
 }) {
   return (
-    <div className="space-y-2 border-t bg-muted/30 px-6 py-3">
+    <div className="space-y-2 border-t bg-muted/30 px-5 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <HintWhenDisabled reason={blockedBy}>
+        <DisabledHint reason={blockedBy}>
           <Button variant="outline" size="sm" onClick={onTest} disabled={testing || Boolean(blockedBy)}>
             {testing ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
             {label}
           </Button>
-        </HintWhenDisabled>
-        <span className="text-xs text-muted-foreground">{blockedBy ?? hint}</span>
+        </DisabledHint>
+        {blockedBy ? <Reason>{blockedBy}</Reason> : <span className="text-xs text-muted-foreground">{hint}</span>}
       </div>
       {children}
     </div>
@@ -67,6 +69,16 @@ export const Linha = ({ ok, children }: { ok: boolean | "warn"; children: ReactN
     <span>{children}</span>
   </li>
 );
+
+/**
+ * A validade do token que o GitHub informa. Um fine-grained vence; sem esta
+ * linha, a publicação parava de um dia para o outro sem aviso.
+ */
+function TokenValidity({ expiresAt }: { expiresAt: string | null }) {
+  const now = useMinute();
+  const { ok, text } = tokenValidity(expiresAt, now);
+  return <Linha ok={ok}>{text}</Linha>;
+}
 
 export function GithubTest({ drafts }: { drafts: Drafts }) {
   const [testando, setTestando] = useState(false);
@@ -94,7 +106,12 @@ export function GithubTest({ drafts }: { drafts: Drafts }) {
     >
       {resultado && (
         <ul className="space-y-1 text-xs">
-          {resultado.identity && <li className="text-muted-foreground">Conta: {resultado.identity.login}</li>}
+          {resultado.identity && (
+            <>
+              <li className="text-muted-foreground">Conta: {resultado.identity.login}</li>
+              <TokenValidity expiresAt={resultado.identity.tokenExpiresAt} />
+            </>
+          )}
           {resultado.checks.map((check) => (
             <Linha key={check.id} ok={check.ok}>
               <b className="font-medium">{check.label}:</b> {check.detail}
@@ -135,7 +152,7 @@ export function GeminiTest({ drafts }: { drafts: Drafts }) {
           {resultado.ok ? (
             <>
               <Linha ok={resultado.available.length > 0 ? true : "warn"}>
-                Chave válida · {resultado.models.length} modelos ·{" "}
+                Chave válida · {pluralize(resultado.models.length, "modelo")} ·{" "}
                 {resultado.available.length > 0
                   ? `o painel vai usar ${resultado.available.join(" e, se faltar cota, ")}.`
                   : "nenhum dos modelos padrão aparece para esta chave; o painel vai procurar outro Flash no catálogo."}
@@ -146,8 +163,17 @@ export function GeminiTest({ drafts }: { drafts: Drafts }) {
                   passa para os apelidos.
                 </Linha>
               )}
+              {/* O catálogo inteiro só interessa a quem vai escolher o modelo
+                  preferido: fica recolhido. */}
               {resultado.flash.length > 0 && (
-                <li className="text-muted-foreground">Flash de texto no catálogo: {resultado.flash.join(", ")}.</li>
+                <li>
+                  <details className="text-muted-foreground">
+                    <summary className="cursor-pointer select-none hover:text-foreground">
+                      {pluralize(resultado.flash.length, "modelo Flash", "modelos Flash")} de texto no catálogo
+                    </summary>
+                    <p className="mt-1 break-words">{resultado.flash.join(", ")}.</p>
+                  </details>
+                </li>
               )}
             </>
           ) : (

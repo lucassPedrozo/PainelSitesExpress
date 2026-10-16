@@ -15,6 +15,7 @@ import { analyzeBriefing, fetchAssistantStatus } from "@/lib/api";
 import { queryKeys } from "@/lib/query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Reason } from "@/components/disabled-hint";
 import { cn } from "@/lib/utils";
 
 /**
@@ -105,6 +106,8 @@ export function AssistantPanel({
           </Button>
           {error ? (
             <span className="text-xs text-destructive">{error}</span>
+          ) : !temTexto ? (
+            <Reason>Escreva o briefing ou as observações para analisar.</Reason>
           ) : (
             <span className="text-xs text-muted-foreground">
               Resumo, o que falta, complementos para as observações e fotos de banco. Nada
@@ -119,10 +122,6 @@ export function AssistantPanel({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5">
             <Sparkles className="size-4 shrink-0 text-info" />
             <h3 className="font-medium">Análise do Gemini</h3>
-            <span className="truncate text-xs text-muted-foreground">
-              {analysis.model}
-              {analysis.cached && " · guardada de uma análise anterior"}
-            </span>
             {error && <span className="text-xs text-destructive">{error}</span>}
             <div className="ml-auto flex items-center gap-1">
               <Button variant="ghost" size="xs" disabled={!temTexto || busy} onClick={() => void run()} title={titulo}>
@@ -206,11 +205,7 @@ export function AssistantPanel({
                       size="xs"
                       variant={searched ? "ghost" : "outline"}
                       disabled={!stockEnabled || searched}
-                      title={
-                        stockEnabled
-                          ? "Preenche a aba Banco de imagens com estas buscas e busca agora. Não gasta crédito."
-                          : "A busca de imagens de banco está desligada: configure a chave do Pixabay em Configurações → Geração de sites."
-                      }
+                      title="Preenche a aba Banco de imagens com estas buscas e busca agora. Não gasta crédito."
                       onClick={() => {
                         onUseImageQueries(analysis.imageQueries);
                         setSearched(true);
@@ -219,6 +214,13 @@ export function AssistantPanel({
                       {searched ? <Check /> : <ImageIcon />}
                       {searched ? "Buscadas" : "Buscar estas fotos"}
                     </Button>
+                    {/* O motivo escrito, e não só no hover: no toque não há hover. */}
+                    {!stockEnabled && (
+                      <Reason className="basis-full">
+                        A busca de imagens de banco está desligada: configure a chave do Pixabay em Configurações →
+                        Geração de sites.
+                      </Reason>
+                    )}
                   </div>
                   <ul className="flex flex-wrap gap-1.5">
                     {analysis.imageQueries.map((busca) => (
@@ -233,9 +235,10 @@ export function AssistantPanel({
                 </div>
               )}
 
+              {/* O modelo e a origem da análise são detalhe: uma linha miúda no fim. */}
               <p className="text-2xs text-muted-foreground">
-                Sugestões do modelo: confira antes de inserir. Nada entra no envio sem você
-                inserir, e a análise não gasta crédito do Lovable.
+                Sugestões do {analysis.model}
+                {analysis.cached && ", guardadas de uma análise anterior"}: confira antes de inserir.
               </p>
             </div>
           )}

@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
-import { AlertTriangle, Bot, Link2, PackageX, RefreshCw } from "lucide-react";
+import { Link2, MoreHorizontal, PackageX, RefreshCw, Unlink } from "lucide-react";
 import { isPanelProject, type Project } from "@/lib/api";
 import { projectIdentity } from "@/lib/format";
+import { EmptyNotice, ErrorNotice } from "@/components/page-header";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ClaudeBriefingForm } from "@/features/claude/claude-briefing-form";
 import { useClaudeStatus } from "@/features/claude/use-claude";
@@ -20,6 +29,7 @@ import { GenerationForm } from "./generation-form";
 import { ConnectionBadge } from "./result-panel";
 import { LovableReturnDialog } from "./lovable-return-dialog";
 import { useBuildPackage, useLovableConnection } from "./use-lovable";
+import { ClaudeIcon } from "@/components/brand-icons";
 
 /**
  * Geração do site a partir do material do projeto, pelo motor escolhido.
@@ -49,7 +59,7 @@ export function GenerateSiteDialog({
 }) {
   return (
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
-      <DialogContent layout="sectioned" className="h-[92vh] sm:max-w-[min(1180px,96vw)]">
+      <DialogContent layout="sectioned" className="h-dialog-tall sm:max-w-6xl">
         {project && (
           <GenerateSiteContent
             key={`${project.id}:${engine ?? ""}`}
@@ -57,6 +67,7 @@ export function GenerateSiteDialog({
             initialEngine={engine}
             onGenerated={onGenerated}
             onRequested={onRequested}
+            onClose={() => onOpenChange(false)}
           />
         )}
       </DialogContent>
@@ -69,11 +80,13 @@ function GenerateSiteContent({
   initialEngine,
   onGenerated,
   onRequested,
+  onClose,
 }: {
   project: Project;
   initialEngine: GenerationEngine | null;
   onGenerated: () => void;
   onRequested: (project: Project) => void;
+  onClose: () => void;
 }) {
   const claude = useClaudeStatus();
   const meta = projectIdentity(project);
@@ -96,25 +109,26 @@ function GenerateSiteContent({
           title={`Gerar site — ${meta.label}`}
           engineChoice={haEscolha ? <EngineChoice value={engine} onChange={setEscolhido} /> : null}
           onGenerated={onGenerated}
+          onClose={onClose}
         />
       ) : (
         <>
+          {/* O que este diálogo dispara no Claude é o briefing: o site vem
+              depois, da revisão. O título diz isso, e não "gerar site". */}
           <DialogHeader>
             <div className="flex flex-wrap items-center gap-2">
-              <DialogTitle className="text-base">Gerar site — {meta.label}</DialogTitle>
+              <DialogTitle>Gerar o briefing com o Claude — {meta.label}</DialogTitle>
               {haEscolha ? (
                 <EngineChoice value={engine} onChange={setEscolhido} />
               ) : (
                 <Badge variant="outline">
-                  <Bot />
+                  <ClaudeIcon />
                   Claude
                 </Badge>
               )}
             </div>
             <DialogDescription>
-              O Claude Code desta máquina lê o material do projeto e escreve o briefing. Depois de revisado,
-              ele gera o site, que passa por rodadas de crítica e refino antes de ser entregue. Nada é
-              disparado antes da confirmação.
+              O Claude lê o material marcado e escreve o briefing; o site só é gerado depois da sua revisão.
             </DialogDescription>
           </DialogHeader>
 
@@ -123,13 +137,21 @@ function GenerateSiteContent({
               <Skeleton className="h-full min-h-64 rounded-xl" />
               <Skeleton className="h-full min-h-64 rounded-xl" />
             </div>
+          ) : claude.error && !claude.data ? (
+            <div className="flex flex-1 items-center justify-center p-6">
+              <ErrorNotice
+                title="Não foi possível ler o motor Claude"
+                error={claude.error}
+                onRetry={() => void claude.refetch()}
+              />
+            </div>
           ) : !claudeInstalado ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-              <PackageX className="size-8 text-muted-foreground" />
-              <p className="max-w-md text-sm text-muted-foreground">
-                {claude.data?.reason ??
-                  (claude.error instanceof Error ? claude.error.message : "O motor Claude não está disponível neste painel.")}
-              </p>
+            <div className="flex flex-1 items-center justify-center p-6">
+              <EmptyNotice
+                icon={<PackageX />}
+                title="O motor Claude não está disponível neste painel"
+                description={claude.data?.reason ?? undefined}
+              />
             </div>
           ) : (
             <ClaudeBriefingForm project={project} onRequested={onRequested} />
@@ -145,11 +167,13 @@ function LovableGeneration({
   title,
   engineChoice,
   onGenerated,
+  onClose,
 }: {
   project: Project;
   title: string;
   engineChoice: ReactNode;
   onGenerated: () => void;
+  onClose: () => void;
 }) {
   const lovable = useLovableConnection();
   const pacote = useBuildPackage(project.id);
@@ -158,24 +182,34 @@ function LovableGeneration({
     <>
       <DialogHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <DialogTitle className="text-base">{title}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           {engineChoice}
+          {/* Só o "conectado": desconectado, o aviso logo abaixo já diz. */}
           <ConnectionBadge status={lovable.status} />
+          {/* Desconectar é raro e não é o que se veio fazer aqui: fica no
+              menu "⋯", longe do título e dos botões de gerar. */}
           {lovable.connected && (
-            <Button
-              variant="link"
-              size="xs"
-              className="text-muted-foreground"
-              onClick={() => void lovable.disconnect()}
-            >
-              Desconectar
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Mais opções da conexão com o Lovable">
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  Conectado à sua conta do Lovable
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void lovable.disconnect()}>
+                  <Unlink />
+                  Desconectar do Lovable
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         <DialogDescription>
-          O briefing vem do Drive e pode ser editado; o que faltar entra nas
-          observações, nos anexos ou no banco de imagens. Nada é enviado ao
-          Lovable antes da confirmação.
+          O briefing vem do Drive e pode ser editado; nada é enviado ao Lovable antes da confirmação.
         </DialogDescription>
       </DialogHeader>
 
@@ -197,7 +231,7 @@ function LovableGeneration({
                   Conectar
                 </Button>
                 <Button
-                  size="sm"
+                  size="icon-sm"
                   variant="ghost"
                   onClick={() => void lovable.refresh()}
                   title="Reler o estado da conexão"
@@ -226,14 +260,12 @@ function LovableGeneration({
       )}
 
       {pacote.error ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-          <AlertTriangle className="size-8 text-destructive" />
-          <p className="text-sm text-muted-foreground">
-            {(pacote.error as Error).message}
-          </p>
-          <Button variant="outline" onClick={() => void pacote.reload()}>
-            Tentar novamente
-          </Button>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <ErrorNotice
+            title="Não foi possível montar o envio"
+            error={pacote.error}
+            onRetry={() => void pacote.reload()}
+          />
         </div>
       ) : pacote.isPending || !pacote.data ? (
         <div className="grid flex-1 gap-4 p-6 lg:grid-cols-2">
@@ -247,6 +279,7 @@ function LovableGeneration({
           connected={lovable.connected}
           workspaces={lovable.workspaces}
           onGenerated={onGenerated}
+          onClose={onClose}
         />
       )}
     </>

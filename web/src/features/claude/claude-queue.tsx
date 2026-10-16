@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bot, ListX, Loader2, Lock, PauseCircle, Play, Square, Trash2 } from "lucide-react";
+import { ListX, Loader2, PauseCircle, Play, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ClaudeQueueItem, ClaudeStatus, Project } from "@/lib/api";
 import {
@@ -10,10 +10,10 @@ import {
   resumeClaudeQueue,
   resumeInterruptedClaudeRun,
 } from "@/lib/api";
-import { pluralize, projectIdentity } from "@/lib/format";
+import { formatElapsed, pluralize, projectIdentity, timeOf } from "@/lib/format";
 import { usePermissions } from "@/lib/permissions";
 import { useNow } from "@/lib/use-now";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,18 +26,18 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyNotice } from "@/components/page-header";
-import { formatElapsed } from "@/features/projects/project-progress";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyNotice, ErrorNotice } from "@/components/page-header";
 import { claudeRoundOf, claudeStageLabel } from "@/features/projects/project-status";
-import { ConfirmClaudeDialog, HintWhenDisabled, NoticeWithAction, RunStatusBadge } from "./claude-shared";
-import { errorMessage, requestLabels, requestOrigin, semPermissaoDeGerar } from "./claude-text";
+import { ConfirmClaudeDialog, GenerationOffNotice, NoticeWithAction, RunStatusBadge } from "./claude-shared";
+import { claudeBlock, errorMessage, requestLabels, requestOrigin } from "./claude-text";
 import { useClaudeQueueSync, useClaudeRefresh, useClaudeStatus } from "./use-claude";
+import { ClaudeIcon } from "@/components/brand-icons";
 
 /**
  * A fila do Claude, do painel inteiro: o que roda agora, o que espera a vez e
- * o que um reinício interrompeu. A criação de um site roda uma de cada vez; os
- * ajustes de sites já entregues rodam ao lado dela.
+ * o que um reinício interrompeu. Vários sites nascem ao mesmo tempo, e os
+ * ajustes de sites já entregues rodam ao lado deles.
  *
  * O botão só aparece onde o motor está instalado, e leva o número de pedidos
  * pendentes: é ele que diz, de qualquer ponto da lista, que há algo rodando.
@@ -58,6 +58,13 @@ export function ClaudeQueueButton({
   const fila = status.data.queue;
   const pendentes = claudeRunningItems(fila).length + fila.waiting.length + fila.interrupted.length;
   const atencao = fila.paused || fila.interrupted.length > 0;
+  const resumo = fila.paused
+    ? "pausada"
+    : fila.running
+      ? `${claudeRunningItems(fila).length} rodando`
+      : pendentes > 0
+        ? pluralize(pendentes, "pedido")
+        : null;
 
   return (
     <>
@@ -68,42 +75,57 @@ export function ClaudeQueueButton({
           // Quem abre a fila quer o que há agora, não o que havia na última consulta.
           void status.refetch();
         }}
-        aria-label={`Fila do Claude: ${pluralize(pendentes, "pedido")}`}
-        title={
-          fila.paused
-            ? "A fila do Claude está pausada desde que o painel reiniciou"
-            : "O que o Claude está fazendo agora e o que espera a vez"
-        }
+        aria-label={`Fila do Claude${resumo ? `: ${resumo}` : ""}`}
       >
-        {fila.running ? <Loader2 className="animate-spin text-info" /> : <Bot />}
+        {fila.running ? <Loader2 className="animate-spin text-info" /> : <ClaudeIcon />}
         <span className="hidden sm:inline">Fila do Claude</span>
-        {pendentes > 0 && (
+        {resumo && (
           <Badge variant={atencao ? "warning" : "info"} className="tabular-nums">
-            {pendentes}
+            {resumo}
           </Badge>
         )}
       </Button>
+      <ClaudeQueueDialog open={open} onOpenChange={setOpen} projects={projects} onOpenProject={onOpenProject} />
+    </>
+  );
+}
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent layout="sectioned" className="max-h-[88vh] sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base">Fila do Claude</DialogTitle>
-            <DialogDescription>
-              A criação de um site roda uma de cada vez, na ordem em que os pedidos chegaram; os ajustes
-              rodam ao lado dela. Fechar esta janela ou o navegador não interrompe nada.
-            </DialogDescription>
-          </DialogHeader>
+/** A fila inteira, num diálogo: o que roda, o que espera e o que um reinício interrompeu. */
+export function ClaudeQueueDialog({
+  open,
+  onOpenChange,
+  projects,
+  onOpenProject,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projects: Project[];
+  onOpenProject: (project: Project) => void;
+}) {
+  const status = useClaudeStatus();
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent layout="sectioned" className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Fila do Claude</DialogTitle>
+          <DialogDescription>
+            Vários sites são criados ao mesmo tempo, e os ajustes rodam ao lado; quantos de cada, as Configurações dizem. Fechar esta janela não interrompe nada.
+          </DialogDescription>
+        </DialogHeader>
+        {status.data ? (
           <QueueBody
             status={status.data}
             projects={projects}
             onOpenProject={(project) => {
-              setOpen(false);
+              onOpenChange(false);
               onOpenProject(project);
             }}
           />
-        </DialogContent>
-      </Dialog>
-    </>
+        ) : (
+          <ErrorNotice error={status.error} onRetry={() => void status.refetch()} />
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -164,8 +186,8 @@ function QueueBody({
 
   const fila = status.queue;
   const podeGerar = can("gerar");
-  const semPermissao = podeGerar ? null : semPermissaoDeGerar;
-  const desligada = status.generation.enabled ? null : "A geração pelo Claude está desligada neste painel.";
+  const semPermissao = podeGerar ? null : claudeBlock.semPermissao;
+  const desligada = status.generation.enabled ? null : claudeBlock.desligada;
 
   const agir = async (chave: string, acao: () => Promise<unknown>, ok: string, falha: string) => {
     setWorking(chave);
@@ -187,21 +209,18 @@ function QueueBody({
   const vazia = rodando.length === 0 && fila.waiting.length === 0 && fila.interrupted.length === 0;
 
   return (
-    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-      {!status.generation.enabled && (
-        <Alert variant="warning">
-          <Lock />
-          <AlertTitle>A geração pelo Claude está desligada neste painel</AlertTitle>
-          <AlertDescription>{status.generation.reason}</AlertDescription>
-        </Alert>
-      )}
+    <DialogBody className="space-y-4">
+      {/* As travas vêm antes da lista, escritas uma vez: os botões abaixo só
+          ficam desligados, sem repetir o motivo em cada linha. */}
+      {!status.generation.enabled && <GenerationOffNotice reason={status.generation.reason} />}
+      {semPermissao && <Reason>{semPermissao}</Reason>}
 
       {fila.paused && (
         <NoticeWithAction
           icon={<PauseCircle />}
           title="A fila está pausada"
           action={
-            <HintWhenDisabled reason={semPermissao ?? desligada}>
+            <DisabledHint reason={semPermissao ?? desligada}>
               <Button
                 size="sm"
                 variant="outline"
@@ -211,7 +230,7 @@ function QueueBody({
                 {working === "resume-queue" ? <Loader2 className="animate-spin" /> : <Play />}
                 Retomar fila
               </Button>
-            </HintWhenDisabled>
+            </DisabledHint>
           }
         >
           O painel foi reiniciado com pedidos esperando. Eles só voltam a rodar quando alguém retomar.
@@ -220,7 +239,7 @@ function QueueBody({
 
       {vazia && (
         <EmptyNotice
-          icon={<Bot />}
+          icon={<ClaudeIcon />}
           title="Nada na fila"
           description="Os pedidos de briefing, de site e de ajuste aparecem aqui enquanto esperam ou rodam — e também as críticas e os refinos, que o painel põe na fila sozinho."
         />
@@ -231,7 +250,7 @@ function QueueBody({
           <h3 id="fila-rodando" className="text-xs font-medium text-muted-foreground">
             Rodando agora{rodando.length > 1 && ` · ${rodando.length}`}
           </h3>
-          {/* Os ajustes rodam ao lado da criação de um site: pode haver mais de uma execução. */}
+          {/* Vários sites nascem juntos, e os ajustes rodam ao lado: pode haver mais de uma execução. */}
           <ul className="space-y-2">
             {rodando.map((item) => (
               <li
@@ -248,11 +267,11 @@ function QueueBody({
                       item.tipo !== "criticar" &&
                       item.tipo !== "refinar" &&
                       ` · ${claudeStageLabel(item.etapa)}`}
-                    {item.inicio && ` · há ${formatElapsed(now - Date.parse(item.inicio))}`}
+                    {item.inicio && ` · há ${formatElapsed(now - (timeOf(item.inicio) ?? now))}`}
                     {origemDe(item)}
                   </p>
                 </div>
-                <HintWhenDisabled reason={semPermissao}>
+                <DisabledHint reason={semPermissao}>
                   <Button
                     variant="outline"
                     size="sm"
@@ -260,9 +279,9 @@ function QueueBody({
                     onClick={() => setConfirming({ kind: "cancel", item })}
                   >
                     {working === item.id ? <Loader2 className="animate-spin" /> : <Square />}
-                    Cancelar
+                    Cancelar execução
                   </Button>
-                </HintWhenDisabled>
+                </DisabledHint>
               </li>
             ))}
           </ul>
@@ -277,7 +296,11 @@ function QueueBody({
           <ol className="divide-y rounded-lg border">
             {fila.waiting.map((item, indice) => (
               <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-                <span className="w-5 shrink-0 text-xs tabular-nums text-muted-foreground">{indice + 1}º</span>
+                {/* A vez que o servidor diz manda; o índice da lista é só o recurso
+                    de um servidor que não a manda. */}
+                <span className="w-5 shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {item.posicao ?? indice + 1}º
+                </span>
                 <div className="min-w-0 flex-1">
                   <ItemName item={item} project={projetoDe(item)} onOpen={onOpenProject} />
                   <p className="truncate text-xs text-muted-foreground">
@@ -285,7 +308,7 @@ function QueueBody({
                     {origemDe(item)}
                   </p>
                 </div>
-                <HintWhenDisabled reason={semPermissao}>
+                <DisabledHint reason={semPermissao}>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -302,7 +325,7 @@ function QueueBody({
                     {working === item.id ? <Loader2 className="animate-spin" /> : <ListX />}
                     Tirar da fila
                   </Button>
-                </HintWhenDisabled>
+                </DisabledHint>
               </li>
             ))}
           </ol>
@@ -325,7 +348,7 @@ function QueueBody({
                     {origemDe(item)}
                   </p>
                 </div>
-                <HintWhenDisabled reason={semPermissao}>
+                <DisabledHint reason={semPermissao}>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -335,8 +358,8 @@ function QueueBody({
                     <Trash2 />
                     Descartar
                   </Button>
-                </HintWhenDisabled>
-                <HintWhenDisabled reason={semPermissao ?? desligada}>
+                </DisabledHint>
+                <DisabledHint reason={semPermissao ?? desligada}>
                   <Button
                     variant="outline"
                     size="sm"
@@ -346,7 +369,7 @@ function QueueBody({
                     {working === item.id ? <Loader2 className="animate-spin" /> : <Play />}
                     Retomar
                   </Button>
-                </HintWhenDisabled>
+                </DisabledHint>
               </li>
             ))}
           </ul>
@@ -354,10 +377,16 @@ function QueueBody({
       )}
 
       {fila.last && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
-          Última execução: <ItemName item={fila.last.item} project={projetoDe(fila.last.item)} onOpen={onOpenProject} /> · {requestLabels[fila.last.item.tipo]}
-          <RunStatusBadge status={fila.last.status} />
-        </p>
+        <div className="space-y-0.5 border-t pt-3 text-xs text-muted-foreground">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            Última execução: <ItemName item={fila.last.item} project={projetoDe(fila.last.item)} onOpen={onOpenProject} /> ·{" "}
+            {requestLabels[fila.last.item.tipo]}
+            <RunStatusBadge status={fila.last.status} />
+          </p>
+          {/* O que ela deixou dito — o motivo de uma falha, quase sempre. Curto: o
+              inteiro fica no log, no projeto. */}
+          {fila.last.mensagem && <p className="line-clamp-2">{fila.last.mensagem}</p>}
+        </div>
       )}
 
       <AlertDialog open={confirming?.kind === "cancel"} onOpenChange={(aberto) => !aberto && setConfirming(null)}>
@@ -396,6 +425,7 @@ function QueueBody({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               onClick={() => {
                 if (confirming?.kind !== "discard") return;
                 const { item } = confirming;
@@ -433,6 +463,6 @@ function QueueBody({
       >
         O pedido volta para a fila e o Claude retoma a sessão do site, se ela ainda existir.
       </ConfirmClaudeDialog>
-    </div>
+    </DialogBody>
   );
 }

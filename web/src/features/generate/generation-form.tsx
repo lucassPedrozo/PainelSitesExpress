@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { FileSearch, FolderOpen, ImageIcon, Loader2, Lock, Sparkles } from "lucide-react";
+import { FileSearch, ImageIcon, Loader2, Sparkles } from "lucide-react";
+import { GoogleDriveIcon } from "@/components/brand-icons";
 import { toast } from "sonner";
 import type {
   BriefingAnalysis,
@@ -13,7 +14,7 @@ import type {
 } from "@/lib/api";
 import { generateSite, previewGeneration } from "@/lib/api";
 import { formatBytes, pluralize, projectIdentity } from "@/lib/format";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,6 +27,8 @@ import {
 import { Segmented } from "@/components/segmented";
 import { cn } from "@/lib/utils";
 import { stockImagesBlock } from "@shared/stock-images.js";
+import { GenerationOffNotice } from "@/features/claude/claude-shared";
+import { generationOffTitle } from "@/features/claude/claude-text";
 import { AssistantPanel } from "./assistant-panel";
 import { AttachmentsSection } from "./attachments-section";
 import { assessBriefing, type AssessmentKey } from "./briefing-assessment";
@@ -43,7 +46,7 @@ import {
   PreviousGenerations,
 } from "./generation-notices";
 import { OBSERVATIONS_INPUT_ID, PromptSection } from "./prompt-section";
-import { ResultPanel } from "./result-panel";
+import { OpenInLovable, ResultPanel } from "./result-panel";
 import { StockImagesSection } from "./stock-images-section";
 import { nextStockSelection, rowsFromQueries, toggleStockPick, type StockPick } from "./stock-images";
 import { useWorkspaceChoice } from "./use-lovable";
@@ -51,13 +54,49 @@ import { useStockSearch } from "./use-stock-search";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
 
 /**
+ * A escolha do workspace do Lovable — a mesma no diálogo completo e no
+ * gerar rápido, do mesmo tamanho nos dois.
+ */
+export function WorkspaceSelect({
+  id,
+  workspaces,
+  value,
+  onChange,
+}: {
+  id: string;
+  workspaces: LovableWorkspace[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Label htmlFor={id} className="text-xs text-muted-foreground">
+        Workspace
+      </Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger id={id} className="w-52">
+          <SelectValue placeholder="Escolha o workspace" />
+        </SelectTrigger>
+        <SelectContent>
+          {workspaces.map((workspace) => (
+            <SelectItem key={workspace.id} value={workspace.id}>
+              {workspace.name}
+              {workspace.role !== "owner" && " (colaborador)"}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/**
  * O que vai ao Lovable: prompt, anexos e a confirmação do gasto.
  *
  * A ordem de leitura é a ordem de decisão: primeiro o que impede (geração
  * desligada), depois o que o envio tem e o que falta, depois o prompt e os
- * anexos para completar, e por fim o envio. Antes o bloqueio e a assinatura
- * ficavam no rodapé, em cinza, e a pessoa preenchia tudo para descobrir no
- * fim que o botão não ia funcionar.
+ * anexos para completar, e por fim o envio — no rodapé, sempre à vista, com o
+ * contador do envio (um só) e o motivo escrito quando o botão não está livre.
  *
  * Montado com `key` do projeto, então o estado nasce do pacote já carregado.
  */
@@ -67,6 +106,7 @@ export function GenerationForm({
   connected,
   workspaces,
   onGenerated,
+  onClose,
 }: {
   project: Project;
   pkg: BuildPackage;
@@ -74,6 +114,8 @@ export function GenerationForm({
   workspaces: LovableWorkspace[];
   /** Avisa o painel para recarregar — é assim que o link aparece no card. */
   onGenerated: () => void;
+  /** Fecha o diálogo: depois de gerar, é a saída. */
+  onClose: () => void;
 }) {
   const [prompt, setPrompt] = useState(pkg.prompt.text);
   /**
@@ -204,7 +246,7 @@ export function GenerationForm({
       setResult(data);
       onGenerated();
       toast.success("Site criado no Lovable", {
-        description: "O link ficou salvo no card do projeto.",
+        description: "O link ficou salvo no projeto.",
       });
     } catch (err) {
       toast.error("A geração falhou", {
@@ -225,17 +267,27 @@ export function GenerationForm({
           .join(" · ")
       : null;
 
+  // Por que "Conferir envio" não está livre: o envio vazio ou acima do limite.
+  const motivoDoEnvio =
+    finalPrompt.length === 0
+      ? "Escreva o briefing ou as observações para ter o que enviar."
+      : limitesEstourados
+        ? `O envio passou do limite: ${limitesEstourados}.`
+        : null;
+  // Por que "Gerar site" não está livre — escrito no rodapé, ao lado do botão.
+  const motivoDeGerar = !pkg.generation.enabled
+    ? `${generationOffTitle.lovable}.`
+    : !connected
+      ? "Conecte o painel ao Lovable para gerar."
+      : !workspaceId
+        ? "Escolha o workspace do Lovable."
+        : motivoDoEnvio;
+
   return (
     <>
       {/* ---- Antes de tudo: o que impede, e o que o envio tem ------------- */}
       <div className="shrink-0 space-y-3 border-b px-6 py-3">
-        {!pkg.generation.enabled && (
-          <Alert variant="warning">
-            <Lock />
-            <AlertTitle>A geração está desligada neste painel</AlertTitle>
-            <AlertDescription>{pkg.generation.reason}</AlertDescription>
-          </Alert>
-        )}
+        {!pkg.generation.enabled && <GenerationOffNotice engine="lovable" reason={pkg.generation.reason} />}
         <BriefingAssessment assessment={avaliacao} onGoTo={goTo} />
         {!result && <PreviousGenerations project={project} />}
       </div>
@@ -246,7 +298,7 @@ export function GenerationForm({
           (`grid-rows-1` = minmax(0,1fr)) e cada seção rola por dentro; com
           `auto-rows-auto` a linha crescia com o conteúdo e vazava por cima
           do rodapé. */}
-      <div className="grid min-h-0 flex-1 auto-rows-max overflow-y-auto lg:grid-cols-[1.05fr_1fr] lg:grid-rows-1 lg:divide-x lg:overflow-hidden">
+      <div className="grid min-h-0 flex-1 auto-rows-max overflow-y-auto lg:grid-cols-2 lg:grid-rows-1 lg:divide-x lg:overflow-hidden">
         <PromptSection
           pkg={pkg}
           prompt={prompt}
@@ -259,7 +311,6 @@ export function GenerationForm({
             setObservations(value);
             changed();
           }}
-          summary={resumo}
           // O assistente lê o conteúdo e sugere; a faixa do topo só olha o
           // que existe. Só aparece com a chave do Gemini no servidor.
           assistant={
@@ -285,7 +336,7 @@ export function GenerationForm({
               value={attachTab}
               onChange={setAttachTab}
               options={[
-                { value: "drive", label: "Do Drive", icon: <FolderOpen />, count: selected.size },
+                { value: "drive", label: "Do Drive", icon: <GoogleDriveIcon />, count: selected.size },
                 { value: "stock", label: "Banco de imagens", icon: <ImageIcon />, count: stock.size },
               ]}
             />
@@ -320,71 +371,76 @@ export function GenerationForm({
         </div>
       </div>
 
-      {/* ---- Rodapé: o envio, numa linha, e os dois botões ---------------- */}
-      <div className="shrink-0 space-y-3 border-t px-6 py-3">
-        {plan && <PlanSummary plan={plan} />}
+      {/* ---- Rodapé: o envio, numa linha, e os botões ---------------------- */}
+      <div className="shrink-0 space-y-3 border-t bg-muted/40 px-6 py-3">
+        {plan && !result && <PlanSummary plan={plan} />}
         {result && <ResultPanel result={result} />}
 
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-            {workspaces.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Label htmlFor="lovable-workspace" className="text-xs text-muted-foreground">
-                  Workspace
-                </Label>
-                <Select value={workspaceId} onValueChange={choose}>
-                  <SelectTrigger id="lovable-workspace" size="sm" className="w-48 text-xs">
-                    <SelectValue placeholder="Escolha o workspace" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {workspaces.map((workspace) => (
-                      <SelectItem key={workspace.id} value={workspace.id}>
-                        {workspace.name}
-                        {workspace.role !== "owner" && " (colaborador)"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <p
-              className={cn(
-                "text-xs tabular-nums text-muted-foreground",
-                limitesEstourados && "text-destructive",
+        {result ? (
+          // Gerado: o rodapé troca de vez. Um segundo "Gerar site" criaria
+          // outro projeto no Lovable — outro débito —, então gerar de novo
+          // pede fechar e abrir o diálogo outra vez.
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Fechar
+            </Button>
+            <OpenInLovable result={result} />
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+              {workspaces.length > 0 && (
+                <WorkspaceSelect
+                  id="lovable-workspace"
+                  workspaces={workspaces}
+                  value={workspaceId}
+                  onChange={choose}
+                />
               )}
-            >
-              {pluralize(resumo.attachmentCount, "anexo")}
-              {resumo.stockCount > 0 && ` (um é o zip com ${pluralize(resumo.stockCount, "foto")} de banco)`}
-              {" + assinatura"}
-              {resumo.totalBytes > 0 && ` · ${formatBytes(resumo.totalBytes)}`}
-              {` · ${pluralize(resumo.promptChars, "caractere")}`}
-              {limitesEstourados && ` · ${limitesEstourados}`}
-            </p>
-          </div>
+              <div className="min-w-0 space-y-0.5">
+                {/* O contador do envio, num lugar só: anexos, tamanho e caracteres. */}
+                <p
+                  className={cn(
+                    "text-xs tabular-nums text-muted-foreground",
+                    limitesEstourados && "text-destructive",
+                  )}
+                >
+                  {pluralize(resumo.attachmentCount, "anexo")}
+                  {resumo.stockCount > 0 && ` (um é o zip com ${pluralize(resumo.stockCount, "foto")} de banco)`}
+                  {" + assinatura"}
+                  {resumo.totalBytes > 0 && ` · ${formatBytes(resumo.totalBytes)}`}
+                  {` · ${resumo.promptChars.toLocaleString("pt-BR")} de ${pkg.limits.maxPromptChars.toLocaleString("pt-BR")} caracteres`}
+                </p>
+                {motivoDeGerar ? (
+                  <Reason>{motivoDeGerar}</Reason>
+                ) : (
+                  <p className="text-xs text-muted-foreground">{avaliacao.summary}</p>
+                )}
+              </div>
+            </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!canSend}
-              onClick={() => void runPreview()}
-              title="Valida o envio sem falar com o Lovable — não gasta crédito."
-            >
-              {busy === "preview" ? <Loader2 className="animate-spin" /> : <FileSearch />}
-              Conferir envio
-            </Button>
-            <Button
-              size="sm"
-              disabled={
-                !canSend || !connected || !pkg.generation.enabled || !workspaceId
-              }
-              onClick={() => setConfirming(true)}
-            >
-              {busy === "generate" ? <Loader2 className="animate-spin" /> : <Sparkles />}
-              Gerar site
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={!canSend}
+                onClick={() => void runPreview()}
+                title="Valida o envio sem falar com o Lovable — não gasta crédito."
+              >
+                {busy === "preview" ? <Loader2 className="animate-spin" /> : <FileSearch />}
+                Conferir envio
+              </Button>
+              <DisabledHint reason={motivoDeGerar}>
+                <Button
+                  disabled={!canSend || Boolean(motivoDeGerar)}
+                  onClick={() => setConfirming(true)}
+                >
+                  {busy === "generate" ? <Loader2 className="animate-spin" /> : <Sparkles />}
+                  Gerar site
+                </Button>
+              </DisabledHint>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <ConfirmGenerationDialog

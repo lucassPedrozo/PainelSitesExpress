@@ -30,7 +30,7 @@ import { generateSite, listWorkspaces } from "./generate.js";
 import { buildPackage, previewGeneration } from "./package.js";
 import { parseTerms, pixabay, pixabayStatus } from "../images/pixabay.js";
 import { replyToAgent, watchGeneration } from "./progress.js";
-import { lovableNameOf, parseLovableProject, planLink } from "./link.js";
+import { lovableInfoOf, lovableNameOf, parseLovableProject, planLink } from "./link.js";
 import { listRepos } from "../deploy/github/repositories.js";
 import { githubConfig } from "../deploy/operations.js";
 import { getPublication, recordPublicationConfig, setPublicationRuns } from "../store/publications.js";
@@ -494,11 +494,13 @@ lovableRouter.post(
       return res.json({ generation, warning: aviso });
     }
 
+    const doLovable = plano.lovableId ? await lovableInfoOf(plano.lovableId) : { name: null, createdAt: null };
     let generation = await linkGeneration(req.params.id, {
       id: plano.id,
       url: plano.url,
       repoFullName: plano.repoFullName,
-      lovableName: plano.lovableId ? await lovableNameOf(plano.lovableId) : null,
+      lovableName: doLovable.name,
+      createdAt: doLovable.createdAt,
       displayName: plano.repoFullName?.split("/")[1] ?? null,
       by: quem,
       delivered: plano.state === "delivered",

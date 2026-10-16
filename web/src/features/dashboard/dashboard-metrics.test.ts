@@ -8,7 +8,6 @@ import {
   byDeveloper,
   inPeriod,
   median,
-  recentActivity,
   segmentsOf,
   summarize,
   timeToLive,
@@ -183,13 +182,41 @@ describe("período", () => {
       null,
     );
     const resumo = summarize(rows, inicio);
-    expect(resumo.open).toBe(2);
-    expect(resumo.waiting).toBe(1);
+    // Os mesmos números da tela Projetos: ativos (nem no ar, nem finalizados).
+    expect(resumo.active).toBe(2);
+    expect(resumo.acting).toBe(2);
+    expect(resumo.problems).toBe(0);
     expect(resumo.received).toBe(1);
     expect(resumo.live).toBe(1);
     expect(resumo.medianToLive).toBe(24 * DAY);
     // Gerado no dia 4, fora do período.
     expect(resumo.medianToGenerate).toBeNull();
+  });
+
+  it("o ritmo do período: novos (Drive e painel), gerados, enviados e no ar", () => {
+    const rows = buildRows(
+      [
+        projeto({ id: "coleta", createdTime: at(28) }),
+        projeto({ id: "painel", source: "panel", createdTime: at(29) } as never),
+        projeto({ id: "gerado", generations: [geracao({ createdAt: at(27), deliveredAt: at(29) })] }),
+        // Vinculado de fora: a "geração" é o clique do vínculo, não trabalho.
+        projeto({ id: "vinculado", generations: [geracao({ createdAt: at(27), origin: "linked" })] }),
+        projeto({ id: "velho", generations: [geracao({ createdAt: at(4), deliveredAt: at(5) })] }),
+      ],
+      null,
+    );
+    const resumo = summarize(rows, NOW - 7 * DAY);
+    expect([resumo.received, resumo.receivedInPanel]).toEqual([2, 1]);
+    expect(resumo.generated).toBe(1);
+    expect(resumo.delivered).toBe(1);
+  });
+
+  it("o responsável definido na tela Projetos vence quem gerou o site", () => {
+    const [linha] = buildRows(
+      [projeto({ generations: [geracao({ createdBy: "Ana" })], details: { responsible: "Bruno" } } as never)],
+      null,
+    );
+    expect(linha.developerKey).toBe("Bruno");
   });
 });
 
@@ -220,24 +247,6 @@ describe("byDeveloper", () => {
       medianToLive: 10 * DAY,
     });
     expect(stats[1].medianToDeliver).toBeNull();
-  });
-});
-
-describe("recentActivity", () => {
-  it("junta os acontecimentos de todos, do mais recente ao mais antigo", () => {
-    const rows = buildRows(
-      [
-        projeto({ id: "1", generations: [geracao({ createdBy: "Ana" })] }),
-        projeto({ id: "2", createdTime: at(10) }),
-      ],
-      null,
-    );
-    const eventos = recentActivity(rows, null, 2);
-    expect(eventos.map((event) => [event.row.project.id, event.title])).toEqual([
-      ["2", "Material recebido"],
-      ["1", "Site gerado no Lovable"],
-    ]);
-    expect(recentActivity(rows, Date.parse(at(9)), 10)).toHaveLength(1);
   });
 });
 

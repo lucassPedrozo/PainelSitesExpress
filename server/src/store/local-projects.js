@@ -82,6 +82,7 @@ export async function deleteLocalProject(id) {
 
   delete data.projectTags[id];
   delete data.names[id];
+  delete data.details[id];
   delete data.generations[id];
   // A pasta de trabalho do motor Claude fica em disco; o registro dela, não.
   delete data.claude.projects[id];

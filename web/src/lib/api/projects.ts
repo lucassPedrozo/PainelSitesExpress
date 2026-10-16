@@ -40,6 +40,12 @@ export type Project = {
   source?: "drive" | "panel";
   /** Só nos do painel: um site a publicar, ou só material guardado. */
   purpose?: "site" | "files" | null;
+  /**
+   * Só nos do painel de site: há um site pronto (pasta ou `.zip` com
+   * `index.html` ou `package.json`) entre os arquivos. `null` quando não se
+   * sabe — a busca falhou, ou o projeto não é de site.
+   */
+  hasSite?: boolean | null;
   /** Nome da pasta no Drive. Nunca muda pelo painel: o acesso é só de leitura. */
   name: string;
   /** Apelido dado aqui no painel, quando a pasta nasceu sem nome útil. */
@@ -73,7 +79,57 @@ export type Project = {
   domain: string | null;
   /** Quantas coletas existem deste domínio, contando esta. */
   domainCollections: number;
+  /**
+   * Só nas coletas sem site: o site do mesmo domínio registrado em outra
+   * coleta (o cliente mandou o material mais de uma vez). `null` ou ausente
+   * quando não há.
+   */
+  domainSite?: DomainSite | null;
+  /**
+   * O que a equipe corrigiu à mão. `domain` e `createdTime` acima já vêm
+   * corrigidos; aqui fica o que foi mexido, para a tela marcar e oferecer a
+   * volta ao cálculo. `null` quando nada foi corrigido.
+   */
+  details?: ProjectDetails | null;
 };
+
+/** O site do domínio que mora em outra coleta: a pasta dela e o site. */
+export type DomainSite = {
+  projectId: string;
+  /** O nome da pasta da outra coleta. */
+  projectName: string;
+  site: Generation;
+};
+
+/** As etapas que dá para escolher à mão — as do caminho até o domínio. */
+export type ManualEtapa = "material" | "geracao" | "link" | "cliente" | "publicacao" | "no-ar";
+
+export type ProjectDetails = {
+  domain: string | null;
+  receivedAt: string | null;
+  /** Quem cuida do projeto. */
+  responsible: string | null;
+  /** Observação interna, só da equipe. */
+  note: string | null;
+  /**
+   * A etapa escolhida à mão, com quando e por quem. Vale até acontecer algo
+   * mais novo no projeto (gerar, enviar, publicar): aí o painel volta a calcular.
+   */
+  stage: { etapa: ManualEtapa; at: string; by: string | null } | null;
+  /** Oculto: fora da lista de trabalho, dos contadores, do Dashboard e do relatório. */
+  hidden?: { at: string; by: string | null } | null;
+};
+
+/** O que mudar de uma vez; vazio (`""` ou `null`) volta ao cálculo do painel. */
+export type ProjectDetailsPatch = Partial<{
+  name: string;
+  domain: string | null;
+  receivedAt: string | null;
+  responsible: string | null;
+  note: string | null;
+  stage: ManualEtapa | null;
+  hidden: boolean;
+}>;
 
 export type ProjectPublication = {
   domain: string;
@@ -282,8 +338,7 @@ export const setProjectTags = (projectId: string, tagIds: string[]) =>
     tagIds,
   });
 
-/** Texto vazio apaga o apelido e devolve o nome da pasta do Drive. */
-export const setProjectName = (projectId: string, name: string) =>
-  send<{ alias: string | null }>("PUT", `/api/projects/${projectId}/name`, {
-    name,
-  });
+/** Corrige domínio, data, etapa, nome, responsável e observação; só os campos enviados mudam. */
+export const updateProjectDetails = (projectId: string, patch: ProjectDetailsPatch) =>
+  send<{ alias: string | null; details: ProjectDetails | null }>("PATCH", `/api/projects/${projectId}/details`, patch);
+

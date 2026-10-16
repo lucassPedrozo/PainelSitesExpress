@@ -61,10 +61,32 @@ export const localProjectsRouter = Router();
 
 /** Estatísticas valem até alguém gravar ou apagar no projeto. */
 const statsKey = (projectId) => `local-stats:${projectId}`;
+const siteKey = (projectId) => `local-site:${projectId}`;
 const touched = (projectId) => {
   invalidate(statsKey(projectId));
+  invalidate(siteKey(projectId));
   invalidate(`local-zip:${projectId}`);
 };
+
+/**
+ * Há um site pronto entre os arquivos do projeto (uma pasta ou um `.zip` com
+ * `index.html` ou `package.json`)? É o que separa "Enviar ao GitHub" de
+ * "Gerar com o Claude" na lista: um projeto com fotos e textos e nenhum site
+ * ainda não tem o que enviar. `null` quando a busca falhou — a lista não cai
+ * por isso.
+ *
+ * @param {string} projectId
+ * @returns {Promise<boolean | null>}
+ */
+export const hasSiteSource = (projectId) =>
+  cached(siteKey(projectId), async () => {
+    try {
+      return (await findSiteSources(projectId)).length > 0;
+    } catch (err) {
+      console.warn(`[projetos] origem do site de ${projectId}:`, err?.message ?? err);
+      return null;
+    }
+  });
 
 /** As mesmas métricas que o Drive dá a uma coleta, contando as subpastas. */
 export const statsForLocalProject = (projectId) =>

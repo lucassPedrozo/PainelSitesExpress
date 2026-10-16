@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { ClaudeQueueItem, ClaudeSummary, Generation, Project } from "@/lib/api";
 import { nextStep, stepPermission } from "@/features/projects/next-step";
 import { isInProgress, progressOf } from "@/features/projects/project-progress";
-import { projectStatus, stageClass, stageLabels, stageOrder } from "@/features/projects/project-status";
+import { projectStatus, stageLabels, stageOrder } from "@/features/projects/project-status";
 import { stageAlerts } from "@/features/projects/use-stage-alerts";
-import { groupByNextStep, isDone } from "@/features/projects/work-queue";
+import { STAGES } from "@/features/projects/stage";
 
 /**
  * O motor Claude no card: cada situação dele tem um selo e um próximo passo —
@@ -177,7 +177,7 @@ describe("motor Claude — o selo e o próximo passo de cada situação", () => 
     expect(etapaE(pronto)).toEqual(["to-github", "Enviar ao GitHub", true]);
     expect(nextStep(pronto).kind).toBe("push-claude");
     expect(stepPermission["push-claude"]).toBe("publicar");
-    expect(projectStatus(pronto).detail).toMatch(/gerado pelo Claude e validado/);
+    expect(projectStatus(pronto).detail).toMatch(/só nesta máquina; envie ao GitHub/);
   });
 
   it("o que parou esperando alguém: etapa aberta, falha sem resultado e reinício no meio", () => {
@@ -334,7 +334,7 @@ describe("motor Claude — o selo e o próximo passo de cada situação", () => 
       claude: claude({ briefing: briefing("ok"), site: naRodada("refino", 1), queue: item({ tipo: "refinar", estado: "esperando", posicao: 2, encadeado: true }) }),
     });
     expect(etapaE(naFila)).toEqual(["claude-queued", "Acompanhar", false]);
-    expect(projectStatus(naFila).detail).toBe("O refino da rodada 1 de 2 do site espera a vez na fila do Claude: é o 2º a rodar. Uma execução por vez.");
+    expect(projectStatus(naFila).detail).toBe("O refino da rodada 1 de 2 espera a vez na fila do Claude: é o 2º a rodar.");
     for (const p of [criticando, refinando, naFila]) {
       expect(["to-github", "ready", "generated", "claude-brief-ready"]).not.toContain(projectStatus(p).stage);
     }
@@ -391,12 +391,12 @@ describe("motor Claude — o selo e o próximo passo de cada situação", () => 
     expect(nextStep(antesDaCritica).kind).toBe("claude");
     expect(projectStatus(antesDaCritica).label).toBe("Site para continuar");
     expect(projectStatus(antesDaCritica).detail).toBe(
-      "A criação do site parou antes da crítica da rodada 1 de 2: ele está escrito e revisado. Continue para ele ser entregue.",
+      "Parou antes da crítica da rodada 1 de 2: o site está escrito e revisado. Continuar consome a assinatura.",
     );
 
     const antesDoRefino = projeto({ claude: claude({ briefing: briefing("ok"), slug: "s", site: naRodada("refino", 2), lastRun: ultima({ type: "criticar" }) }) });
     expect(projectStatus(antesDoRefino).detail).toBe(
-      "A criação do site parou antes do refino da rodada 2 de 2: a crítica já apontou o que corrigir. Continue para ele ser entregue.",
+      "Parou antes do refino da rodada 2 de 2: a crítica já apontou o que corrigir. Continuar consome a assinatura.",
     );
 
     const noMeio = projeto({
@@ -422,7 +422,7 @@ describe("motor Claude — o selo e o próximo passo de cada situação", () => 
     expect(novas).toHaveLength(9);
     for (const stage of novas) {
       expect(stageLabels[stage]).toBeTruthy();
-      expect(stageClass[stage]).toBeTruthy();
+      expect(STAGES[stage]).toBeTruthy();
     }
     expect(new Set(stageOrder).size).toBe(stageOrder.length);
   });
@@ -469,16 +469,21 @@ describe("motor Claude — andamento, fila de trabalho e avisos", () => {
       projeto({ id: "h", claude: claude({ briefing: briefing("ok"), site: naRodada("critica", 1), queue: item({ tipo: "criticar", encadeado: true }) }) }),
       projeto({ id: "i", claude: claude({ briefing: briefing("ok"), site: naRodada("refino", 1) }) }),
     ];
-    expect(groupByNextStep(projetos).map((grupo) => [grupo.key, grupo.items.map((p) => p.id)])).toEqual([
-      ["claude-failed", ["f"]],
-      ["claude-resume", ["d"]],
-      ["claude-approve", ["e"]],
-      ["claude-continue", ["i"]],
-      ["claude-fix", ["b"]],
-      ["claude-review", ["a"]],
-      ["in-progress", ["c", "g", "h"]],
-    ]);
-    expect(projetos.some(isDone)).toBe(false);
+    // O contador do "Fazer agora" de cada um: o que falhou ou parou no meio de
+    // um reinício é "Resolver"; o que espera uma decisão sobre o trabalho do
+    // Claude é "Revisar"; o que roda ou espera a vez é "Em andamento".
+    const grupos = Object.fromEntries(projetos.map((p) => [p.id, STAGES[projectStatus(p).stage].group]));
+    expect(grupos).toEqual({
+      a: "revisar",
+      b: "revisar",
+      c: "andamento",
+      d: "resolver",
+      e: "revisar",
+      f: "resolver",
+      g: "andamento",
+      h: "andamento",
+      i: "revisar",
+    });
   });
 
   it("avisa quando o Claude termina, falha ou para esperando alguém", () => {

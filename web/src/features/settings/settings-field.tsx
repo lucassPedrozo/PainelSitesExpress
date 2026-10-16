@@ -49,30 +49,32 @@ export function FieldRow({
         <Label htmlFor={id} className="text-sm font-medium">
           {field.label}
         </Label>
-        {/* O nome da variável, para quem lê o .env; o resto é o que o campo
-            exige e quando vale. */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground">
-          <code className="font-mono">{field.key}</code>
-          {field.required && <span>obrigatório</span>}
-          {field.restart && (
-            <span
-              className={cn("inline-flex items-center gap-0.5", field.pendingRestart && "text-warning")}
-              title="O painel lê este valor só ao iniciar: a mudança vale depois de reiniciar."
-            >
-              <RotateCw className="size-3" />
-              {field.pendingRestart ? "reinicie para valer" : "vale ao reiniciar"}
-            </span>
-          )}
-        </div>
+        {/* O que o campo exige e quando vale, escrito: a explicação de
+            "reiniciar" morava num `title`, que no toque nunca aparece. */}
+        {(field.required || field.restart) && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground">
+            {field.required && <span>obrigatório</span>}
+            {field.restart && (
+              <span className={cn("inline-flex items-center gap-1", field.pendingRestart && "text-warning")}>
+                <RotateCw className="size-3 shrink-0" aria-hidden />
+                {field.pendingRestart ? "gravado; reinicie o painel para valer" : "vale depois de reiniciar o painel"}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="min-w-0 space-y-1.5">
         <Control id={id} field={field} draft={draft} error={error} onChange={onChange} />
-        {(error ?? field.help) && (
-          <p className={cn("max-w-prose text-xs", error ? "text-destructive" : "text-muted-foreground")}>
-            {error ?? field.help}
-          </p>
-        )}
+        {/* A ajuda (ou o erro) e, discreto no fim dela, o nome da variável no
+            .env — para quem lê o arquivo. Sob o rótulo, ele competia com o
+            nome do campo. */}
+        <p className={cn("max-w-prose text-xs", error ? "text-destructive" : "text-muted-foreground")}>
+          {(error ?? field.help) && <>{error ?? field.help} </>}
+          <code className="rounded bg-muted px-1 font-mono text-2xs whitespace-nowrap text-muted-foreground">
+            {field.key}
+          </code>
+        </p>
       </div>
     </div>
   );
@@ -221,8 +223,7 @@ function SecretControl({
           />
           {field.set && (
             <Button
-              variant="ghost"
-              size="sm"
+              variant="outline"
               onClick={() => {
                 setTrocando(false);
                 onChange({ ...draft, replacement: "" });

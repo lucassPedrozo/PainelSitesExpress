@@ -18,7 +18,7 @@ import { get, request, send } from "./http";
  * `refinar` são as rodadas depois do site escrito: quem critica é uma sessão
  * que não o escreveu, e quem refina é a que escreveu.
  */
-export type ClaudeRequestType = "analisar" | "cliente" | "ajuste" | "continuar" | "criticar" | "refinar";
+export type ClaudeRequestType = "analisar" | "cliente" | "ajuste" | "continuar" | "criticar" | "refinar" | "edicao";
 
 /** Os níveis do `--effort` do Claude Code, do mais raso ao mais fundo. */
 export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";

@@ -31,6 +31,9 @@ import { criarMotor, estadoDoPacote } from "./motor.js";
 import { arquivosDoSite, conferirSaida, dependenciasDoTemplate, EnvioBloqueado } from "./publish.js";
 import { Fila } from "./queue.js";
 import { caminhosDoMotor } from "./workspace.js";
+import { criarEdicaoLivre } from "./edicao/executar.js";
+import { criarGit } from "./edicao/git.js";
+import * as memoria from "../../store/repo-edits.js";
 
 /**
  * O motor Claude dentro do painel: liga o pacote do motor, o executor do
@@ -52,8 +55,10 @@ import { caminhosDoMotor } from "./workspace.js";
  * As rotas (`routes.js`) só traduzem HTTP para as funções daqui.
  */
 
+/** Quantos sites nascem ao mesmo tempo quando as Configurações não dizem. */
+const SITES_JUNTOS = 3;
 /** Quantos ajustes rodam ao mesmo tempo quando as Configurações não dizem. */
-const AJUSTES_JUNTOS = 2;
+const AJUSTES_JUNTOS = 5;
 /** De quantas execuções já terminadas o log continua à mão da tela. */
 const LOGS_GUARDADOS = 4;
 
@@ -161,7 +166,9 @@ export function caminhosProtegidos({ segredos, dataDir, caminhos, listar = readd
  *   areaDeAprovacao?: { configurada: () => boolean, publicar: typeof publishDevAreaNow,
  *     acompanhar: typeof followDevArea },
  *   log?: (linha: string) => void,
+ *   git?: import("./edicao/git.js").GitDaEdicao,
  * }} [dependencias]
+ *   `git`: o Git da edição livre; os testes trocam o GitHub por um repositório local.
  *   Tudo tem padrão de produção; os testes trocam o que precisam — o motor
  *   por um de mentira, o `claude` pelo falso (via `lerConfig().bin`).
  */
@@ -177,6 +184,7 @@ export function criarServicoClaude({
   github = { conta: runtimeConfig, config: githubConfig, getRepository, createOrgRepository, commitSite },
   areaDeAprovacao = { configurada: isDevAreaConfigured, publicar: publishDevAreaNow, acompanhar: followDevArea },
   log = (linha) => console.error(linha),
+  git: gitDado = null,
 } = {}) {
   const dirMotor = lerConfig().engineDir;
   const caminhos = caminhosDoMotor({ dataDir, dirMotor });
@@ -262,6 +270,41 @@ export function criarServicoClaude({
         if (/^[\w.-]+$/.test(arquivo)) rmSync(path.join(caminhos.execucoes, arquivo), { force: true });
       }
     },
+  });
+
+  /* ---------------------------------------------------------------- *
+   * A edição livre: ajustes pelo Claude em sites de repositório
+   * ---------------------------------------------------------------- */
+
+  /** Onde ficam os rascunhos de imagem dos pedidos de ajuste de um repositório. */
+  const dirDosAnexosDaEdicao = (/** @type {string} */ repo) =>
+    path.join(caminhos.dados, "edicao-anexos", repo.replace(/[^A-Za-z0-9._-]+/g, "--"));
+
+  const gitDaEdicao = gitDado ?? criarGit({ token: () => github.conta().githubToken ?? "", base });
+  const edicao = criarEdicaoLivre({
+    executor,
+    caminhos,
+    git: gitDaEdicao,
+    // Com o clone como pasta de trabalho: o resto da pasta de dados (o banco,
+    // o motor, os outros clones) fica de fora, além dos segredos do painel.
+    protegidosPara: (dir) => {
+      const chave = (base().GOOGLE_CREDENTIALS_PATH ?? "").trim();
+      return caminhosProtegidos({
+        segredos: [
+          envPath,
+          path.join(config.projectRoot, "server", ".env"),
+          chave ? (path.isAbsolute(chave) ? chave : path.join(config.projectRoot, chave)) : null,
+        ],
+        dataDir,
+        caminhos: { ...caminhos, trabalho: dir },
+      });
+    },
+    segredosNomeados: () => segredosNomeados(),
+    escolhas: () => ({ modelo: lerConfig().model, esforco: lerConfig().effort, bin: lerConfig().bin }),
+    ambienteBase: base,
+    // Vazio em produção; os testes passam por aqui o cenário do claude falso.
+    ambienteExtra,
+    dirDosAnexos: dirDosAnexosDaEdicao,
   });
 
   /**
@@ -372,9 +415,13 @@ export function criarServicoClaude({
       const emOutroPainel = executor.execucaoEmAndamento();
       await registro.interruptRunningClaudeRuns((run) => Boolean(emOutroPainel && emOutroPainel.pid === run.pid));
 
+      await memoria.interruptRunningRepoEdits();
+
       const nova = new Fila({
         iniciar: (pedido, deps) =>
-          executor.iniciarExecucao(pedido, {
+          pedido.tipo === "edicao"
+            ? iniciarEdicao(/** @type {any} */ (pedido), deps)
+            : executor.iniciarExecucao(pedido, {
             ...deps,
             // Quem decide o que roda junto é a fila.
             aoLado: true,
@@ -386,7 +433,12 @@ export function criarServicoClaude({
           }),
         salvos: await registro.loadClaudeQueue(),
         salvar: (itens) => registro.saveClaudeQueue(itens),
-        vagas: () => lerConfig().parallelAdjustments ?? AJUSTES_JUNTOS,
+        vagas: () => {
+          const cfg = lerConfig();
+          return { criacoes: cfg.parallelSites ?? SITES_JUNTOS, ajustes: cfg.parallelAdjustments ?? AJUSTES_JUNTOS };
+        },
+        // O passo seguinte do site entra na fila antes de a vaga dele passar a outro.
+        seguir: (fim) => seguirSite(fim),
       });
       nova.on("evento", (evento, item) => {
         if (evento.etapa) etapas.set(item.id, evento.etapa);
@@ -646,18 +698,43 @@ export function criarServicoClaude({
   }
 
   /**
+   * O estado do site no motor, como o executor o viu ao decidir o fim da
+   * execução; `null` quando ela não terminou bem ou não mexeu em site.
+   * @param {import("./queue.js").FimDeItem} fim
+   */
+  const estadoAoFim = (fim) => {
+    const r = fim.resultado;
+    return r?.status === "sucesso" && r.slug && fim.item.pedido.tipo !== "analisar" ? (r.projeto ?? null) : null;
+  };
+
+  /**
+   * Chamado pela fila quando uma execução termina, antes de a vaga dela
+   * passar adiante: com pipeline pela frente, o passo seguinte do site entra
+   * na fila já — e na frente de quem ainda não começou. É o que deixa vários
+   * sites nascerem juntos sem que um pare o outro entre as etapas.
+   * @param {import("./queue.js").FimDeItem} fim
+   */
+  async function seguirSite(fim) {
+    const projectId = fim.item.extra?.projectId;
+    const estado = estadoAoFim(fim);
+    if (!projectId || !estado || estado.entregue) return;
+    await encadear(projectId, fim.item, /** @type {string} */ (fim.resultado?.slug), estado);
+  }
+
+  /**
    * O que fazer quando uma execução termina. Se terminou bem e o motor dá o
    * site por entregue, ele entra na lista de sites do projeto e segue para o
-   * GitHub; se ainda há pipeline pela frente, o passo seguinte entra na fila.
-   * Em qualquer caso, o resumo do card é refeito.
+   * GitHub; se ainda há pipeline pela frente, o passo seguinte entra na fila
+   * (por `seguirSite`, que roda junto). Em qualquer caso, o resumo do card é
+   * refeito.
    */
   async function aoTerminar(fim) {
     const projectId = fim.item.extra?.projectId;
     if (!projectId) return;
+    if (fim.item.pedido.tipo === "edicao") return aoTerminarEdicao(projectId, fim);
     const r = fim.resultado;
     const quem = fim.item.extra?.por ?? null;
-    /** O estado do site no motor, como o executor o viu ao decidir o fim da execução. */
-    const estado = r?.status === "sucesso" && r.slug && fim.item.pedido.tipo !== "analisar" ? (r.projeto ?? null) : null;
+    const estado = estadoAoFim(fim);
 
     if (estado?.entregue) {
       // Site entregue: entra na lista de sites do projeto, como os dos outros
@@ -673,7 +750,8 @@ export function criarServicoClaude({
         );
       }
     } else if (estado) {
-      await encadear(projectId, fim.item, r.slug, estado);
+      // O resumo sai com o passo seguinte já na fila.
+      await fim.seguindo;
     }
     await atualizarResumo(
       projectId,
@@ -1028,6 +1106,8 @@ export function criarServicoClaude({
     const item = /** @type {Fila} */ (fila).adicionar(pedido, {
       frase,
       extra: { projectId, por: quem, ...extra },
+      // O passo seguinte de um site em andamento não espera atrás de site novo.
+      primeiro: extra.encadeado === true,
     });
     return itemParaATela(item);
   }
@@ -1065,7 +1145,264 @@ export function criarServicoClaude({
     return { options: escolhasDe(entry), defaults, site: review?.opcoes ?? null };
   }
 
+
+  /* ---------------------------------------------------------------- *
+   * A edição livre: o site, a versão, o pedido e o fim
+   * ---------------------------------------------------------------- */
+
+  const SEM_TOKEN_DO_GITHUB = "Configure o token do GitHub em Configurações → GitHub e publicação: é por ele que o painel lê e envia o site.";
+
+  /**
+   * O site que a edição livre ajusta: o mais recente do projeto, quando ele
+   * mora num repositório do GitHub e não é do motor (esse tem os ajustes dele).
+   * @param {string} projectId
+   * @returns {Promise<{ site: any, repo: string | null, motivo: string | null }>}
+   */
+  async function siteDeRepositorio(projectId) {
+    const lista = (await listGenerations())[projectId] ?? [];
+    const site = lista.at(-1) ?? null;
+    if (!site) return { site: null, repo: null, motivo: "Este projeto ainda não tem site." };
+    if (site.engine === "claude") {
+      return { site, repo: null, motivo: "O site deste projeto foi feito pelo motor Claude: os ajustes dele ficam na aba Claude." };
+    }
+    const repo = site.devArea?.repoFullName ?? site.repoFullName ?? null;
+    if (!repo) {
+      return {
+        site,
+        repo: null,
+        motivo:
+          "O site deste projeto ainda não está num repositório do GitHub. Conecte o projeto ao GitHub no Lovable, ou informe o repositório em “Vincular site existente”.",
+      };
+    }
+    return { site, repo, motivo: null };
+  }
+
+  /** O branch que o Lovable sincroniza: o principal do repositório. @type {Map<string, string>} */
+  const ramos = new Map();
+  async function ramoDe(/** @type {string} */ repo) {
+    const sabido = ramos.get(repo);
+    if (sabido) return sabido;
+    const [owner, name] = repo.split("/");
+    const dados = await github.getRepository(github.config(), { owner, repo: name });
+    if (!dados) throw httpError(404, `O repositório ${repo} não foi encontrado no GitHub (ou o token do painel não o enxerga).`);
+    const ramo = dados.default_branch || "main";
+    ramos.set(repo, ramo);
+    return ramo;
+  }
+
+  /** A última versão lida de cada repositório. @type {Map<string, { em: string, dados: any }>} */
+  const versoes = new Map();
+  /** A leitura em andamento de cada repositório: duas abas abertas leem uma vez. @type {Map<string, Promise<any>>} */
+  const lendo = new Map();
+
+  /** Um ajuste está rodando neste repositório agora? */
+  const repoOcupado = (/** @type {string} */ repo) =>
+    Boolean(fila?.estado().rodandoTodos.some((item) => item.pedido.tipo === "edicao" && /** @type {any} */ (item.pedido).repo === repo));
+
+  /**
+   * A última versão do repositório, alinhando o clone com o GitHub. Com um
+   * ajuste rodando nele, o clone é do Claude: vale a última leitura.
+   * @param {string} repo
+   */
+  async function versaoDe(repo) {
+    if (repoOcupado(repo)) {
+      const guardada = versoes.get(repo);
+      return { ...(guardada?.dados ?? { repo, head: null, last: null, commits: [] }), busy: true, checkedAt: guardada?.em ?? null };
+    }
+    let leitura = lendo.get(repo);
+    if (!leitura) {
+      leitura = (async () => {
+        try {
+          const branch = await ramoDe(repo);
+          const dados = await edicao.versao({ repo, branch });
+          const em = new Date().toISOString();
+          versoes.set(repo, { em, dados });
+          return { ...dados, busy: false, checkedAt: em };
+        } finally {
+          lendo.delete(repo);
+        }
+      })();
+      lendo.set(repo, leitura);
+    }
+    return leitura;
+  }
+
+  /**
+   * A execução de um ajuste de edição livre, pela fila. Antes de mexer no
+   * clone ela espera uma leitura de versão que esteja em andamento.
+   * @param {any} pedido
+   * @param {any} deps
+   */
+  function iniciarEdicao(pedido, deps) {
+    return edicao.iniciar(pedido, {
+      ...deps,
+      esperarLeitura: () => Promise.resolve(lendo.get(pedido.repo)).catch(() => undefined),
+      anteriores: async () => (await memoria.listRepoEdits(pedido.projectId)).filter((item) => item.id !== pedido.edicaoId),
+      aoComecar: ({ runId, base: daBase, branch, modelo, esforco }) =>
+        memoria.patchRepoEdit(pedido.projectId, pedido.edicaoId, {
+          status: "running",
+          startedAt: new Date().toISOString(),
+          runId,
+          base: daBase,
+          branch,
+          model: modelo,
+          effort: esforco,
+        }),
+    });
+  }
+
+  /**
+   * O fim de um ajuste de edição livre: a memória ganha o resultado e, quando
+   * ele foi ao GitHub, o painel acompanha a área de aprovação — o workflow
+   * dela publica sozinho a cada push.
+   * @param {string} projectId
+   * @param {import("./queue.js").FimDeItem} fim
+   */
+  async function aoTerminarEdicao(projectId, fim) {
+    const pedido = /** @type {any} */ (fim.item.pedido);
+    const r = /** @type {any} */ (fim.resultado);
+    const agora = new Date().toISOString();
+    versoes.delete(pedido.repo);
+    if (!r?.edicao) {
+      await memoria.patchRepoEdit(projectId, pedido.edicaoId, {
+        status: "failed",
+        finishedAt: agora,
+        error: executor.filtrar(String(fim.erro ?? r?.mensagem ?? "O ajuste não chegou a rodar.")),
+      });
+      return;
+    }
+    const { fim: estado, base: daBase, commit, resumo } = r.edicao;
+    await memoria.patchRepoEdit(projectId, pedido.edicaoId, {
+      status: estado,
+      finishedAt: agora,
+      durationMs: r.duracaoMs ?? null,
+      runId: r.id,
+      ...(daBase ? { base: daBase } : {}),
+      commit: commit ?? null,
+      summary: resumo ?? null,
+      error: estado === "pushed" || estado === "unchanged" ? null : r.mensagem,
+    });
+    if (estado !== "pushed") return;
+    const lista = (await listGenerations())[projectId] ?? [];
+    const site = [...lista].reverse().find((item) => (item.devArea?.repoFullName ?? item.repoFullName) === pedido.repo);
+    const area = site?.devArea?.state === "retired" ? null : site?.devArea;
+    if (site && area?.repoFullName) {
+      await setGenerationDevArea(projectId, site.id, {
+        state: "publishing",
+        lastRun: { at: agora, status: "pending", runUrl: null, sha: null },
+        detail: null,
+      });
+      areaDeAprovacao.acompanhar(projectId, site.id);
+    }
+  }
+
   return {
+    /* ----- edição livre (sites de repositório) --------------------- */
+
+    /**
+     * A aba "Ajustes" de um projeto: se ele pode receber ajustes pelo Claude,
+     * o repositório, a última versão já lida, o pedido em andamento e a
+     * memória dos ajustes. Não fala com o GitHub.
+     * @param {string} projectId
+     */
+    async edicoes(projectId) {
+      const filaAtual = await pronta();
+      const { repo, motivo } = await siteDeRepositorio(projectId);
+      const semToken = !github.conta().githubToken;
+      const pendente = pendenteDe(projectId);
+      const guardada = repo ? versoes.get(repo) : null;
+      const esperando = filaAtual.estado().esperando;
+      return {
+        available: Boolean(repo) && !semToken,
+        reason: motivo ?? (semToken ? SEM_TOKEN_DO_GITHUB : null),
+        repo,
+        generation: liberacao(),
+        queue: pendente
+          ? {
+              ...itemParaATela(pendente),
+              posicao: pendente.estado === "esperando" ? esperando.findIndex((outro) => outro.id === pendente.id) + 1 : null,
+            }
+          : null,
+        version: guardada ? { ...guardada.dados, busy: repoOcupado(/** @type {string} */ (repo)), checkedAt: guardada.em } : null,
+        edits: await memoria.listRepoEdits(projectId),
+      };
+    },
+
+    /** A última versão do repositório no GitHub, com quem fez as alterações recentes. Não usa o Claude. */
+    async versaoDaEdicao(projectId) {
+      await pronta();
+      const { repo, motivo } = await siteDeRepositorio(projectId);
+      if (!repo) throw httpError(409, /** @type {string} */ (motivo));
+      if (!github.conta().githubToken) throw httpError(409, SEM_TOKEN_DO_GITHUB);
+      try {
+        return await versaoDe(repo);
+      } catch (/** @type {any} */ erro) {
+        if (erro?.expose === true || erro?.status) throw erro;
+        throw httpError(
+          502,
+          `Não foi possível ler o repositório ${repo} no GitHub: ${executor.filtrar(gitDaEdicao.semToken(erro?.message ?? String(erro)))}`,
+        );
+      }
+    },
+
+    /** Pede um ajuste pelo Claude num site de repositório. CONSOME A ASSINATURA. */
+    pedirEdicao: (projectId, corpo, { quem = null } = {}) =>
+      comReserva(projectId, async () => {
+        const texto = typeof corpo?.pedido === "string" ? corpo.pedido.trim() : "";
+        if (!texto) throw httpError(400, "Escreva o que deve mudar no site.");
+        if (texto.length > MAX_CARACTERES_DO_AJUSTE) {
+          throw httpError(400, `O pedido de ajuste tem ${texto.length} caracteres — o limite é ${MAX_CARACTERES_DO_AJUSTE}.`);
+        }
+        const { repo, motivo } = await siteDeRepositorio(projectId);
+        if (!repo) throw httpError(409, /** @type {string} */ (motivo));
+        if (!github.conta().githubToken) throw httpError(409, SEM_TOKEN_DO_GITHUB);
+        exigirDisparo();
+        const branch = await ramoDe(repo);
+        const anexos = await conferirAnexos({ dirDoSite: dirDosAnexosDaEdicao(repo), anexos: corpo?.anexos });
+        const nova = await memoria.createRepoEdit({
+          projectId,
+          repo,
+          request: texto,
+          attachments: anexos?.itens.map((item) => item.nome) ?? [],
+          by: quem,
+        });
+        const pedido = { tipo: "edicao", slug: `repo:${repo}`, repo, branch, pedido: texto, edicaoId: nova.id, projectId, anexos };
+        try {
+          const item = /** @type {Fila} */ (fila).adicionar(/** @type {any} */ (pedido), {
+            frase: `ajuste em ${repo}: ${texto.replace(/\s+/g, " ").slice(0, 140)}`,
+            extra: { projectId, por: quem, edicaoId: nova.id, ...(anexos ? { anexos: anexos.itens.length } : {}) },
+          });
+          const registrada = await memoria.patchRepoEdit(projectId, nova.id, { itemId: item.id, branch });
+          return { item: itemParaATela(item), edit: registrada };
+        } catch (erro) {
+          await memoria.deleteRepoEdit(projectId, nova.id);
+          throw erro;
+        }
+      }),
+
+    /** Guarda uma imagem para o próximo pedido de ajuste do site de repositório. Não usa o Claude. */
+    async anexarNaEdicao(projectId, { rascunho, nome, corpo }) {
+      await pronta();
+      const { repo, motivo } = await siteDeRepositorio(projectId);
+      if (!repo) throw httpError(409, /** @type {string} */ (motivo));
+      return guardarAnexo({ dirDoSite: dirDosAnexosDaEdicao(repo), rascunho, nome, corpo });
+    },
+
+    /** Tira do rascunho uma imagem que a pessoa desistiu de mandar. */
+    async desanexarDaEdicao(projectId, { rascunho, arquivo }) {
+      await pronta();
+      const { repo, motivo } = await siteDeRepositorio(projectId);
+      if (!repo) throw httpError(409, /** @type {string} */ (motivo));
+      await removerAnexo({ dirDoSite: dirDosAnexosDaEdicao(repo), rascunho, arquivo });
+    },
+
+    /** O log legível de um ajuste de edição livre, refeito do stream guardado. */
+    async logDaEdicao(projectId, editId) {
+      const registroDaEdicao = await memoria.getRepoEdit(projectId, String(editId));
+      if (!registroDaEdicao) throw httpError(404, "Ajuste não encontrado neste projeto.");
+      if (!registroDaEdicao.runId) throw httpError(404, "Este ajuste ainda não começou: não há log.");
+      return { lines: executor.lerLog(registroDaEdicao.runId, { raiz: edicao.dirDoClone(registroDaEdicao.repo) }) };
+    },
     caminhos,
     /** Para os testes e para o encerramento do painel. */
     fila: pronta,
@@ -1742,6 +2079,14 @@ export function criarServicoClaude({
     async remover(itemId) {
       const item = (await pronta()).remover(String(itemId));
       if (!item) throw httpError(404, "Esse pedido não está mais esperando na fila.");
+      if (item.pedido.tipo === "edicao") {
+        const pedido = /** @type {any} */ (item.pedido);
+        await memoria.patchRepoEdit(pedido.projectId, pedido.edicaoId, {
+          status: "cancelled",
+          finishedAt: new Date().toISOString(),
+          error: "Tirado da fila antes de começar. Nada foi enviado ao GitHub.",
+        });
+      }
       return { removed: itemParaATela(item) };
     },
 
@@ -1762,6 +2107,23 @@ export function criarServicoClaude({
       // Com o site já criado, vale o passo que o motor indica para ele —
       // continuar, criticar ou refinar. Sem nada pela frente, o "continue o
       // site" traz a recusa do motor, com o motivo. Sem site, vale o pedido de antes.
+      if (item.pedido.tipo === "edicao") {
+        const pedidoDaEdicao = /** @type {any} */ (item.pedido);
+        exigirDisparo();
+        filaAtual.retirarInterrompida(item.id);
+        const novo = filaAtual.adicionar(pedidoDaEdicao, {
+          frase: item.frase,
+          extra: { ...(item.extra ?? {}), por: quem ?? item.extra?.por ?? null },
+        });
+        await memoria.patchRepoEdit(pedidoDaEdicao.projectId, pedidoDaEdicao.edicaoId, {
+          status: "queued",
+          itemId: novo.id,
+          finishedAt: null,
+          error: null,
+        });
+        return { item: itemParaATela(novo) };
+      }
+
       /** @type {any} */
       let pedido = item.pedido;
       /** @type {Record<string, any>} */

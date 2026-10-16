@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Check, Loader2, Plus, Tag as TagIcon } from "lucide-react";
-import type { TagColor } from "@/lib/api";
 import type { TagsController } from "@/features/tags/use-tags";
-import { tagDotClass } from "@/features/tags/tag-colors";
+import { TAG_PALETTE, tagDotClass } from "@/features/tags/tag-colors";
+import { ErrorNotice } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,22 +10,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const PALETTE: TagColor[] = [
-  "slate",
-  "blue",
-  "cyan",
-  "emerald",
-  "amber",
-  "orange",
-  "red",
-  "violet",
-  "pink",
-];
-
 /** Cor sugerida para a próxima tag, girando a paleta. */
-const nextColor = (used: number) => PALETTE[used % PALETTE.length];
+const nextColor = (used: number) => TAG_PALETTE[used % TAG_PALETTE.length];
 
 export function TagPicker({
   controller,
@@ -33,12 +22,19 @@ export function TagPicker({
   onChange,
   trigger,
   align = "start",
+  counts,
 }: {
   controller: TagsController;
   selected: string[];
   onChange: (tagIds: string[]) => void;
   trigger?: React.ReactNode;
   align?: "start" | "center" | "end";
+  /**
+   * Quantos projetos que existem têm cada tag — a conta do filtro. Sem o
+   * mapa, vale o número do banco (`projectCount`); no mapa, uma tag ausente
+   * conta zero.
+   */
+  counts?: Map<string, number>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -59,6 +55,10 @@ export function TagPicker({
     (tag) =>
       tag.name.toLocaleLowerCase("pt-BR") === term.toLocaleLowerCase("pt-BR"),
   );
+  // Criar só com a lista na mão: carregando ou com falha, não dá para saber
+  // se a tag já existe, e o atalho criaria uma repetida.
+  const listaPronta = !controller.loading && !controller.error;
+  const podeCriar = listaPronta && Boolean(term) && !exists;
 
   const toggle = (tagId: string) => {
     onChange(
@@ -97,7 +97,7 @@ export function TagPicker({
       <PopoverTrigger asChild onClick={(event) => event.stopPropagation()}>
         {trigger ?? (
           <Button variant="outline" size="sm">
-            <TagIcon className="size-4" />
+            <TagIcon />
             Tags
           </Button>
         )}
@@ -113,48 +113,70 @@ export function TagPicker({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && term && !exists) void createAndApply();
+              if (event.key === "Enter" && podeCriar) void createAndApply();
             }}
-            placeholder="Buscar ou criar tag..."
-            className="h-8"
+            placeholder="Buscar ou criar tag…"
+            aria-label="Buscar ou criar tag"
           />
         </div>
 
-        <div className="max-h-64 overflow-y-auto p-1">
-          {matches.map((tag) => {
-            const active = selected.includes(tag.id);
-            return (
-              <button
-                key={tag.id}
-                type="button"
-                onClick={() => toggle(tag.id)}
-                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition hover:bg-muted"
-              >
-                <span
-                  className={cn("size-2.5 shrink-0 rounded-full", tagDotClass[tag.color])}
-                />
-                <span className="flex-1 truncate">{tag.name}</span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {tag.projectCount}
-                </span>
-                <Check
-                  className={cn(
-                    "size-4 shrink-0 transition",
-                    active ? "opacity-100" : "opacity-0",
-                  )}
-                />
-              </button>
-            );
-          })}
+        {/* Carregando e falha têm cara própria: antes as duas apareciam como
+            "Nenhuma tag criada", e quem lia achava que não havia. */}
+        {controller.loading ? (
+          <div className="space-y-2 p-3">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-5 w-32" />
+          </div>
+        ) : controller.error ? (
+          <ErrorNotice
+            title="Não foi possível carregar as tags"
+            error={controller.error}
+            onRetry={() => void controller.reload()}
+            className="px-3 py-5"
+          />
+        ) : (
+          <div className="max-h-64 overflow-y-auto p-1">
+            {matches.map((tag) => {
+              const active = selected.includes(tag.id);
+              const count = counts ? (counts.get(tag.id) ?? 0) : tag.projectCount;
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  onClick={() => toggle(tag.id)}
+                  aria-pressed={active}
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition hover:bg-muted"
+                >
+                  <span
+                    aria-hidden
+                    className={cn("size-2.5 shrink-0 rounded-full", tagDotClass[tag.color])}
+                  />
+                  <span className="flex-1 truncate" title={tag.name}>
+                    {tag.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {count}
+                  </span>
+                  <Check
+                    aria-hidden
+                    className={cn(
+                      "size-4 shrink-0 transition",
+                      active ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                </button>
+              );
+            })}
 
-          {matches.length === 0 && !term && (
-            <p className="px-2 py-6 text-center text-sm text-muted-foreground">
-              Nenhuma tag criada ainda.
-            </p>
-          )}
-        </div>
+            {matches.length === 0 && !term && (
+              <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                Nenhuma tag criada ainda.
+              </p>
+            )}
+          </div>
+        )}
 
-        {term && !exists && (
+        {podeCriar && (
           <div className="border-t p-1">
             <button
               type="button"

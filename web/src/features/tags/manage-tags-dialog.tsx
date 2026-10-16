@@ -1,12 +1,17 @@
 import { useState } from "react";
-import { Check, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
+import { Loader2, Plus, Settings2, Tag as TagIcon, Trash2 } from "lucide-react";
 import type { Tag, TagColor } from "@/lib/api";
 import type { TagsController } from "@/features/tags/use-tags";
-import { tagColorLabels, tagDotClass } from "@/features/tags/tag-colors";
+import { nextTagColor, TAG_PALETTE, tagColorLabels, tagDotClass } from "@/features/tags/tag-colors";
+import { noPermission } from "@/features/projects/project-actions";
 import { usePermissions } from "@/lib/permissions";
+import { pluralize } from "@/lib/format";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
+import { EmptyNotice, ErrorNotice } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -19,32 +24,37 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-
-const PALETTE: TagColor[] = [
-  "slate",
-  "blue",
-  "cyan",
-  "emerald",
-  "amber",
-  "orange",
-  "red",
-  "violet",
-  "pink",
-];
 
 export function ManageTagsDialog({
   controller,
   onTagRemoved,
+  open: controlledOpen,
+  onOpenChange,
+  counts,
 }: {
   controller: TagsController;
   /** Permite ao painel limpar a tag excluída dos projetos já carregados. */
   onTagRemoved: (tagId: string) => void;
+  /** Aberto de fora (o menu da página): sem botão próprio. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Quantos projetos que existem têm cada tag — a conta do filtro. O número
+   * do banco (`projectCount`) inclui projetos que já saíram do Drive e
+   * divergia do filtro; sem o mapa, ele continua valendo. No mapa, uma tag
+   * ausente conta zero.
+   */
+  counts?: Map<string, number>;
 }) {
   const { can } = usePermissions();
   const podeOrganizar = can("organizar");
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : ownOpen;
+  const setOpen = controlled ? (value: boolean) => onOpenChange?.(value) : setOwnOpen;
   const [name, setName] = useState("");
   const [color, setColor] = useState<TagColor>("blue");
   const [busy, setBusy] = useState(false);
@@ -58,7 +68,7 @@ export function ManageTagsDialog({
     try {
       await controller.create(label, color);
       setName("");
-      setColor(PALETTE[(PALETTE.indexOf(color) + 1) % PALETTE.length]);
+      setColor(nextTagColor(color));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível criar");
     } finally {
@@ -68,24 +78,32 @@ export function ManageTagsDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {/* O diálogo inteiro cria, renomeia e exclui tags: sem `organizar`
-            não há nada aqui dentro que a chave possa fazer. */}
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={!podeOrganizar}
-          title={
-            podeOrganizar
-              ? undefined
-              : "Esta chave de acesso não tem permissão para organizar projetos"
-          }
-        >
-          <Settings2 className="size-4" />
-          Gerenciar tags
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      {/* O diálogo inteiro cria, renomeia e exclui tags: sem `organizar` não
+          há nada aqui dentro que a chave possa fazer. O botão desligado fica
+          fora do gatilho — o clique no invólucro do motivo abriria o diálogo —,
+          e o motivo vai escrito ao lado. */}
+      {!controlled &&
+        (podeOrganizar ? (
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="sm">
+              <Settings2 />
+              Gerenciar tags
+            </Button>
+          </DialogTrigger>
+        ) : (
+          <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+            <DisabledHint reason={noPermission.organizar}>
+              <Button variant="ghost" size="sm" disabled>
+                <Settings2 />
+                Gerenciar tags
+              </Button>
+            </DisabledHint>
+            <Reason>{noPermission.organizar}</Reason>
+          </span>
+        ))}
+      {/* Corpo rolável: a lista cresce com as tags, e o cabeçalho com o
+          que elas são continua à vista. */}
+      <DialogContent layout="sectioned" className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Gerenciar tags</DialogTitle>
           <DialogDescription>
@@ -95,42 +113,60 @@ export function ManageTagsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-2">
-          <ColorPicker value={color} onChange={setColor} />
-          <Input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && void create()}
-            placeholder="Nome da nova tag"
-          />
-          <Button onClick={() => void create()} disabled={!name.trim() || busy}>
-            {busy ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Plus className="size-4" />
-            )}
-            Criar
-          </Button>
-        </div>
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        <div className="max-h-[45vh] space-y-1 overflow-y-auto">
-          {controller.tags.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Nenhuma tag criada ainda.
-            </p>
-          ) : (
-            controller.tags.map((tag) => (
-              <TagRow
-                key={tag.id}
-                tag={tag}
-                controller={controller}
-                onRemoved={onTagRemoved}
+        <DialogBody className="space-y-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <ColorPicker value={color} onChange={setColor} />
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && void create()}
+                placeholder="Nome da nova tag"
+                aria-label="Nome da nova tag"
               />
-            ))
+              <Button onClick={() => void create()} disabled={!name.trim() || busy}>
+                {busy ? <Loader2 className="animate-spin" /> : <Plus />}
+                Criar
+              </Button>
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+
+          {/* Carregando e falha têm cara própria: antes as duas apareciam
+              como "Nenhuma tag criada", e quem lia achava que não havia. */}
+          {controller.loading ? (
+            <div className="space-y-1">
+              <Skeleton className="h-11 rounded-lg" />
+              <Skeleton className="h-11 rounded-lg" />
+              <Skeleton className="h-11 rounded-lg" />
+            </div>
+          ) : controller.error ? (
+            <ErrorNotice
+              title="Não foi possível carregar as tags"
+              error={controller.error}
+              onRetry={() => void controller.reload()}
+            />
+          ) : controller.tags.length === 0 ? (
+            <EmptyNotice
+              icon={<TagIcon />}
+              title="Nenhuma tag criada ainda"
+              description="Dê um nome e uma cor acima para criar a primeira."
+            />
+          ) : (
+            <ul className="space-y-1">
+              {controller.tags.map((tag) => (
+                <li key={tag.id}>
+                  <TagRow
+                    tag={tag}
+                    count={counts ? (counts.get(tag.id) ?? 0) : tag.projectCount}
+                    controller={controller}
+                    onRemoved={onTagRemoved}
+                  />
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );
@@ -138,10 +174,12 @@ export function ManageTagsDialog({
 
 function TagRow({
   tag,
+  count,
   controller,
   onRemoved,
 }: {
   tag: Tag;
+  count: number;
   controller: TagsController;
   onRemoved: (tagId: string) => void;
 }) {
@@ -203,7 +241,7 @@ function TagRow({
         className="border-transparent bg-transparent px-2 shadow-none hover:border-input focus-visible:border-input focus-visible:bg-card"
       />
       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-        {tag.projectCount} {tag.projectCount === 1 ? "projeto" : "projetos"}
+        {pluralize(count, "projeto")}
       </span>
 
       {confirming ? (
@@ -214,7 +252,8 @@ function TagRow({
             disabled={busy}
             onClick={() => void remove()}
           >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Excluir"}
+            {busy && <Loader2 className="animate-spin" />}
+            Excluir
           </Button>
           <Button variant="outline" size="sm" onClick={() => setConfirming(false)}>
             Cancelar
@@ -260,7 +299,7 @@ function ColorPicker({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-2">
         <div className="grid grid-cols-5 gap-1">
-          {PALETTE.map((color) => (
+          {TAG_PALETTE.map((color) => (
             <button
               key={color}
               type="button"
@@ -273,14 +312,16 @@ function ColorPicker({
               }}
               className="grid size-7 place-items-center rounded-md transition hover:bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             >
+              {/* A cor marcada ganha um anel no tom do texto, e não um
+                  "check" branco: o anel lê bem sobre qualquer cor e nos dois
+                  temas. */}
               <span
                 className={cn(
-                  "grid size-4 place-items-center rounded-full",
+                  "size-4 rounded-full",
                   tagDotClass[color],
+                  color === value && "ring-2 ring-foreground ring-offset-2 ring-offset-popover",
                 )}
-              >
-                {color === value && <Check className="size-3 text-white" />}
-              </span>
+              />
             </button>
           ))}
         </div>

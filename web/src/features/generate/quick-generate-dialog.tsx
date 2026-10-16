@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
+  Ban,
   CheckCircle2,
   Link2,
   Loader2,
@@ -16,26 +17,22 @@ import { useClaudeStatus } from "@/features/claude/use-claude";
 import { pluralize, projectIdentity } from "@/lib/format";
 import { queryKeys } from "@/lib/query";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { EngineChoice, type GenerationEngine } from "./engine-choice";
+import { WorkspaceSelect } from "./generation-form";
 import { quickPlan, type QuickPlan } from "./quick-generate";
 import { LovableReturnDialog } from "./lovable-return-dialog";
 import { useLovableConnection, useWorkspaceChoice } from "./use-lovable";
@@ -96,7 +93,8 @@ export function QuickGenerateDialog({
       onOpenChange={(open) => !running && onOpenChange(open)}
     >
       <DialogContent
-        className="flex max-h-[88vh] flex-col sm:max-w-2xl"
+        layout="sectioned"
+        className="sm:max-w-2xl"
         showCloseButton={!running}
         onInteractOutside={(event) => running && event.preventDefault()}
       >
@@ -169,6 +167,12 @@ function QuickGenerateContent({
     const worker = async () => {
       for (let project = fila.shift(); project; project = fila.shift()) {
         const atual = project;
+        // Projeto criado no painel não tem pasta no Drive: o Lovable não tem de onde
+        // montar o envio, e pedir o pacote só voltaria um 409.
+        if (isPanelProject(atual)) {
+          setRow(atual.id, { status: "blocked", reason: "Criado no painel, sem pasta no Drive: este site se gera pelo Claude." });
+          continue;
+        }
         try {
           const pkg = await queryClient.fetchQuery({
             queryKey: queryKeys.buildPackage(atual.id),
@@ -238,11 +242,11 @@ function QuickGenerateContent({
     setPhase("finished");
     onGenerated();
     if (ok === chosen.length) {
-      toast.success(ok === 1 ? "Site criado no Lovable" : `${ok} sites criados no Lovable`, {
+      toast.success(`${pluralize(ok, "site criado", "sites criados")} no Lovable`, {
         description: "O painel avisa quando cada um ficar pronto.",
       });
     } else {
-      toast.warning(`${ok} de ${chosen.length} sites criados`, {
+      toast.warning(pluralize(chosen.length - ok, "site não foi criado", "sites não foram criados"), {
         description: "Veja na lista o motivo de cada falha.",
       });
     }
@@ -260,13 +264,15 @@ function QuickGenerateContent({
   const prontos = projects.filter((p) => rows[p.id]?.status === "ready");
   const enviados = projects.filter((p) => rows[p.id]?.status === "done").length;
   const todosMarcados = prontos.length > 0 && prontos.every((p) => checked.has(p.id));
+  // O que o rodapé diz ao lado dos botões: a trava, ou a leitura ainda em curso.
+  const rodape = phase === "select" ? (disabledReason ?? (loading ? "Lendo o material no Drive…" : null)) : null;
 
   return (
     <>
       <DialogHeader>
         <div className="flex flex-wrap items-center gap-2">
           <DialogTitle>
-            {batch ? `Gerar ${projects.length} sites` : `Gerar site — ${projectIdentity(single).label}`}
+            {batch ? `Gerar ${pluralize(projects.length, "site")}` : `Gerar site — ${projectIdentity(single).label}`}
           </DialogTitle>
           {engineChoice}
         </div>
@@ -279,143 +285,136 @@ function QuickGenerateContent({
         </DialogDescription>
       </DialogHeader>
 
-      {/* O que acontece depois do clique. Antes a fila dizia só "um depois do
-          outro", e não ficava claro que o painel apenas entrega os projetos ao
-          Lovable — a construção vem depois, lá, e o card mostra o andamento. */}
-      {batch && (
-        <ol className="grid gap-2 rounded-lg border bg-muted/30 p-3 text-xs sm:grid-cols-3">
-          <li className={cn(phase === "running" && "font-medium text-foreground")}>
-            <span className="font-medium">1. Envio ao Lovable</span>
-            <span className="block text-muted-foreground">
-              Um projeto por vez, uns segundos cada. Esta aba precisa ficar aberta
-              só até esta etapa terminar.
-            </span>
-          </li>
-          <li className={cn(phase === "finished" && "font-medium text-foreground")}>
-            <span className="font-medium">2. Construção no Lovable</span>
-            <span className="block text-muted-foreground">
-              Todos ao mesmo tempo, lá. O card de cada projeto mostra a fase e o
-              tempo — pode fechar este diálogo.
-            </span>
-          </li>
-          <li>
-            <span className="font-medium">3. Aviso de pronto</span>
-            <span className="block text-muted-foreground">
-              O painel avisa quando cada site termina ou para esperando resposta.
-              Depois, conecte-o ao GitHub no Lovable.
-            </span>
-          </li>
-        </ol>
-      )}
+      <DialogBody className="space-y-4">
+        {/* O que acontece depois do clique. Antes a fila dizia só "um depois do
+            outro", e não ficava claro que o painel apenas entrega os projetos ao
+            Lovable — a construção vem depois, lá, e o card mostra o andamento. */}
+        {batch && (
+          <ol className="grid gap-2 rounded-lg border bg-muted/30 p-3 text-xs sm:grid-cols-3">
+            <li className={cn(phase === "running" && "font-medium text-foreground")}>
+              <span className="font-medium">1. Envio ao Lovable</span>
+              <span className="block text-muted-foreground">
+                Um projeto por vez, uns segundos cada. Esta aba precisa ficar aberta
+                só até esta etapa terminar.
+              </span>
+            </li>
+            <li className={cn(phase === "finished" && "font-medium text-foreground")}>
+              <span className="font-medium">2. Construção no Lovable</span>
+              <span className="block text-muted-foreground">
+                Todos ao mesmo tempo, lá. A linha de cada projeto mostra a fase e o
+                tempo — pode fechar este diálogo.
+              </span>
+            </li>
+            <li>
+              <span className="font-medium">3. Aviso de pronto</span>
+              <span className="block text-muted-foreground">
+                O painel avisa quando cada site termina ou para esperando resposta.
+                Depois, conecte-o ao GitHub no Lovable.
+              </span>
+            </li>
+          </ol>
+        )}
 
-      {batch && prontos.length > 0 && phase === "select" && (
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Checkbox
-            checked={todosMarcados}
-            onCheckedChange={(value) =>
-              setChecked(value === true ? new Set(prontos.map((p) => p.id)) : new Set())
-            }
-          />
-          Marcar todos os prontos
-        </label>
-      )}
+        {!lovable.connected && lovable.status && (
+          <Alert variant="warning">
+            <Link2 />
+            <AlertTitle>O painel não está conectado ao Lovable</AlertTitle>
+            <AlertAction className="flex gap-1">
+              <Button size="sm" variant="outline" onClick={() => void lovable.connect()}>
+                Conectar
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void lovable.refresh()}>
+                Conferir
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
 
-      <ul className="-mx-1 min-h-0 flex-1 divide-y overflow-y-auto rounded-md border">
-        {projects.map((project) => (
-          <QueueRow
-            key={project.id}
-            project={project}
-            row={rows[project.id] ?? { status: "loading" }}
-            selectable={batch && phase === "select"}
-            checked={checked.has(project.id)}
-            onToggle={() => toggle(project.id)}
-          />
-        ))}
-      </ul>
+        {batch && prontos.length > 0 && phase === "select" && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Checkbox
+              checked={todosMarcados}
+              onCheckedChange={(value) =>
+                setChecked(value === true ? new Set(prontos.map((p) => p.id)) : new Set())
+              }
+            />
+            Marcar todos os prontos
+          </label>
+        )}
 
-      <LovableReturnDialog connection={lovable} />
+        <ul className="divide-y rounded-md border">
+          {projects.map((project) => (
+            <QueueRow
+              key={project.id}
+              project={project}
+              row={rows[project.id] ?? { status: "loading" }}
+              selectable={batch && phase === "select"}
+              checked={checked.has(project.id)}
+              onToggle={() => toggle(project.id)}
+            />
+          ))}
+        </ul>
 
-      {!lovable.connected && lovable.status && (
-        <Alert variant="warning">
-          <Link2 />
-          <AlertTitle>O painel não está conectado ao Lovable</AlertTitle>
-          <AlertAction className="flex gap-1">
-            <Button size="sm" variant="outline" onClick={() => void lovable.connect()}>
-              Conectar
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => void lovable.refresh()}>
-              Conferir
-            </Button>
-          </AlertAction>
-        </Alert>
-      )}
+        <LovableReturnDialog connection={lovable} />
 
-      {phase === "confirm" && (
-        <Alert variant="warning">
-          <Sparkles />
-          <AlertTitle>
-            Isto gasta crédito do Lovable: {pluralize(chosen.length, "criação", "criações")} no
-            workspace {workspaceName}
-          </AlertTitle>
-          {batch && (
-            <AlertDescription>
-              O envio leva uns segundos por projeto; a construção continua no Lovable depois.
-            </AlertDescription>
-          )}
-        </Alert>
-      )}
-      {phase === "running" && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          Enviando ao Lovable: {enviados} de {chosen.length}. Mantenha esta aba
-          aberta até o último ser enviado.
-        </p>
-      )}
-      {phase === "finished" && batch && (
-        <p className="text-sm text-muted-foreground">
-          {enviados} de {chosen.length} enviados. O Lovable está construindo —
-          acompanhe a fase e o tempo de cada um no card. Pode fechar.
-        </p>
-      )}
+        {phase === "confirm" && (
+          <Alert variant="warning">
+            <Sparkles />
+            <AlertTitle>
+              Isto gasta crédito do Lovable: {pluralize(chosen.length, "criação", "criações")} no
+              workspace {workspaceName}
+            </AlertTitle>
+            {batch && (
+              <AlertDescription>
+                O envio leva uns segundos por projeto; a construção continua no Lovable depois.
+              </AlertDescription>
+            )}
+          </Alert>
+        )}
+        {phase === "running" && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Enviando ao Lovable: {enviados} de {pluralize(chosen.length, "site")}. Mantenha esta aba
+            aberta até o último ser enviado.
+          </p>
+        )}
+        {phase === "finished" && batch && (
+          <p className="text-sm text-muted-foreground">
+            Enviados: {enviados} de {pluralize(chosen.length, "site")}. O Lovable está construindo —
+            acompanhe a fase e o tempo de cada um no card. Pode fechar.
+          </p>
+        )}
+      </DialogBody>
 
-      <DialogFooter className="gap-2 sm:justify-between">
-        <div className="flex items-center gap-2">
+      <DialogFooter className="sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
           {lovable.workspaces.length > 1 && phase === "select" && (
-            <Select value={workspaceId} onValueChange={choose}>
-              <SelectTrigger className="w-52 text-xs" aria-label="Workspace do Lovable">
-                <SelectValue placeholder="Workspace" />
-              </SelectTrigger>
-              <SelectContent>
-                {lovable.workspaces.map((workspace) => (
-                  <SelectItem key={workspace.id} value={workspace.id}>
-                    {workspace.name}
-                    {workspace.role !== "owner" && " (colaborador)"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <WorkspaceSelect
+              id="lovable-workspace-rapido"
+              workspaces={lovable.workspaces}
+              value={workspaceId}
+              onChange={choose}
+            />
           )}
-          {phase === "select" && (loading || disabledReason) && (
-            <span className="text-xs text-muted-foreground">
-              {disabledReason ?? "Lendo o material no Drive…"}
-            </span>
-          )}
+          {rodape && <Reason>{rodape}</Reason>}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {phase === "select" && !batch && (
             <Button variant="outline" onClick={() => onReview(single)}>
               Revisar tudo
             </Button>
           )}
           {phase === "select" && (
-            <Button
-              disabled={chosen.length === 0 || Boolean(disabledReason)}
-              onClick={() => setPhase("confirm")}
-            >
-              <Sparkles className="size-4" />
-              {batch ? `Continuar com ${chosen.length} ${chosen.length === 1 ? "site" : "sites"}` : "Gerar site"}
-            </Button>
+            <DisabledHint reason={disabledReason}>
+              <Button
+                disabled={chosen.length === 0 || Boolean(disabledReason)}
+                onClick={() => setPhase("confirm")}
+              >
+                <Sparkles />
+                {batch ? `Continuar com ${pluralize(chosen.length, "site")}` : "Gerar site"}
+              </Button>
+            </DisabledHint>
           )}
           {phase === "confirm" && (
             <>
@@ -423,7 +422,7 @@ function QuickGenerateContent({
                 Voltar
               </Button>
               <Button onClick={() => void run()}>
-                {batch ? `Confirmar e enviar ${chosen.length}` : "Confirmar e gerar"}
+                {batch ? `Confirmar e enviar ${pluralize(chosen.length, "site")}` : "Confirmar e gerar"}
               </Button>
             </>
           )}
@@ -461,23 +460,30 @@ function QueueRow({
       )}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{projectIdentity(project).label}</p>
-        <p
-          className={cn(
-            "text-xs text-muted-foreground",
-            (row.status === "blocked" || row.status === "error" || row.status === "failed") &&
-              "text-destructive",
-          )}
-        >
-          {row.status === "loading" && "Lendo o material no Drive…"}
-          {row.status === "blocked" && row.reason}
-          {row.status === "error" && row.message}
-          {row.status === "failed" && row.message}
-          {row.status === "generating" && "Enviando ao Lovable…"}
-          {row.status === "done" && "Enviado — o Lovable está construindo. O card mostra o andamento."}
-          {plan &&
-            (row.status === "ready" || row.status === "blocked") &&
-            `${pluralize(plan.attachments, "anexo")} + assinatura · ${pluralize(plan.promptChars, "caractere")} de briefing`}
-        </p>
+        {/* Projeto sem envio padrão é aviso, não erro: ele pede a revisão
+            completa. Vermelho fica para o que falhou. */}
+        {row.status === "blocked" ? (
+          <p className="mt-0.5 flex items-start gap-1 text-xs text-muted-foreground">
+            <Ban className="mt-0.5 size-3 shrink-0 text-warning" aria-hidden />
+            {row.reason}
+          </p>
+        ) : (
+          <p
+            className={cn(
+              "text-xs text-muted-foreground",
+              (row.status === "error" || row.status === "failed") && "text-destructive",
+            )}
+          >
+            {row.status === "loading" && "Lendo o material no Drive…"}
+            {row.status === "error" && row.message}
+            {row.status === "failed" && row.message}
+            {row.status === "generating" && "Enviando ao Lovable…"}
+            {row.status === "done" && "Enviado — o Lovable está construindo. O card mostra o andamento."}
+            {plan &&
+              row.status === "ready" &&
+              `${pluralize(plan.attachments, "anexo")} + assinatura · ${pluralize(plan.promptChars, "caractere")} de briefing`}
+          </p>
+        )}
         {plan && row.status === "ready" && plan.warnings.length > 0 && (
           <p className="mt-0.5 flex items-start gap-1 text-xs text-warning">
             <AlertTriangle className="mt-0.5 size-3 shrink-0" />

@@ -345,4 +345,24 @@ describe("store", () => {
         /não encontrada/,
       );
     }));
+
+  it("vincular um site antigo guarda a data de criação no Lovable, e não a do vínculo", () =>
+    silenced(async () => {
+      const store = await freshStore();
+      const antigo = await store.linkGeneration("pasta-1", {
+        id: "lov-antigo",
+        url: "https://lovable.dev/projects/lov-antigo",
+        createdAt: "2026-08-24T18:33:48.780Z",
+        by: "Claude",
+      });
+      assert.equal(antigo.createdAt, "2026-08-24T18:33:48.780Z");
+      assert.ok(antigo.linkedAt > antigo.createdAt);
+      assert.equal(antigo.linkedBy, "Claude");
+
+      // Sem a data do Lovable (ou com uma no futuro), vale a hora do vínculo.
+      const semData = await store.linkGeneration("pasta-2", { id: "lov-x" });
+      assert.equal(semData.createdAt, semData.linkedAt);
+      const futuro = await store.linkGeneration("pasta-3", { id: "lov-y", createdAt: "2999-01-01T00:00:00.000Z" });
+      assert.equal(futuro.createdAt, futuro.linkedAt);
+    }));
 });

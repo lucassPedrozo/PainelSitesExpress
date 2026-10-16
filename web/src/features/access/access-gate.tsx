@@ -44,11 +44,12 @@ export function AccessGate({ message, onSubmit }: AccessGateProps) {
           </p>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-3">
+          {/* O respiro antes do botão é do formulário, não do botão. */}
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="access-token">Chave de acesso</Label>
               <div className="relative">
-                <KeyRound className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <KeyRound className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                 <Input
                   id="access-token"
                   type="password"
@@ -73,11 +74,11 @@ export function AccessGate({ message, onSubmit }: AccessGateProps) {
             <Button
               type="submit"
               size="lg"
-              className="mt-1 w-full"
+              className="w-full"
               disabled={!token.trim() || isSubmitting}
             >
-              {isSubmitting && <Loader2 className="size-4 animate-spin" />}
-              {isSubmitting ? "Validando..." : "Acessar painel"}
+              {isSubmitting && <Loader2 className="animate-spin" />}
+              {isSubmitting ? "Validando…" : "Acessar painel"}
             </Button>
           </form>
         </CardContent>

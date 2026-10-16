@@ -61,9 +61,10 @@ export function FileCard({
           </p>
         </div>
         <p className="text-xs text-muted-foreground">
-          {file.kind === "folder"
-            ? formatDateTime(file.modifiedTime)
-            : `${formatBytes(file.size)} · ${formatDateTime(file.modifiedTime)}`}
+          {/* Pasta e documento do Google não têm tamanho: só a data, sem um "—" solto. */}
+          {[Number(file.size) > 0 ? formatBytes(file.size) : null, file.modifiedTime ? formatDateTime(file.modifiedTime) : null]
+            .filter(Boolean)
+            .join(" · ") || "—"}
         </p>
       </div>
     </button>

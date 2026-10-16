@@ -10,12 +10,16 @@ import { cn } from "@/lib/utils";
 export function ProjectTags({
   project,
   tags,
+  usage,
   onChange,
   className,
   singleLine = false,
+  quietAdd = false,
 }: {
   project: Project;
   tags: TagsController;
+  /** Em quantos projetos cada tag está; sem isto, vale a conta do banco. */
+  usage?: Map<string, number>;
   onChange: (project: Project, tagIds: string[]) => void;
   className?: string;
   /**
@@ -23,6 +27,12 @@ export function ProjectTags({
    * com o nome das demais no título.
    */
   singleLine?: boolean;
+  /**
+   * Na tabela: com mouse, o "+ Tag" só aparece com a linha sob o ponteiro ou
+   * com o foco nela — em todas as linhas ele pesava mais que as tags. No toque
+   * e no teclado ele continua lá.
+   */
+  quietAdd?: boolean;
 }) {
   const { can } = usePermissions();
   const podeOrganizar = can("organizar");
@@ -50,7 +60,7 @@ export function ProjectTags({
         <TagBadge
           key={tag.id}
           tag={tag}
-          className={singleLine ? "min-w-0 max-w-[9rem]" : undefined}
+          className={singleLine ? "min-w-0 max-w-36" : undefined}
           // Sem permissão a etiqueta continua à vista — ela é informação —,
           // mas perde o "x" que a removeria.
           onRemove={
@@ -66,24 +76,31 @@ export function ProjectTags({
       ))}
       {ocultas.length > 0 && (
         <span
-          className="inline-flex h-6 shrink-0 items-center rounded-md border px-2 text-xs text-muted-foreground"
+          className="inline-flex h-5 shrink-0 items-center rounded-sm border px-1.5 text-2xs text-muted-foreground"
           title={ocultas.map((tag) => tag.name).join(", ")}
         >
           +{ocultas.length}
+          <span className="sr-only">: {ocultas.map((tag) => tag.name).join(", ")}</span>
         </span>
       )}
       {podeOrganizar && (
       <TagPicker
         controller={tags}
+        counts={usage}
         selected={project.tagIds}
         onChange={(tagIds) => onChange(project, tagIds)}
         trigger={
           <button
             type="button"
-            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-dashed px-2 text-xs text-muted-foreground transition-colors hover:border-solid hover:bg-accent hover:text-accent-foreground"
+            aria-label={applied.length === 0 ? "Adicionar tag" : "Adicionar outra tag"}
+            className={cn(
+              "inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-dashed px-1.5 text-2xs text-muted-foreground transition outline-none hover:border-solid hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/60",
+              quietAdd &&
+                "pointer-fine:opacity-0 pointer-fine:group-focus-within/row:opacity-100 pointer-fine:group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+            )}
           >
             <Plus className="size-3" />
-            {applied.length === 0 ? "Adicionar tag" : "Tag"}
+            Tag
           </button>
         }
       />

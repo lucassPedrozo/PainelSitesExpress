@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
@@ -37,7 +37,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/30 duration-100 supports-backdrop-filter:backdrop-blur-[2px] dark:bg-black/60 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-black/30 duration-150 ease-arrive data-closed:duration-100 data-closed:ease-in supports-backdrop-filter:backdrop-blur-[2px] dark:bg-black/60 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -68,9 +68,9 @@ function DialogContent({
         data-slot="dialog-content"
         data-layout={layout}
         className={cn(
-          "group/dialog fixed top-1/2 left-1/2 z-50 w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in",
+          "group/dialog fixed top-1/2 left-1/2 z-50 w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-popover text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 duration-150 ease-arrive data-closed:duration-100 data-closed:ease-in outline-none sm:max-w-sm data-open:animate-in",
           layout === "sectioned"
-            ? "flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0"
+            ? "flex max-h-[94dvh] flex-col gap-0 overflow-hidden p-0"
             : "grid gap-5 p-6",
           " data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
@@ -105,6 +105,21 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
         "group-data-[layout=sectioned]/dialog:shrink-0 group-data-[layout=sectioned]/dialog:border-b group-data-[layout=sectioned]/dialog:px-6 group-data-[layout=sectioned]/dialog:py-4 group-data-[layout=sectioned]/dialog:pr-14",
         className
       )}
+      {...props}
+    />
+  )
+}
+
+/**
+ * O corpo de um diálogo `sectioned`: rola sozinho entre o cabeçalho e o
+ * rodapé, que ficam sempre à vista — a ação principal nunca some no fim de
+ * uma rolagem.
+ */
+function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="dialog-body"
+      className={cn("min-h-0 flex-1 overflow-y-auto px-6 py-5", className)}
       {...props}
     />
   )
@@ -172,6 +187,7 @@ function DialogDescription({
 
 export {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,

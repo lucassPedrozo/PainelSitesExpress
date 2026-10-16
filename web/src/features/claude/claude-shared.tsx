@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { ChevronRight, Lock } from "lucide-react";
 import type { ClaudeRunStatus } from "@/lib/api";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -12,7 +13,51 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { runStatusLabels, runStatusVariants } from "./claude-text";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
+import { generationOffTitle, runStatusLabels, runStatusVariants } from "./claude-text";
+
+/**
+ * Um bloco da aba Claude que se consulta, e não se decide — o briefing de um
+ * site já feito, as execuções. Fechado, mostra o título e uma linha do que há
+ * dentro; o conteúdo continua montado, para um rascunho não se perder ao fechar.
+ */
+export function SectionDisclosure({
+  title,
+  meta,
+  defaultOpen = false,
+  children,
+  className,
+}: {
+  title: string;
+  /** O que há dentro, numa linha: aparece com o bloco fechado. */
+  meta?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className={cn("rounded-xl border", className)}>
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/60"
+        >
+          <ChevronRight
+            className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+            aria-hidden
+          />
+          <span className="shrink-0 text-sm font-semibold">{title}</span>
+          {meta && <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{meta}</span>}
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent forceMount className="border-t px-4 py-4 data-[state=closed]:hidden">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 /** Como a execução terminou — o mesmo selo na lista de execuções e no resumo. */
 export function RunStatusBadge({ status }: { status: ClaudeRunStatus }) {
@@ -20,16 +65,73 @@ export function RunStatusBadge({ status }: { status: ClaudeRunStatus }) {
 }
 
 /**
- * `disabled` desliga o ponteiro do botão, e com isso o `title` dele nunca
- * chegaria à tela — justamente quando mais importa, para dizer por que a ação
- * está fora de alcance. O span recebe o hover no lugar.
+ * O que é do motor e não da decisão — a frase digitada ao Claude, o comando,
+ * o id do modelo, as etapas com chamadas e builds. Continua a um clique, mas
+ * sai do primeiro plano.
  */
-export function HintWhenDisabled({ reason, children }: { reason?: string | null; children: ReactNode }) {
-  if (!reason) return <>{children}</>;
+export function TechnicalDetails({
+  children,
+  label = "Detalhes técnicos",
+  open,
+  className,
+}: {
+  children: ReactNode;
+  label?: ReactNode;
+  /** Começa aberto (uma etapa que falhou, por exemplo). */
+  open?: boolean;
+  className?: string;
+}) {
   return (
-    <span title={reason} className="inline-flex cursor-not-allowed">
+    <details open={open} className={cn("text-xs text-muted-foreground", className)}>
+      <summary className="cursor-pointer rounded-sm outline-none select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60">
+        {label}
+      </summary>
+      <div className="mt-1.5 space-y-1.5">{children}</div>
+    </details>
+  );
+}
+
+/** Um comando ou um texto do motor, como ele é: monoespaçado e rolando por dentro. */
+export function TechnicalCode({ children }: { children: ReactNode }) {
+  return (
+    <pre className="max-h-40 overflow-auto rounded-md border bg-background p-2 font-mono text-2xs leading-relaxed break-all whitespace-pre-wrap">
       {children}
-    </span>
+    </pre>
+  );
+}
+
+/**
+ * A trava de gasto desligada (`CLAUDE_ENABLE_GENERATION` ou
+ * `LOVABLE_ENABLE_GENERATION`): o mesmo aviso em toda tela que gera, com o
+ * motivo que o servidor dá e, quando há, o que ainda dá para fazer.
+ */
+export function GenerationOffNotice({
+  engine = "claude",
+  reason,
+  children,
+  className,
+}: {
+  engine?: keyof typeof generationOffTitle;
+  reason: string | null;
+  /** O que dá para fazer mesmo assim. */
+  children?: ReactNode;
+  className?: string;
+}) {
+  // O motivo do servidor abre com "A geração está desligada.", que o título já
+  // diz: fica só o como ligar.
+  const comoLigar = reason?.replace(/^A geração (pelo \S+ )?está desligada\.\s*/, "") || null;
+  return (
+    <Alert variant="warning" className={className}>
+      <Lock />
+      <AlertTitle>{generationOffTitle[engine]}</AlertTitle>
+      {(comoLigar || children) && (
+        <AlertDescription>
+          {comoLigar}
+          {comoLigar && children ? " " : null}
+          {children}
+        </AlertDescription>
+      )}
+    </Alert>
   );
 }
 

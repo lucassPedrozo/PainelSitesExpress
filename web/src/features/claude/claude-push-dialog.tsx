@@ -21,8 +21,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { HintWhenDisabled } from "./claude-shared";
-import { errorMessage } from "./claude-text";
+import { DisabledHint, Reason } from "@/components/disabled-hint";
+import { ErrorNotice } from "@/components/page-header";
+import { claudeBlock, errorMessage } from "./claude-text";
 import { useClaudeRefresh } from "./use-claude";
 
 /**
@@ -71,11 +72,12 @@ function PushForm({ project, onDone }: { project: Project; onDone: () => void })
       {plano.isPending ? (
         <Skeleton className="h-40 rounded-lg" />
       ) : plano.error || !plano.data ? (
-        <Alert variant="destructive">
-          <AlertTriangle />
-          <AlertTitle>Não foi possível preparar o envio</AlertTitle>
-          <AlertDescription>{errorMessage(plano.error)}</AlertDescription>
-        </Alert>
+        <ErrorNotice
+          title="Não foi possível preparar o envio"
+          error={plano.error}
+          onRetry={() => void plano.refetch()}
+          className="rounded-lg border"
+        />
       ) : (
         <PushBody project={project} plan={plano.data} onDone={onDone} />
       )}
@@ -96,7 +98,7 @@ function PushBody({ project, plan, onDone }: { project: Project; plan: ClaudePus
   const nomeValido = !novo || (REPO_NAME.test(repoName.trim()) && !repoName.trim().endsWith(".git"));
 
   const motivo = !can("publicar")
-    ? "Esta chave de acesso não tem permissão para publicar sites"
+    ? claudeBlock.semPublicar
     : !plan.configured
       ? "O token e a organização do GitHub ainda não estão nas Configurações."
       : plan.problems.length > 0
@@ -183,11 +185,12 @@ function PushBody({ project, plan, onDone }: { project: Project; plan: ClaudePus
           </p>
         )}
 
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg border bg-muted/30 p-3 text-xs">
+        <dl className="grid grid-lead gap-x-4 gap-y-1 rounded-lg border bg-muted/30 p-3 text-xs">
           <dt className="text-muted-foreground">Vai</dt>
           <dd>
-            {pluralize(plan.files, "arquivo")} · {formatBytes(plan.totalBytes)} — o código, os arquivos
-            públicos e o conteúdo do site, com a configuração do template.
+            {pluralize(plan.files, "arquivo")}
+            {plan.totalBytes > 0 && ` · ${formatBytes(plan.totalBytes)}`} — o código, os arquivos públicos e o
+            conteúdo do site, com a configuração do template.
           </dd>
           <dt className="text-muted-foreground">Não vai</dt>
           <dd>O briefing, a direção criativa, o histórico das etapas e o build local.</dd>
@@ -209,15 +212,16 @@ function PushBody({ project, plan, onDone }: { project: Project; plan: ClaudePus
       </div>
 
       <DialogFooter>
+        {motivo && <Reason className="sm:mr-auto">{motivo}</Reason>}
         <Button variant="outline" onClick={onDone} disabled={sending}>
           Cancelar
         </Button>
-        <HintWhenDisabled reason={motivo}>
+        <DisabledHint reason={motivo}>
           <Button disabled={Boolean(motivo) || sending} onClick={() => void enviar()}>
             {sending ? <Loader2 className="animate-spin" /> : <Upload />}
             {sending ? "Validando e enviando…" : novo ? "Criar repositório e enviar" : "Enviar ao GitHub"}
           </Button>
-        </HintWhenDisabled>
+        </DisabledHint>
       </DialogFooter>
     </>
   );

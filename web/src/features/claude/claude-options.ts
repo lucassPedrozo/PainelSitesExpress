@@ -97,8 +97,15 @@ export function choicesSentence(choices: ClaudeRunChoices, defaults: Defaults) {
 export const sameChoices = (a: ClaudeRunChoices, b: ClaudeRunChoices) =>
   a.modelo === b.modelo && a.esforco === b.esforco;
 
+/*
+ * Cada ajuda tem a frase curta, que fica à vista sob o campo, e a longa, que
+ * abre no "?" ao lado do rótulo: seis parágrafos fixos empurravam o botão de
+ * gerar para o fim de várias telas de rolagem.
+ */
+export const MODEL_HINT = "Quem escreve o briefing, o site e os ajustes.";
 export const MODEL_HELP =
   "Quem escreve o briefing, o site e os ajustes. Um modelo mais capaz resolve melhor o desenho e o texto, e consome mais da assinatura.";
+export const EFFORT_HINT = "Quanto o Claude pensa antes de escrever.";
 export const EFFORT_HELP =
   "Quanto o Claude pensa antes de escrever. Mais esforço dá um site mais bem resolvido; cada execução demora mais e consome mais da assinatura.";
 
@@ -154,6 +161,7 @@ export const levelHelp = (levels: Level[], value: string | null, padrao: string)
 
 export const roundsLabel = (rodadas: number) => pluralize(rodadas, "rodada");
 
+export const ROUNDS_HINT = "Cada rodada deixa o site melhor e leva mais tempo.";
 export const ROUNDS_HELP =
   "Depois de pronto, o site é criticado por uma conversa que não o escreveu e refinado por quem o escreveu. Cada rodada deixa o site melhor e leva mais tempo.";
 
@@ -170,8 +178,9 @@ export const routeChoiceHelp = (escolher: boolean) =>
     ? "A criação para depois da direção criativa: você vê as três rotas propostas e aprova a escolhida ou pede outra."
     : "O site segue direto com a rota que o Claude escolher, sem parar para aprovação.";
 
+export const REFERENCES_HINT = "Sites públicos que o cliente admira: servem de norte, sem cópia.";
 export const REFERENCES_HELP =
-  "Sites que o cliente admira. A direção criativa os vê fotografados e usa como norte, sem copiar.";
+  "Sites que o cliente admira. A direção criativa os vê fotografados e usa como norte, sem copiar. Só entram sites públicos da internet.";
 
 /** As opções do site como a tela as edita: os links das referências num texto, um por linha. */
 export type SiteOptionsDraft = Omit<ClaudeSiteOptions, "referencias"> & { links: string; notas: string };
@@ -213,6 +222,27 @@ export function siteOptionsProblem(draft: SiteOptionsDraft): string | null {
     return `As notas das referências têm ${referencias.notas.length.toLocaleString("pt-BR")} caracteres; o limite é ${MAX_NOTAS.toLocaleString("pt-BR")}.`;
   }
   return null;
+}
+
+/**
+ * Quantas das opções que a revisão guarda em "Opções avançadas" saíram do
+ * padrão: com alguma, o bloco abre sozinho — ninguém gera um site sem ver
+ * uma escolha que não é a de sempre.
+ */
+export function advancedOptionsChanged(draft: SiteOptionsDraft): number {
+  const padrao = siteOptionsDraft(null);
+  return [
+    draft.rodadas !== null,
+    draft.escolher_rota !== null,
+    draft.direcao_de_arte !== null,
+    draft.movimento !== null,
+    draft.multiplas_paginas !== padrao.multiplas_paginas,
+    draft.banco_de_imagens !== padrao.banco_de_imagens,
+    draft.skills.length > 0,
+    draft.links.trim() !== "",
+    draft.notas.trim() !== "",
+    draft.observacoes.trim() !== "",
+  ].filter(Boolean).length;
 }
 
 /** As opções do rascunho são as mesmas que estão gravadas? A ordem das skills não conta. */

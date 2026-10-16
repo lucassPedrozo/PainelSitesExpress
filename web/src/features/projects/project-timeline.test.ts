@@ -100,11 +100,11 @@ describe("projectTimeline", () => {
       "Link enviado ao cliente",
       "Publicação no domínio configurada",
       "Publicação disparada",
-      "Site no ar em padaria.com.br",
+      "Site no ar no domínio",
     ]);
 
     const eventos = projectTimeline(project);
-    const gerado = eventos.find((event) => event.icon === "generated")!;
+    const gerado = eventos.find((event) => event.icon === "lovable")!;
     expect(gerado.by).toBe("Ana");
     expect(gerado.byMissing).toBe(false);
     expect(gerado.detail).toBe("Padaria · 3 anexos · Agência");
@@ -232,7 +232,7 @@ describe("timelineSummary", () => {
     expect(resumo.spans.map((span) => [span.label, formatSpan(span.ms)])).toEqual([
       ["Do recebimento à geração", "3 dias 3 h"],
       ["Da geração ao envio ao cliente", "1 dia 3 h"],
-      ["Do recebimento à última publicação", "10 dias"],
+      ["Do recebimento ao ar", "10 dias"],
     ]);
   });
 

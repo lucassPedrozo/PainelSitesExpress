@@ -522,3 +522,361 @@ O vocabulário do produto usa "publicação" para a etapa; a seção se chama
 "Deploy", com "Publicar/publicação" em todas as ações dentro dela. Se preferir
 "Publicação" como nome da seção, é uma troca de rótulo no `app-header.tsx` e
 em três textos que apontam para "a aba Deploy".
+
+---
+
+## Padronização da interface (14/10/2026)
+
+Pedido: padronizar a interface inteira a partir de uma referência visual da tela
+Projetos (direção, não especificação de dados), para que cada tela responda *o
+que está acontecendo e o que eu faço agora* e mostre só informação correta,
+completa e útil. A proposta (fase 1) foi aprovada com as seis recomendações e as
+escolhas em aberto; esta seção registra o que foi feito. O sistema resultante
+está em `DESIGN.md`, na raiz.
+
+O comportamento não mudou: travas (`LOVABLE_ENABLE_GENERATION`,
+`CLAUDE_ENABLE_GENERATION`), confirmações, regras de permissão e o filtro do
+log continuam iguais, e nenhum segredo passou a chegar ao navegador. Nenhuma
+dependência nova.
+
+### P1 · Sistema: uma fonte para cada decisão
+
+- **Tokens** (`web/src/index.css`): paleta OKLCH nos dois temas, com um tom por
+  etapa (`stage-*`) e um por estado (`success`, `warning`, `info`,
+  `destructive`), cada um com a versão suave do fundo; `destructive-solid` só
+  para o passo de um projeto com problema. Contraste conferido par a par: texto
+  principal 17:1, apoio 6–7:1, ação 5,6–8:1, selos 4,9–8,6:1. Escala de texto
+  própria (`text-page`, `text-section`, `text-ui`, `text-numeral`, `text-2xs`),
+  raio base de 8 px, moldes de grade com nome (`grid-aside`, `grid-lead`,
+  `grid-icon-row`, `grid-files`, `grid-gantt`, `h-dialog-tall`) e a largura
+  `tabela:` (900 px). Saíram os tokens `chart-*` e `sidebar-*` e os raios
+  2xl–4xl, que nenhuma tela usava.
+- **Etapa** (`features/projects/stage.ts`, com teste): os ~30 estados internos
+  de `project-status.ts` viram 7 etapas (Material, Geração, Link, Cliente,
+  Publicação, No ar, Arquivos), um selo de problema quando há (vermelho para
+  erro, âmbar para parado) e um grupo do "Fazer agora". Selo, contadores,
+  filtro, ordem da lista, Dashboard, Gantt e linha do tempo leem daqui; o
+  botão vem de `next-step.ts`, que ganhou `variant` (preenchido, contornado ou
+  vermelho) e a frase do que acontece.
+- **`cn`** (`lib/utils.ts`): o `cn` lia `text-page`, `text-ui` etc. como cor e,
+  ao lado de um `text-muted-foreground`, descartava um dos dois. Agora ele
+  conhece os degraus próprios, e os componentes de `ui/` importam dali.
+- **Componentes criados**: `PageHeader`, `EmptyState`, `EmptyNotice` e
+  `ErrorNotice` (`components/page-header.tsx`), `SectionCard`, `CounterCard`,
+  `When` (data relativa com a completa no tooltip), `DisabledHint` e `Reason`
+  (o motivo de um controle desligado, escrito), `Field` (saiu do Deploy para
+  `components/`), `DialogBody`; variantes `danger` e `destructive` suave no
+  `Button`, `success`/`warning`/`info` no `Badge` e no `Alert`.
+- **Formatação** (`lib/format.ts`, com teste): uma função de data
+  (`formatWhen`: relativa até 7 dias, absoluta depois), datas inválidas sem
+  derrubar a tela, `pluralize` em todo plural, valores em dólar com vírgula.
+
+### P2 · Projetos
+
+- **Cabeçalho do app**: logo, seções com ícone e sublinhado, uma busca (fora de
+  Projetos ela leva à lista já filtrada), atualizar e o menu de conta (nome,
+  tipo de chave, permissões, chaves de acesso, tema e sair). No celular as
+  seções viram abas sob o cabeçalho.
+- **"Fazer agora"** (`work-now.tsx`): cinco contadores do que depende da equipe
+  e três do que espera o painel ou o cliente; somados, são os Ativos. Cada um
+  filtra a lista. A segunda faixa de números saiu.
+- **Lista** (`project-table.tsx`): tabela única a partir de 900 px — projeto
+  (domínio; o nome só quando é outro), etapa, última atividade, material,
+  próximo passo e um botão — e cartões abaixo disso. A grade de cartões e a
+  alternância grade/tabela saíram. Abas Ativos, No ar e Finalizados; filtros
+  numa linha (`list-filters.tsx`: etapa, tags num menu, ordem); sem paginação.
+- **Coluna lateral**: Fila do Claude só quando há algo nela, e a atividade
+  recente de todos os projetos (`activity-feed.tsx`).
+- **Ações** (`project-actions.tsx`): um botão por linha, o resto no menu "⋯" em
+  grupos; sem permissão, o botão fica desligado e a linha diz por quê.
+- **Tags**: pílula neutra com o ponto da cor (a cor forte fica com o selo); a
+  contagem ao lado de cada tag vem dos projetos carregados.
+
+### P3 · Diálogo do projeto
+
+- Cabeçalho com o projeto, o selo e a frase do próximo passo; a ação principal
+  aparece num lugar só.
+- Aba nova **Resumo** (`project-summary.tsx`): link do cliente, material e
+  publicação no domínio, na ordem de leitura. A aba Arquivos ficou só com os
+  arquivos, sem o bloco fixo que ocupava quase toda a altura. Abas Claude e
+  Linha do tempo como antes.
+- Link do cliente (`client-link.tsx`, `dev-area-steps.ts`): sem "Não
+  verificado" quando não há link, sem "Conferindo…" girando à toa, sem "Pronto
+  para enviar" depois da entrega.
+- Linha do tempo: marcos do Claude, "No ar desde" (primeira publicação) e
+  "Última publicação" com esses nomes, "Do recebimento ao ar".
+- Pré-visualização: setas somem quando não há para onde ir, Google Docs sem
+  tamanho "—", o aviso de carregado não chama `setState` durante o render.
+- Vincular site, Enviar ao GitHub e Ver prompt: corpo com rolagem própria e o
+  que falta escrito ao lado do botão.
+
+### P4 · Geração e motor Claude
+
+- **Lovable**: depois de gerar, o rodapé vira "Fechar" e "Abrir no Lovable" —
+  um segundo clique não gera outro site. A confirmação deixou de dizer que é
+  "a única ação que consome créditos" (responder ao agente também consome).
+  "Desconectar" foi para o menu "⋯"; um contador de caracteres só; o motivo de
+  "Gerar" desligado, escrito. Responder ao agente passou a conferir a
+  permissão `gerar`, que o servidor já exigia.
+- **Briefing do Claude**: modelo e esforço à vista, o resto em "Opções
+  avançadas · N fora do padrão"; "Conferir" e "Gerar site" numa barra que fica
+  à vista durante a revisão. O ensaio manda o mesmo pedido do "Gerar" e o
+  resultado some quando o briefing ou as opções mudam.
+- **Site do Claude**: uma ação principal por vez ("Enviar ao GitHub" com versão
+  pendente, senão "Pedir ajuste"); a tabela de etapas virou "Histórico
+  técnico", que abre sozinho quando a última etapa falhou. Comando, frase
+  digitada, ids e estimativa ficam em "Detalhes técnicos" recolhidos.
+- **Fila do Claude**: botão no cabeçalho de Projetos, cartão na coluna lateral
+  e diálogo; posição real na fila, "Descartar" destrutivo, sem "há NaN s".
+- **Lote**: com um projeto só, a tela é a de um projeto; bloqueado em âmbar,
+  não vermelho; plurais corretos.
+
+### P5 · Deploy
+
+- Falha de leitura aparece como erro com "Tentar novamente", nunca como "0
+  repositórios", "Nenhuma publicação" ou "0 arquivos · —"; os toasts de falha
+  de leitura saíram.
+- O selo "configurado" do seletor vem do servidor (`configuredAt`), não do
+  armazenamento do navegador.
+- Publicações: o autor só aparece quando o disparo é o mesmo envio que está no
+  ar (`deployAuthor`, com teste); estado só no selo.
+- Execuções: resultados do GitHub Actions traduzidos; sem "Parou em…" (a API
+  não informa o passo); a falha mais recente leva ao GitHub.
+- Simulação (dry-run) em "Mais opções"; workflows num cartão recolhido
+  "Detalhes técnicos"; "Salvar configuração", "Publicar agora" e "Limpar
+  workflows" conferem a permissão `publicar` e escrevem o motivo.
+- Diálogo de publicar com o mesmo desenho dos outros: cabeçalho, corpo com
+  rolagem, "Cancelar" ao lado da ação da vez.
+
+### P6 · Dashboard
+
+- As contas são as da tela Projetos: "Sites ativos" é a aba Ativos sem os
+  projetos só de arquivos (que não são site), "Com problema" é o contador
+  Resolver; "Projetos por etapa" usa as mesmas etapas e abre a
+  lista filtrada.
+- A geração conta a partir de quando o material foi para o Claude (ou do
+  clique em Gerar no Lovable); "Foram ao ar" usa a primeira publicação e conta
+  cada domínio uma vez, mesmo com várias coletas.
+- Gantt com as cores das etapas e o selo pequeno; a atividade recente mudou
+  para Projetos.
+
+### P7 · Configurações e acesso
+
+- Cartão "Integrações" no topo, com o estado de cada uma e o que falta. O
+  estado segue o critério do servidor: um GitHub com token e sem organização
+  aparece "Incompleto", não "Configurado".
+- Seções em `SectionCard`; "vale depois de reiniciar o painel" e "obrigatório"
+  escritos, não só no `title`; o aviso de reiniciar saiu do toast de sucesso.
+- Teste do GitHub mostra a validade do token e avisa 14 dias antes de vencer.
+- Erro ao carregar com "Tentar novamente"; a tela de erro de conexão não fixa
+  mais `localhost:3333`.
+- Chaves de acesso: corpo com rolagem, último acesso por `When`, erro separado
+  do vazio. Tags: carregando, erro e vazio distintos; uma paleta só.
+
+### Dados corrigidos
+
+Numeração da proposta (`docs/proposta-padronizacao/README.md`).
+
+1. **Última atividade** — servidor: a atividade do Drive é o `createdTime` mais
+   recente (quando o arquivo entrou na pasta), não o `modifiedTime` do
+   computador do cliente (`drive.js`, `routes/projects.js`). Interface:
+   `last-activity.ts` junta Drive, gerações, link, publicação e Claude, e
+   alimenta a coluna, a ordem e a atividade recente.
+2. **Subpastas** — servidor: `statsForFolder` conta recursivamente (até 4
+   níveis, uma consulta por subpasta, mesmo cache), com teste
+   (`drive-stats.test.js`).
+3. **Dashboard com outra regra** — as duas telas leem `stage.ts`.
+4. **"Aguardando geração" com o Claude gerando** — a geração começa no envio do
+   material ao Claude.
+5. **Duas datas de "no ar"** — "No ar desde" e "Última publicação", com esses
+   nomes, em todas as telas.
+6. **Atividade recente** — filtra pela data do evento e conhece os marcos do
+   Claude.
+7. **Erro mostrado como vazio** — `ErrorNotice` em Projetos, Deploy,
+   Configurações, chaves e tags.
+8. **Autor da publicação** — `deployAuthor`.
+9. **Link do cliente** — estados corrigidos.
+10. **Gerar no Lovable depois de gerar** — rodapé troca; texto da confirmação
+    corrigido.
+11. **"Conferir" do briefing** — usa o mesmo pedido do "Gerar" e some quando
+    algo muda (ver o item em aberto abaixo).
+12. **Permissões** — a tela confere a mesma permissão que o servidor e escreve
+    o motivo.
+13. **Textos quebrados** — plurais por `pluralize`, sem "undefined", "NaN" ou
+    "etapa de etapa", dólar com vírgula, datas inválidas sem quebrar, resultado
+    do GitHub em português, sem `localhost:3333` fixo.
+14. **Contagens divergentes** — tags contadas pelos projetos carregados; estado
+    das integrações pelo critério do servidor; selo "configurado" do servidor;
+    uma data de recebimento no diálogo do projeto.
+
+Servidor: além dos itens 1 e 2, os projetos do painel ganharam `hasSite` (há
+fonte de site na pasta "site"). Sem site, o próximo passo é "Gerar com o
+Claude", e não um passo de publicação (`routes/local-projects.js`, com teste).
+
+### Removido
+
+- Telas e peças substituídas: `project-card.tsx`, `project-list.tsx`,
+  `work-summary.tsx`, `stage-filter.tsx`, `projects-toolbar.tsx`,
+  `date-groups.ts`, `work-queue.ts` (e testes), `project-site.tsx` (e teste),
+  `components/filter-chip.tsx`, `tags/tag-filter-bar.tsx`,
+  `access/panel-identity.tsx`, `components/theme-toggle.tsx` (o tema foi para o
+  menu de conta), `dashboard/phase-color.ts`, `lib/tone.ts`,
+  `components/ui/scroll-area.tsx`.
+- `configuredRepositories` (o selo do navegador), `useErrorToast`, o tipo
+  `failedStep`, o `tagBadgeClass`, o selo "Não salvo" no cabeçalho das seções.
+
+### Correções da revisão visual
+
+Achados nas capturas "depois" e corrigidos antes de fechar:
+
+- Com a lista carregando ou com falha, os contadores do "Fazer agora" e as
+  abas mostravam 0; agora mostram "—" e "Sem a lista, não há o que contar", e
+  a atividade recente não diz "Nada aconteceu ainda" sem dado.
+- Tags espremidas ao lado do material perdiam o nome (sobrava o ponto); agora
+  descem para a linha de baixo.
+- Na aba Claude de um site entregue, "Enviar ao GitHub" aparecia no cabeçalho e
+  no cartão; ficou só no cartão.
+- O aviso de geração desligada repetia a frase do título; ficou só o como ligar.
+- Deploy sem GitHub configurado: o cabeçalho tirou "Reler repositórios" e
+  "GitHub e token" (o aviso já leva às Configurações).
+- Lote do Lovable: projetos criados no painel aparecem bloqueados com o motivo,
+  sem pedir ao servidor um pacote do Drive que não existe (era um 409 no
+  console).
+- Os links das seções ganharam o anel de foco dos outros controles; textos que
+  ainda falavam do "card" do projeto.
+
+### Verificação
+
+- `npm run lint`: nenhum erro; 11 avisos de *fast refresh* (arquivos que
+  exportam um componente e uma constante, como o `button.tsx` do shadcn).
+- `npm run typecheck` (web e servidor): limpo.
+- Testes: servidor 496 passando e 1 pulado; interface 262 passando. O motor não
+  foi tocado.
+- Detector do impeccable sobre `web/src`: nenhum achado.
+- Capturas na instância isolada (porta 3334, dados semeados, motor falso),
+  1440, 1024 e 390 px, claro e escuro: 378 telas — Projetos (abas, filtro,
+  seleção), diálogo do projeto (resumo, arquivos, linha do tempo) em quatro
+  estados, geração e lote, seis estados do Claude, fila, Dashboard, Deploy,
+  Configurações, conta e chaves. Nenhuma tela rola na horizontal a 390 px e
+  nenhum controle visível ficou sem nome acessível.
+- Casos-limite, com a resposta da API interceptada no navegador: lista vazia,
+  um projeto só com nome longo, API respondendo 500, e a ordem do teclado na
+  tela Projetos (pular para o conteúdo, seções, busca, conta, ações da página,
+  contadores, abas).
+- Não vistos na tela: Deploy com repositório configurado e publicações (a
+  instância não tem GitHub) — conferidos pelo código e pelos testes
+  (`publications-card.test.ts`, `publish-target.test.ts`, `validation.test.ts`).
+  Nenhuma ação com custo ou efeito externo foi confirmada.
+
+### Resumo e aba Claude (pedido depois da entrega)
+
+Relato: "a tela de resumo está muito vazia, e a tela do Claude está muito
+poluída… existe muito conteúdo para pouco espaço"; o diálogo podia crescer.
+
+- **Diálogo do projeto**: de 64rem × 90% para até 92rem × 94% da tela
+  (`h-dialog-full`, `max-w-dialog`). As colunas seguem a largura do diálogo
+  (`@container`), então valem também em tela pequena com o diálogo cheio.
+- **Resumo** (`project-summary.tsx`): o caminho até o domínio em seis etapas,
+  com a data de cada uma cumprida e a atual no tom dela (ou do problema); o
+  texto do briefing à vista, rolando por dentro; o site do Claude com as
+  primeiras telas; e, ao lado, o material (tipos de arquivo e as miniaturas das
+  imagens da pasta) e as cinco últimas atividades. Cada bloco leva à aba com o
+  detalhe. O briefing usa a mesma consulta do "Ver prompt" e as miniaturas a
+  mesma lista da aba Arquivos: nenhuma leitura a mais do Drive.
+- **Aba Claude**: no cabeçalho do site, "Validar" e "Fotografar telas" (não
+  gastam); à esquerda o GitHub e o pedido de ajuste, à direita a última crítica
+  com as notas em duas colunas e o parecer encurtado ("Ler o parecer
+  inteiro"); as telas maiores, quatro por linha. Com o site feito, o briefing e
+  as execuções ficam recolhidos, com o estado à vista na linha do título.
+- **Briefing do Claude em revisão**: os campos à esquerda, as fotos e as opções
+  do site à direita.
+- **Corrigido no caminho**: as "Opções avançadas" do briefing apareciam sempre
+  abertas (o `forceMount` do Radix monta e mostra; faltava esconder pelo
+  `data-state`). No celular, o cabeçalho do diálogo espremia o domínio e o selo
+  ao lado do botão, e a aba Claude sumia à direita; agora as ações descem e as
+  abas rolam de lado.
+- Conferido na instância isolada, com uma crítica de rodada 2 semeada, a 1440,
+  1000 e 390 px e no tema escuro; as miniaturas do material foram simuladas,
+  porque o Drive falso não as gera.
+
+### Faixas de data, edição do projeto e o ritmo dos últimos dias (pedido depois da entrega)
+
+- **Faixas de data** voltaram (`date-groups.ts`, que tinha saído com a grade, e o
+  teste dele): Hoje, Ontem, Últimos 7 dias, Últimos 30 dias, o mês e o ano, presas ao
+  topo na tabela e nos cartões. Valem quando a ordem é por data (coleta ou última
+  atividade); a ordem padrão passou a ser **Coleta mais recente**.
+- **Editar o projeto** (substitui "Renomear"): domínio, nome, etapa, data de
+  recebimento, responsável e observação interna. Servidor: `store/project-details.js`,
+  rota `PATCH /api/projects/:id/details` (permissão *organizar*), tudo conferido antes
+  de gravar, com teste (`project-details.test.js`). A lista sai da API com o domínio e
+  a data corrigidos; `details` diz o que foi mexido.
+- **Etapa manual** (decisão do responsável: vale até o próximo fato): seis estados
+  novos (`manual-material`… `manual-no-ar`) com etapa, grupo do "Fazer agora" e
+  botão próprios; o selo leva um lápis e a frase diz quem escolheu e quando. Perde a
+  validade quando `lastFactAt` passa da escolha. Testes em `stage.test.ts`.
+- **Responsável e observação**: na linha e no cartão, no cabeçalho do diálogo, na busca;
+  o responsável vence quem gerou o site no "Por desenvolvedor" do Dashboard.
+- **"Fazer agora"**: os contadores continuam; embaixo, o ritmo dos últimos 7 ou 30 dias
+  (novos — coletas e criados no painel —, gerados, enviados, no ar), calculado por
+  `summarize` do Dashboard, que ganhou `receivedInPanel`, `generated` e `delivered`.
+- **Corrigido no caminho**: a faixa de data ocupava sete colunas com a do material
+  escondida, e o navegador criava uma coluna fantasma que espremia os nomes; agora ela
+  ocupa as colunas visíveis.
+- Removidos: `rename-project-dialog.tsx` e `applyName`/`setProjectName` da interface
+  (a rota `PUT /api/projects/:id/name` continua no servidor).
+
+### Relatório para pagamento (pedido depois da entrega)
+
+Pedido: extrair do Dashboard os sites por etapa ("envio ao cliente", "publicação",
+as duas…) — relatórios usados no pagamento dos desenvolvedores.
+
+- Botão *Relatório para pagamento* no cabeçalho do Dashboard, num diálogo com
+  filtros próprios: etapas (várias, com a contagem de cada uma), desenvolvedor,
+  período opcional pela data de um passo, "Um site por domínio" e "Incluir os
+  finalizados". Os sites e o total por desenvolvedor (com a quebra por etapa)
+  aparecem antes do download; o rodapé diz quantos vão no arquivo.
+- Regras contra pagamento errado, cada uma com teste (`payment-report.test.ts`):
+  etapa e desenvolvedor iguais aos do Dashboard; recoleta do mesmo domínio fora por
+  padrão; finalizados fora por padrão; quem não tem a data do período sai e é contado;
+  etapa escolhida à mão marcada e avisada; campo que o Excel leria como fórmula
+  neutralizado.
+- Planilha: CSV com ";", UTF-8 com a marca e CRLF — abre no Excel em português com os
+  acentos certos. Conferido na instância isolada: baixado pelo navegador, lido de volta.
+- Corrigido no caminho: o bloco de ações do cabeçalho de página não quebrava linha
+  (`shrink-0` sem limite) e, no celular, o Dashboard rolava de lado; agora ele cabe na
+  largura e quebra.
+
+### Seletores, campos, edição em massa e ocultar (pedido depois da entrega)
+
+Relato: "algumas caixas de seleção estão bugadas, assim como os campos de seleção
+que estão com uma borda que acaba deixando o projeto amador".
+
+- **Seletores**: abriam no modo "alinhado ao item" do Radix — a lista por cima do
+  próprio campo, com o item escolhido sobreposto a ele e cortado. Agora abrem embaixo
+  (`position="popper"`, à esquerda, 4 px de distância), com respiro em volta dos
+  itens. Vale para todos os seletores do painel (`components/ui/select.tsx`).
+- **Campos focados**: borda e anel de 2 px na cor do foco a 60% formavam uma moldura
+  dupla escura. Agora a borda escurece e um halo leve (3 px, 15%) aparece — em
+  `input`, `textarea`, `select` e `input-group`. O foco de botão, só no teclado, segue.
+- **Menu de tags**: "Sem tag" ficava numa caixa de cantos arredondados com a borda em
+  cima, e sobrava um vão embaixo; agora um separador e o mesmo desenho dos outros itens.
+- **Edição em massa**: *Editar* na barra de seleção (responsável e etapa).
+- **Ocultar projetos**: menu ⋯ e barra de seleção; aba *Ocultos*; fora dos
+  contadores, do Dashboard e do relatório. Servidor: `hidden` em
+  `store/project-details.js`, com teste.
+- Conferido na instância isolada, com capturas antes e depois de cada controle e o
+  fluxo inteiro (marcar, editar três, ocultar, mostrar de novo) lido de volta na API.
+
+### Em aberto
+
+- **Ensaio do briefing do Claude**: o servidor usa o modelo e o esforço
+  escolhidos no ensaio, mas as opções do site (rodadas, referências) só entram
+  no briefing no "Gerar". A tela avisa quando o ensaio leu a versão gravada.
+  Para o ensaio conferir também as opções, o motor teria de revisar o briefing
+  com elas sem gravar — mudança no pacote do motor, não feita.
+- **Passo em que o deploy falhou**: segue a decisão de backend registrada
+  acima. A tela deixou de prometer o dado; quando a API o enviar, volta a
+  "Parou em…".
+- **Cores e tipografia da Joinvix**: o `DESIGN.md` não cria regras de marca
+  além do logo e do nome até as oficiais serem indicadas.
+- **Seção "Deploy"**: mantido o nome, como recomendado.

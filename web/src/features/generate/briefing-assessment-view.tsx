@@ -30,7 +30,7 @@ export function BriefingAssessment({
             const chip = (
               <Badge
                 variant={item.status === "ok" ? "success" : item.status === "warn" ? "warning" : "outline"}
-                className={cn("h-6 gap-1 font-medium", item.status === "neutral" && "text-muted-foreground")}
+                className={cn(item.status === "neutral" && "text-muted-foreground")}
               >
                 <Icon />
                 {item.label}
@@ -42,7 +42,8 @@ export function BriefingAssessment({
                   <button
                     type="button"
                     className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                    title={item.hint}
+                    // A dica está escrita na lista logo abaixo: o selo só leva até onde se completa.
+                    aria-label={`${item.label}: ir até onde se completa`}
                     onClick={() => onGoTo(item.key)}
                   >
                     {chip}

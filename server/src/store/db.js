@@ -49,10 +49,12 @@ const empty = () => ({
   stageTagsRetired: true,
   generations: {},
   names: {},
+  details: {},
   accessUsers: [],
   publications: {},
   localProjects: [],
   claude: emptyClaude(),
+  repoEdits: {},
 });
 
 /**
@@ -133,6 +135,8 @@ async function load() {
       // Ausentes nos arquivos gravados antes da geração existir.
       generations: parsed.generations ?? {},
       names: parsed.names ?? {},
+      // O que a equipe corrige à mão (store/project-details.js): nasceu depois.
+      details: parsed.details ?? {},
       // Nasceu depois: arquivos antigos não têm a lista.
       accessUsers: Array.isArray(parsed.accessUsers) ? parsed.accessUsers : [],
       publications: parsed.publications ?? {},
@@ -144,6 +148,8 @@ async function load() {
         queue: Array.isArray(parsed.claude?.queue) ? parsed.claude.queue : [],
         runs: Array.isArray(parsed.claude?.runs) ? parsed.claude.runs : [],
       },
+      // A memória dos ajustes pelo Claude em sites de repositório (store/repo-edits.js): nasceu depois.
+      repoEdits: parsed.repoEdits && typeof parsed.repoEdits === "object" ? parsed.repoEdits : {},
     };
 
     // A etiqueta de finalizado nasceu depois das outras: adota a existente pelo

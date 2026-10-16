@@ -23,6 +23,8 @@ export function devAreaSteps(
   area: DevArea,
   previewState: PreviewState,
   editorUrl: string | null,
+  /** O link já foi enviado ao cliente: a etapa final não pede mais o envio. */
+  delivered = false,
 ): DevAreaStep[] {
   const run = area.lastRun;
   const semRepositorio = area.state === "waiting-repo" || !area.repoFullName;
@@ -86,7 +88,7 @@ export function devAreaSteps(
     check = {
       key: "check",
       status: "done",
-      label: "Link conferido — pronto para enviar ao cliente",
+      label: delivered ? "Link conferido e já enviado ao cliente" : "Link conferido — pronto para enviar ao cliente",
     };
   } else if (area.publishedSha && previewState === "dead") {
     check = {
@@ -95,12 +97,23 @@ export function devAreaSteps(
       label: "A pasta não abre",
       detail: "Verifique o link; se continuar fora, publique de novo.",
     };
-  } else if (run?.status === "success") {
+  } else if (run?.status === "success" && area.state === "publishing") {
+    // Logo depois do envio o painel lê a pasta a cada 15 s: aí há algo em
+    // curso de verdade.
     check = {
       key: "check",
       status: "active",
       label: "Conferindo se a pasta tem esta versão",
       detail: area.detail ?? "O painel lê a pasta a cada 15 segundos até a versão nova aparecer.",
+    };
+  } else if (run?.status === "success") {
+    // O envio terminou e ninguém está conferindo agora: antes a etapa girava
+    // sem nada em curso, como se o painel estivesse trabalhando.
+    check = {
+      key: "check",
+      status: "waiting",
+      label: "Conferir o link",
+      detail: area.detail ?? "A pasta ainda não foi aberta pela sonda. Use “Verificar agora”.",
     };
   } else {
     check = {

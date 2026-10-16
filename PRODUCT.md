@@ -37,6 +37,7 @@ Um único lugar para todas as etapas, do briefing ao domínio no ar, com o estad
 
 - Listagem dos projetos com o domínio em primeiro plano, selo de estado e próximo passo; vista "Fazer agora" agrupada pelo que falta fazer; ações em massa.
 - Geração no Lovable (individual e em lote), acompanhamento ao vivo e resposta ao agente quando ele para esperando alguém.
+- Ajustes pelo Claude em sites do Lovable (aba Ajustes): o painel parte da última versão do GitHub, o Claude ajusta, o build é conferido e o painel faz um commit normal — o Lovable recebe pela sincronização dele, então dá para alternar entre os dois. Mostra quem fez a última alteração (Lovable, Claude ou uma pessoa) e guarda a memória dos ajustes pedidos.
 - Geração pelo motor Claude (individual e em lote): o Claude escreve o briefing a partir do material do projeto, uma pessoa revisa, e ele escreve o site. O site gerado passa por rodadas de crítica, feitas por uma sessão que não o escreveu, e de refino; cada passo é uma execução que o painel põe na fila sozinho, e o site só é entregue no fim. Uma execução por vez, numa fila só; log ao vivo, cancelamento, modelo e esforço por projeto, escolha opcional da rota criativa, telas do site, ajuste e envio do site entregue ao GitHub.
 - Publicação por FTP/FTPS: o painel grava secrets e workflows no repositório do site, faz simulação (dry-run) e dispara o deploy; histórico por domínio com link do erro quando falha.
 - Pré-visualização dos arquivos do Drive, tags livres com cor, filtros, busca, ordenação e faixas de data.

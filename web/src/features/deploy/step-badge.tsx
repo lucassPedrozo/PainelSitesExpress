@@ -1,8 +1,12 @@
 import type { ReactNode } from "react";
 
 /**
- * O número do passo. Cada card carrega exatamente um — antes o card de
- * workflows abrigava o "2" e o "3", e a numeração deixava de guiar.
+ * O número do passo. Só aparece quando há dois passos à vista — configurar e
+ * publicar, com o formulário aberto. Sozinho, um "1" não guia nada; por isso
+ * quem decide é a tela, que passa `step` só nesse caso.
+ *
+ * Vai no lugar do ícone do `SectionCard`, com a mesma altura da linha do
+ * título.
  */
 export function StepBadge({ children }: { children: ReactNode }) {
   return (

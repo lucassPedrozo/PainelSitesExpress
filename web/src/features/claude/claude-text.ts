@@ -1,11 +1,28 @@
+import { formatElapsed, formatUsd } from "@/lib/format";
 import type { ClaudeNextStep, ClaudeQueueItem, ClaudeRequestType, ClaudeRunStatus } from "@/lib/api";
+import { noPermission } from "@/features/projects/project-actions";
 
 /*
  * Os nomes que as telas do motor Claude repetem: os pedidos, as situações de
  * uma execução, a duração e a mensagem de um erro da API.
  */
 
-export const semPermissaoDeGerar = "Esta chave de acesso não tem permissão para gerar sites";
+/** O título do aviso de geração desligada, por motor: cada um tem a sua trava. */
+export const generationOffTitle = {
+  claude: "A geração pelo Claude está desligada neste painel",
+  lovable: "A geração pelo Lovable está desligada neste painel",
+} as const;
+
+/**
+ * Por que uma ação do motor está fora de alcance. A mesma frase em toda tela:
+ * antes cada cartão escrevia a sua, e a mesma trava aparecia de vários jeitos.
+ */
+export const claudeBlock = {
+  semPermissao: noPermission.gerar,
+  semPublicar: noPermission.publicar,
+  naFila: "Há um pedido deste projeto na fila do Claude.",
+  desligada: `${generationOffTitle.claude}.`,
+} as const;
 
 /** O pedido, na língua de quem opera. */
 export const requestLabels: Record<ClaudeRequestType, string> = {
@@ -15,6 +32,7 @@ export const requestLabels: Record<ClaudeRequestType, string> = {
   continuar: "Continuação",
   criticar: "Crítica",
   refinar: "Refino",
+  edicao: "Ajuste no repositório",
 };
 
 /**
@@ -134,13 +152,10 @@ export const runStatusVariants: Record<
 export const errorMessage = (err: unknown, fallback = "Tente novamente.") =>
   err instanceof Error && err.message ? err.message : fallback;
 
-/** "3 min 12 s" a partir dos milissegundos de uma execução; `null` sem o dado. */
+/** "3 min 12 s", "1 h 05 min" a partir dos milissegundos de uma execução; `null` sem o dado. */
 export function formatDuration(ms: number | null | undefined) {
-  if (ms === null || ms === undefined) return null;
-  const total = Math.max(0, Math.round(ms / 1000));
-  const minutos = Math.floor(total / 60);
-  const segundos = total % 60;
-  return minutos > 0 ? `${minutos} min ${String(segundos).padStart(2, "0")} s` : `${segundos} s`;
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return null;
+  return formatElapsed(Math.round(ms / 1000) * 1000);
 }
 
 /**
@@ -149,4 +164,4 @@ export function formatDuration(ms: number | null | undefined) {
  * outro custo — por isso o rótulo vai sempre junto.
  */
 export const formatEstimate = (usd: number | null | undefined) =>
-  typeof usd === "number" ? `estimativa do Claude Code: US$ ${usd.toFixed(2)}` : null;
+  typeof usd === "number" && Number.isFinite(usd) ? `estimativa do Claude Code: ${formatUsd(usd)}` : null;

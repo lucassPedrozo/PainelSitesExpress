@@ -11,6 +11,11 @@ export type DateGroup = {
   /** Identidade da faixa — vira `key` da seção e junta os vizinhos iguais. */
   key: string;
   label: string;
+  /**
+   * O nome na margem da lista, onde o espaço é de uma palavra: "7 dias" no
+   * lugar de "Últimos 7 dias". Mês e ano já são curtos e não mudam.
+   */
+  short: string;
 };
 
 const startOfDay = (date: Date) =>
@@ -29,25 +34,21 @@ export function dateGroupOf(date: Date, reference: number): DateGroup {
 
   // Datas à frente do relógio entram em "Hoje": uma pasta nomeada com data
   // futura é erro de digitação, não uma faixa que mereça seção própria.
-  if (days <= 0) return { key: "hoje", label: "Hoje" };
-  if (days === 1) return { key: "ontem", label: "Ontem" };
-  if (days <= 7) return { key: "7d", label: "Últimos 7 dias" };
-  if (days <= 30) return { key: "30d", label: "Últimos 30 dias" };
+  if (days <= 0) return { key: "hoje", label: "Hoje", short: "Hoje" };
+  if (days === 1) return { key: "ontem", label: "Ontem", short: "Ontem" };
+  if (days <= 7) return { key: "7d", label: "Últimos 7 dias", short: "7 dias" };
+  if (days <= 30) return { key: "30d", label: "Últimos 30 dias", short: "30 dias" };
 
   if (date.getFullYear() === now.getFullYear()) {
-    return {
-      key: `mes-${date.getFullYear()}-${date.getMonth()}`,
-      label: monthLabel(date),
-    };
+    const label = monthLabel(date);
+    return { key: `mes-${date.getFullYear()}-${date.getMonth()}`, label, short: label };
   }
 
-  return { key: `ano-${date.getFullYear()}`, label: String(date.getFullYear()) };
+  const year = String(date.getFullYear());
+  return { key: `ano-${year}`, label: year, short: year };
 }
 
 export type DatedGroup<T> = DateGroup & { items: T[] };
-
-/** O `id` da seção de um grupo na lista — é para onde o resumo do topo rola. */
-export const groupAnchor = (key: string) => `grupo-${key}`;
 
 /**
  * Junta os itens já ordenados em faixas contíguas. Depende da ordenação: só

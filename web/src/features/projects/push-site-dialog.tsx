@@ -13,10 +13,13 @@ import { formatBytes, pluralize, projectIdentity } from "@/lib/format";
 import { usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
 import { itemsFromInput, uploadItems } from "@/features/project-files/upload";
+import { Reason } from "@/components/disabled-hint";
+import { noPermission } from "./project-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -57,7 +60,7 @@ export function PushSiteDialog({
 }) {
   return (
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent layout="sectioned" className="sm:max-w-xl">
         {project && (
           <PushSiteForm
             key={project.id}
@@ -118,7 +121,17 @@ function PushSiteForm({
   const nameValid = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name.trim());
   /** Site do motor Claude: enviado como está, não constrói no GitHub. */
   const engineSite = info.data?.engineSite === true;
-  const ready = Boolean(source) && (known || nameValid) && !busy && !engineSite;
+  // O servidor exige `publicar` para criar ou atualizar o repositório: a
+  // tela confere antes, em vez de deixar a pessoa preencher e levar um 403.
+  const canPublish = can("publicar");
+  const ready = Boolean(source) && (known || nameValid) && !busy && !engineSite && canPublish;
+  const falta = !canPublish
+    ? noPermission.publicar
+    : !source && !info.isPending
+      ? "Envie a pasta ou o .zip do site para escolher de onde ele vem."
+      : !known && !nameValid
+        ? "O nome do repositório tem só letras, números, ponto, hífen e sublinhado."
+        : null;
 
   /** Sobe o código e relê as origens; a recém-enviada fica escolhida. */
   const receive = async (files: FileList | null, kind: "folder" | "zip") => {
@@ -202,7 +215,7 @@ function PushSiteForm({
         </DialogDescription>
       </DialogHeader>
 
-      <div className="space-y-5">
+      <DialogBody className="space-y-5">
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">1 · Código do site</legend>
 
@@ -274,11 +287,7 @@ function PushSiteForm({
               size="sm"
               disabled={busy || !canOrganize}
               onClick={() => folderInput.current?.click()}
-              title={
-                canOrganize
-                  ? "Escolha a pasta do projeto no computador. Ela substitui a pasta “site” deste projeto; node_modules e .git não são enviados."
-                  : "Esta chave de acesso não tem permissão para guardar arquivos"
-              }
+              title="Escolha a pasta do projeto no computador. Ela substitui a pasta “site” deste projeto; node_modules e .git não são enviados."
             >
               <FolderUp />
               Enviar a pasta do site
@@ -293,6 +302,7 @@ function PushSiteForm({
               <FileArchive />
               Enviar um .zip
             </Button>
+            {!canOrganize && <Reason className="basis-full">{noPermission.organizar} Enviar arquivos ao projeto fica desligado.</Reason>}
             {upload && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
                 <Loader2 className="size-3 animate-spin" />
@@ -398,9 +408,10 @@ function PushSiteForm({
           </p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
-      </div>
+      </DialogBody>
 
       <DialogFooter>
+        {falta && !engineSite && <Reason className="sm:mr-auto">{falta}</Reason>}
         <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
           Cancelar
         </Button>

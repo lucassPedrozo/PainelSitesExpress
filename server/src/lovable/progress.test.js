@@ -84,6 +84,7 @@ describe("leitura do get_project", () => {
   it("agentFinished e a captura vêm do objeto aninhado; o nome, do nível de cima", () => {
     const raw = {
       name: "SBC Cobranças: Smart Recovery",
+      created_at: "2026-09-08T14:02:11.5Z",
       latest_screenshot_url: "https://shot/topo.png",
       project: { agentFinished: true, screenshotUrl: "https://shot/aninhado.png" },
     };
@@ -91,7 +92,9 @@ describe("leitura do get_project", () => {
       agentFinished: true,
       screenshotUrl: "https://shot/aninhado.png",
       name: "SBC Cobranças: Smart Recovery",
+      createdAt: "2026-09-08T14:02:11.500Z",
     });
+    assert.equal(readProject({ created_at: "não é data" }).createdAt, null);
     assert.equal(readProject({ project: {} }).agentFinished, false);
     assert.equal(readProject({ latest_screenshot_url: "x" }).screenshotUrl, "x");
   });

@@ -21,6 +21,7 @@ const { planSiteFiles, wrapperPrefix, openSiteSource, findSiteSources } = await 
 const { cleanRelativePath, localFileId, parseLocalFileId } = await import("./storage.js");
 const { blobShaOf, commitSite } = await import("../deploy/github/git-data.js");
 const { createApp } = await import("../app.js");
+const { hasSiteSource } = await import("../routes/local-projects.js");
 
 const file = (filePath, size = 10) => ({ path: filePath, size });
 
@@ -243,6 +244,26 @@ describe("API dos projetos do painel", () => {
     assert.deepEqual(doZip.files.map((item) => item.path).sort(), ["package.json", "src/main.tsx"]);
     const main = doZip.files.find((item) => item.path === "src/main.tsx");
     assert.equal((await main.read()).toString(), "export {}");
+  });
+
+  it("diz à lista se há um site entre os arquivos, e relê depois de um envio", async () => {
+    assert.equal(await hasSiteSource(projectId), true);
+
+    const res = await json("POST", "/api/projects", { name: "so-material.com.br" });
+    const { id } = (await res.json()).project;
+    const enviar = (filePath, content) =>
+      fetch(`${base}/api/projects/${id}/files?path=${encodeURIComponent(filePath)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: content,
+      });
+    assert.equal((await enviar("fotos/fachada.jpg", "jpg")).status, 201);
+    // Fotos e textos, nenhum site: o próximo passo é gerar, não enviar ao GitHub.
+    assert.equal(await hasSiteSource(id), false);
+
+    assert.equal((await enviar("site/index.html", "<h1>oi</h1>")).status, 201);
+    assert.equal(await hasSiteSource(id), true);
+    assert.equal((await json("DELETE", `/api/projects/${id}`)).status, 204);
   });
 
   it("apaga arquivo e, por fim, o projeto com tudo dele", async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
-import type { ClaudeAdjustAttachments } from "@/lib/api";
+import type { ClaudeAdjustAttachments, ClaudeAttachment } from "@/lib/api";
 import { removeClaudeAttachment, uploadClaudeAttachment } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -32,12 +32,20 @@ export const attachmentsPayload = (
     ? { draft, items: items.map(({ file, name, use }) => ({ file, name, use })) }
     : undefined;
 
+/** Onde as imagens de um pedido sobem: o ajuste do motor, ou o de um site de repositório. */
+export type AttachmentApi = {
+  upload: (projectId: string, file: File, draft?: string | null) => Promise<ClaudeAttachment>;
+  remove: (projectId: string, draft: string, file: string) => Promise<unknown>;
+};
+
+const doMotor: AttachmentApi = { upload: uploadClaudeAttachment, remove: removeClaudeAttachment };
+
 /**
  * As imagens de um pedido de ajuste. Cada uma sobe ao painel assim que é
  * escolhida — ou colada no texto do pedido — e só segue para o Claude quando
  * o ajuste é pedido.
  */
-export function useAdjustAttachments(projectId: string) {
+export function useAdjustAttachments(projectId: string, api: AttachmentApi = doMotor) {
   const [draft, setDraft] = useState<string | null>(null);
   const [items, setItems] = useState<AdjustAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -71,7 +79,7 @@ export function useAdjustAttachments(projectId: string) {
           continue;
         }
         try {
-          const saved = await uploadClaudeAttachment(projectId, file, draftRef.current);
+          const saved = await api.upload(projectId, file, draftRef.current);
           draftRef.current = saved.draft;
           countRef.current += 1;
           const preview = URL.createObjectURL(file);
@@ -96,7 +104,7 @@ export function useAdjustAttachments(projectId: string) {
     URL.revokeObjectURL(item.preview);
     previews.current.delete(item.preview);
     // A imagem sai da tela na hora; se o painel não a apagar, ela só não é usada.
-    if (draftRef.current) void removeClaudeAttachment(projectId, draftRef.current, item.file).catch(() => {});
+    if (draftRef.current) void api.remove(projectId, draftRef.current, item.file).catch(() => {});
   };
 
   const setUse = (item: AdjustAttachment, use: boolean) =>

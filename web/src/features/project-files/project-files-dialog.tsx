@@ -8,8 +8,8 @@ import { ProjectFilesBrowser, type ProjectTab } from "./project-files-browser";
 export type { ProjectTab };
 
 /**
- * O material da coleta, dentro do painel: arquivos, briefing, tags, link do
- * cliente, a linha do tempo e os atalhos para gerar e publicar.
+ * O projeto por inteiro: o que fazer agora, o resumo (link do cliente,
+ * material, publicação), os arquivos, a linha do tempo e o motor Claude.
  */
 export function ProjectFilesDialog({
   project,
@@ -25,9 +25,8 @@ export function ProjectFilesDialog({
   project: Project | null;
   tags: TagsController;
   /**
-   * Arquivos ou linha do tempo. Mora em quem abre o modal: o menu do card
-   * abre direto na linha do tempo, e o mesmo item, dentro do modal, troca a
-   * aba de um projeto já aberto.
+   * Resumo, arquivos, linha do tempo ou Claude. Mora em quem abre o diálogo:
+   * o menu da lista abre direto na linha do tempo, e "Acompanhar" na do Claude.
    */
   tab: ProjectTab;
   onTabChange: (tab: ProjectTab) => void;
@@ -43,7 +42,9 @@ export function ProjectFilesDialog({
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
       <DialogContent
         layout="sectioned"
-        className="h-[90vh] sm:max-w-[min(1100px,95vw)]"
+        // Quase a tela inteira: o Resumo e a aba Claude se organizam em duas colunas
+        // quando o diálogo passa de ~900px de largura.
+        className="h-dialog-full max-w-dialog sm:max-w-dialog"
         // O foco automático do diálogo iria para o primeiro botão, tirando-o
         // do campo do Share preview que o "Criar link" quer deixar pronto.
         onOpenAutoFocus={(event) => {

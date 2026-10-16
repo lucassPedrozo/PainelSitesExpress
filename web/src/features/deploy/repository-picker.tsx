@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check, ChevronsUpDown, GitBranch, Lock, Unlock } from "lucide-react";
 import type { RepoOption } from "@/lib/api/deploy";
-import { relativeTime } from "@/lib/format";
+import { When } from "@/components/when";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,8 +28,12 @@ type RepositoryPickerProps = {
   selected?: RepoOption;
   loading: boolean;
   invalid?: boolean;
-  /** Repositórios já publicados por este navegador ganham um selo. */
-  configured: Set<string>;
+  /**
+   * Repositórios que o painel já configurou — vem das publicações gravadas no
+   * servidor, não do navegador. Ganham um selo quando o domínio não é
+   * conhecido (com domínio, o domínio já diz).
+   */
+  configured?: Set<string>;
   /**
    * Domínio de cada repositório que o painel já publicou. Os nomes vêm do
    * Lovable ("green-ground-glow") e não dizem de quem é o site; o domínio diz,
@@ -75,16 +79,16 @@ export function RepositoryPicker({
           className="w-full justify-between font-normal"
         >
           <span className="flex min-w-0 items-center gap-2">
-            <GitBranch className="size-4 shrink-0 text-muted-foreground" />
-            <span className="truncate">
+            <GitBranch className="shrink-0 text-muted-foreground" />
+            <span className="truncate" title={selected?.fullName}>
               {selected
                 ? selected.fullName
                 : loading
-                  ? "Carregando repositórios..."
+                  ? "Lendo os repositórios…"
                   : "Selecione um repositório"}
             </span>
           </span>
-          <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -129,15 +133,15 @@ export function RepositoryPicker({
                       // Duas linhas: lado a lado, nome e domínio disputavam a
                       // mesma largura e os dois saíam cortados.
                       <span className="flex min-w-0 flex-col">
-                        <span className="truncate">{repo.name}</span>
+                        <span className="truncate" title={repo.fullName}>{repo.name}</span>
                         <span className="truncate text-xs text-muted-foreground">
                           {domains.get(repo.fullName)}
                         </span>
                       </span>
                     ) : (
                       <>
-                        <span className="truncate">{repo.name}</span>
-                        {configured.has(repo.fullName) && (
+                        <span className="truncate" title={repo.fullName}>{repo.name}</span>
+                        {configured?.has(repo.fullName) && (
                           <Badge variant="secondary" className="shrink-0">
                             configurado
                           </Badge>
@@ -152,7 +156,7 @@ export function RepositoryPicker({
                       esconde aquele check, que já era redundante com o da
                       esquerda. */}
                   <CommandShortcut className="tracking-normal">
-                    {relativeTime(repo.updatedAt)}
+                    <When at={repo.updatedAt} />
                   </CommandShortcut>
                 </CommandItem>
               ))}

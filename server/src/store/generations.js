@@ -61,9 +61,14 @@ export async function recordGeneration(projectId, generation) {
  * aprovação, link do cliente, entrega e publicação no domínio.
  *
  * @param {string} projectId
+ * `createdAt`: quando o site nasceu — a criação do projeto no Lovable, que o
+ * painel consulta ao vincular. Sem ela, vale a hora do vínculo. Um site antigo
+ * vinculado hoje não pode contar como "gerado hoje" no Dashboard nem no
+ * relatório.
+ *
  * @param {{ id: string, url?: string | null, repoFullName?: string | null,
  *   lovableName?: string | null, displayName?: string | null,
- *   by?: string | null, delivered?: boolean }} site
+ *   by?: string | null, delivered?: boolean, createdAt?: string | null }} site
  */
 export async function linkGeneration(projectId, site) {
   const data = await read();
@@ -82,7 +87,8 @@ export async function linkGeneration(projectId, site) {
     workspaceName: null,
     attachments: 0,
     promptChars: 0,
-    createdAt: agora,
+    // Uma data no futuro seria erro de relógio: vale a do vínculo.
+    createdAt: site.createdAt && site.createdAt < agora ? site.createdAt : agora,
     origin: "linked",
     linkedAt: agora,
     linkedBy: site.by ?? null,

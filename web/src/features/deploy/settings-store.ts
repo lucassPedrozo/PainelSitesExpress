@@ -110,10 +110,10 @@ export const saveSettings = (
 
 export const getLastFtpServer = () => readFile().lastFtpServer ?? "";
 
-/** Este navegador já salvou algo para o repositório? */
+/**
+ * Este navegador já salvou algo para o repositório? Serve só para preencher o
+ * formulário: se o repositório está configurado quem diz é o servidor
+ * (`usePublications().configured`), não a memória de uma máquina.
+ */
 export const hasStoredSettings = (repoFullName: string) =>
   Boolean(readFile().repositories?.[repoFullName]);
-
-/** Repositórios que já foram publicados por este navegador. */
-export const configuredRepositories = () =>
-  new Set(Object.keys(readFile().repositories ?? {}));

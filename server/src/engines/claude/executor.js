@@ -260,10 +260,9 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
   };
 
   /**
-   * A assinatura é uma só, e a criação de um site é comparada com os sites
-   * anteriores: por padrão, uma execução de cada vez. A fila pode pôr uma ao
-   * lado de outra (`aoLado`) — os ajustes, que não dependem de nenhum outro
-   * site — porque cada execução tem o seu projeto "atual"
+   * A assinatura é uma só: por padrão, uma execução de cada vez. A fila pode
+   * pôr uma ao lado de outra (`aoLado`) — sites em criação e ajustes, cada um
+   * na sua cota — porque cada execução tem o seu projeto "atual"
    * (`JOINVIXABLE_ATUAL`), e uma não escreve no projeto da outra. Nunca duas
    * no mesmo site, nem ao lado da execução de outro painel.
    *
@@ -302,17 +301,19 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
    * painel sumir.
    *
    * @param {{ comando: import("./command.js").Comando, entrada: string, env: Record<string, string>,
-   *   onLinha: (linha: string) => void, aoIniciar?: (controle: { encerrar(sinal: string): void, vivo(): boolean }) => void }} params
+   *   onLinha: (linha: string) => void, aoIniciar?: (controle: { encerrar(sinal: string): void, vivo(): boolean }) => void,
+   *   cwd?: string }} params `cwd`: a pasta de trabalho do claude — a do motor, a não
+   *   ser na edição livre, em que é o clone do repositório do site
    * @returns {Promise<{ codigo: number | null, erroInicio?: string, stderr: string }>}
    */
-  function rodarClaude({ comando, entrada, env, onLinha, aoIniciar }) {
+  function rodarClaude({ comando, entrada, env, onLinha, aoIniciar, cwd = caminhos.trabalho }) {
     return new Promise((resolve) => {
       let stderr = "";
       let erroInicio;
       let filho;
       try {
         filho = spawn(process.execPath, [GUARDIAO, comando.bin, ...comando.args], {
-          cwd: caminhos.trabalho,
+          cwd,
           env,
           stdio: ["pipe", "pipe", "pipe", "ipc"],
           windowsHide: true,
@@ -778,13 +779,14 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
    * tradução do acompanhamento ao vivo, refeita a partir do stream guardado.
    *
    * @param {string} id
+   * @param {{ raiz?: string }} [opcoesDoLog] `raiz`: a pasta de trabalho da execução, quando não é a do motor
    * @returns {Legivel[]}
    */
-  function lerLog(id) {
+  function lerLog(id, { raiz = caminhos.trabalho } = {}) {
     if (!/^[\w-]+$/.test(id)) return [];
     const arquivo = arquivoDoLog(id);
     if (!existsSync(arquivo)) return [];
-    const formatar = criarFormatador({ raiz: caminhos.trabalho });
+    const formatar = criarFormatador({ raiz });
     const filtro = filtroDaTela();
     /** @type {Legivel[]} */
     const linhas = [];
@@ -932,8 +934,142 @@ export function criarExecutor({ motor, caminhos, opcoes = () => ({}), registrar 
     }
   }
 
+  /* ---------------------------------------------------------------- *
+   * Uma rodada do claude fora do motor (a edição livre)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Roda um `claude -p` numa pasta que não é a do motor, com outro contrato,
+   * e devolve o que ele fez. As mesmas guardas da execução do motor valem
+   * aqui: o login da assinatura (nunca chave de API), nada de MCP, de plugin
+   * do perfil, de ferramenta fora do contrato nem de outra pasta de trabalho,
+   * e o processo que entrega o resultado e não sai é encerrado.
+   *
+   * Não decide sucesso: quem chama confere o que mudou na pasta.
+   *
+   * @param {{
+   *   contrato: import("./command.js").Contrato, comando: import("./command.js").Comando,
+   *   entrada: string, cwd: string, env: Record<string, string>, log: string,
+   *   emitir: (legiveis: Legivel[], bruto?: unknown) => void,
+   *   aoIniciar: (controle: { encerrar(sinal: string): void, vivo(): boolean }) => void,
+   *   aoSessao?: (sessionId: string) => void,
+   *   cancelada: () => boolean,
+   *   esperaDepoisDoResultadoMs?: number,
+   * }} params `log`: o arquivo do stream bruto da execução
+   */
+  async function rodarSessao({ contrato, comando, entrada, cwd, env, log, emitir, aoIniciar, aoSessao, cancelada, esperaDepoisDoResultadoMs }) {
+    const formatar = criarFormatador({ raiz: cwd });
+    const t = {
+      /** @type {any} */ init: undefined,
+      /** @type {any} */ resultado: undefined,
+      ultimoTexto: "",
+      /** @type {string | undefined} */ chaveApi: undefined,
+      /** @type {string | null} */ fora: null,
+      /** @type {string | undefined} */ sessionId: undefined,
+    };
+    /** @type {{ encerrar(sinal: string): void, vivo(): boolean } | undefined} */
+    let controle;
+    /** @type {NodeJS.Timeout | undefined} */
+    let depoisDoResultado;
+    let encerradoDepoisDoResultado = false;
+    appendFileSync(log, `${JSON.stringify({ type: "joinvixable", subtype: "inicio", ts: new Date().toISOString(), comando: comandoTexto(comando) })}\n`);
+    const saida = await rodarClaude({
+      comando,
+      entrada,
+      env,
+      cwd,
+      aoIniciar: (novo) => {
+        controle = novo;
+        aoIniciar(novo);
+      },
+      onLinha: (linha) => {
+        appendFileSync(log, `${linha}\n`);
+        /** @type {any} */
+        let ev;
+        try {
+          ev = JSON.parse(linha);
+        } catch {
+          emitir([{ tipo: "saida", texto: cortar(linha, 300) }], linha);
+          return;
+        }
+        if (typeof ev.session_id === "string" && ev.session_id !== t.sessionId) {
+          t.sessionId = ev.session_id;
+          aoSessao?.(ev.session_id);
+        }
+        if (ev.type === "system" && ev.subtype === "init") {
+          t.init = ev;
+          if (ev.apiKeySource && !SEM_CHAVE.has(String(ev.apiKeySource))) {
+            t.chaveApi = String(ev.apiKeySource);
+            controle?.encerrar("SIGTERM");
+          } else {
+            t.fora = foraDoContrato(ev, { contrato, sites: [], trabalho: cwd });
+            if (t.fora) controle?.encerrar("SIGTERM");
+          }
+        }
+        if (ev.type === "assistant") {
+          for (const bloco of ev.message?.content ?? []) {
+            if (bloco.type === "text" && String(bloco.text).trim()) t.ultimoTexto = String(bloco.text).trim();
+          }
+        }
+        if (ev.type === "result") {
+          t.resultado = ev;
+          clearTimeout(depoisDoResultado);
+          depoisDoResultado = setTimeout(() => {
+            if (!controle?.vivo()) return;
+            encerradoDepoisDoResultado = true;
+            controle.encerrar("SIGTERM");
+          }, esperaDepoisDoResultadoMs ?? ESPERA_DEPOIS_DO_RESULTADO_MS);
+        }
+        emitir(formatar(ev), ev);
+      },
+    });
+    clearTimeout(depoisDoResultado);
+    if (saida.stderr.trim()) {
+      appendFileSync(log, `${JSON.stringify({ type: "joinvixable", subtype: "stderr", ts: new Date().toISOString(), texto: saida.stderr.trim() })}\n`);
+    }
+    const codigo = encerradoDepoisDoResultado && !cancelada() ? 0 : saida.codigo;
+    const final = String(t.resultado?.result ?? "").trim() || t.ultimoTexto;
+    const erroNoResultado = t.resultado ? t.resultado.is_error === true || t.resultado.subtype !== "success" : false;
+
+    /** Por que a rodada não serve, ou `null` quando o claude terminou bem. */
+    let falha = null;
+    if (t.chaveApi) {
+      falha = `O Claude Code informou apiKeySource="${t.chaveApi}": ele usaria uma chave de API, não o login da assinatura. A execução foi interrompida antes de gastar.`;
+    } else if (t.fora) {
+      falha = `O Claude Code abriu fora do contrato do painel (${t.fora}). A execução foi interrompida antes de gastar.`;
+    } else if (saida.erroInicio) {
+      falha = saida.erroInicio;
+    } else if ((erroNoResultado || codigo !== 0) && FALHA_AUTH.test(`${final}\n${saida.stderr}`)) {
+      falha = `${MSG_LOGIN}${final ? ` (${cortar(final, 200)})` : ""}`;
+    } else if (codigo !== 0 || erroNoResultado) {
+      falha = final || saida.stderr.trim().split("\n").pop() || `O claude saiu com o código ${codigo}.`;
+    }
+    return {
+      codigo,
+      falha,
+      final,
+      sessionId: t.sessionId,
+      custoEstimadoUsd: typeof t.resultado?.total_cost_usd === "number" ? t.resultado.total_cost_usd : null,
+      turnos: t.resultado?.num_turns ?? null,
+    };
+  }
+
   return {
     iniciarExecucao,
+    rodarSessao,
+    /** As peças que a edição livre usa do executor: a trava, o filtro da tela, o registro e o arquivo do stream. */
+    travar,
+    filtroDaTela,
+    arquivoDoLog,
+    novoId,
+    emOrdem,
+    registrar: (/** @type {Record<string, any>} */ execucao) =>
+      emOrdem(() =>
+        Promise.resolve()
+          .then(() => registrar(execucao))
+          .catch(() => undefined),
+      ),
+    opcoes,
     execucaoEmAndamento,
     soltarTravaVelha,
     /** Tira de um texto os caminhos desta máquina e os segredos, antes de ele ir à tela. */
