@@ -1,20 +1,21 @@
+import {
+  BUILD_ENV_LINE_PATTERN,
+  DOMAIN_PATTERN,
+  HOST_PATTERN,
+  MAX_BUILD_ENV,
+  MAX_FTP_LOGIN as MAX_LOGIN,
+  MAX_FTP_PASSWORD as MAX_PASSWORD,
+  SERVER_DIR_PATTERN,
+} from "@shared/deploy-rules.js";
 import type { PublicationSettings } from "@/lib/api/deploy";
 import type { ValidationErrors } from "./deploy-types";
 
 /**
- * Espelho dos validadores da API (`server/src/deploy/routes.js`). Sem ele o
- * operador só descobre o campo errado por um toast, depois da ida ao servidor
- * — e pior, sem saber qual dos campos foi recusado.
+ * Espelho dos validadores da API (`server/src/deploy/input.js`): os padrões e
+ * limites são os mesmos, de `shared/deploy-rules.js`. Sem ele o operador só
+ * descobre o campo errado por um toast, depois da ida ao servidor — e pior,
+ * sem saber qual dos campos foi recusado.
  */
-const domainPattern =
-  /^(?!https?:\/\/)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
-const hostPattern = /^(?!https?:\/\/)[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/i;
-const serverDirPattern = /^[a-z0-9._/-]{1,255}$/i;
-const buildEnvLinePattern = /^[A-Z_][A-Z0-9_]*=/i;
-
-const MAX_LOGIN = 200;
-const MAX_PASSWORD = 512;
-const MAX_BUILD_ENV = 16 * 1024;
 
 /** Do campo do formulário para o `id` do controle, para focar o primeiro erro. */
 export const fieldElementId: Record<keyof ValidationErrors, string> = {
@@ -65,13 +66,13 @@ export function validateSettings(
 
   const domain = settings.domain.trim();
   if (!domain) errors.domain = "Informe o domínio.";
-  else if (!domainPattern.test(domain)) {
+  else if (!DOMAIN_PATTERN.test(domain)) {
     errors.domain = "Use apenas o domínio, sem https:// ou caminho.";
   }
 
   const ftpServer = settings.ftpServer.trim();
   if (!ftpServer) errors.ftpServer = "Informe o servidor FTP.";
-  else if (!hostPattern.test(ftpServer)) {
+  else if (!HOST_PATTERN.test(ftpServer)) {
     errors.ftpServer = "Use apenas o host, sem ftp:// ou barra.";
   }
 
@@ -91,7 +92,7 @@ export function validateSettings(
   if (serverDir) {
     if (serverDir.includes("..")) {
       errors.serverDir = 'A pasta remota não pode conter "..".';
-    } else if (!serverDirPattern.test(serverDir)) {
+    } else if (!SERVER_DIR_PATTERN.test(serverDir)) {
       errors.serverDir =
         "Use apenas letras, números, ponto, hífen, barra e sublinhado.";
     }
@@ -118,7 +119,7 @@ export function validateSettings(
         .map((line) => line.trim())
         .find(
           (line) =>
-            line && !line.startsWith("#") && !buildEnvLinePattern.test(line),
+            line && !line.startsWith("#") && !BUILD_ENV_LINE_PATTERN.test(line),
         );
       if (invalid) {
         errors.buildEnv = `Use CHAVE=valor. Linha inválida: "${invalid.slice(0, 40)}".`;

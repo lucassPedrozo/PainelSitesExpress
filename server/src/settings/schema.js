@@ -3,7 +3,7 @@ import { ART_DIRECTION_LEVELS, EFFORT_LABELS, MOTION_LEVELS } from "../../../sha
 import { ESFORCOS, MODELO_INVALIDO, MODELO_VALIDO } from "../engines/claude/command.js";
 import { config } from "../config.js";
 import { isLocalNetworkAddress } from "../security/network.js";
-import { hostPattern } from "../deploy/input.js";
+import { HOST_PATTERN } from "../../../shared/deploy-rules.js";
 import { FREE_TIER_MODELS, isFlashModel } from "../gemini/client.js";
 
 /**
@@ -343,7 +343,7 @@ export const SETTINGS_SCHEMA = [
         label: "Servidor FTP padrão",
         type: "text",
         help: "Pré-preenche o servidor em repositórios novos.",
-        validate: (v) => (hostPattern.test(v.toLowerCase()) ? null : "Informe só o host, sem ftp:// ou caminho."),
+        validate: (v) => (HOST_PATTERN.test(v.toLowerCase()) ? null : "Informe só o host, sem ftp:// ou caminho."),
       },
     ],
   },
@@ -357,7 +357,7 @@ export const SETTINGS_SCHEMA = [
         key: "DEV_AREA_FTP_SERVER",
         label: "Servidor FTP",
         type: "text",
-        validate: (v) => (hostPattern.test(v.toLowerCase()) ? null : "Informe só o host."),
+        validate: (v) => (HOST_PATTERN.test(v.toLowerCase()) ? null : "Informe só o host."),
       },
       { key: "DEV_AREA_FTP_LOGIN", label: "Login FTP", type: "text", validate: (v) => (v.length <= 200 ? null : "Login longo demais.") },
       { key: "DEV_AREA_FTP_PASSWORD", label: "Senha FTP", type: "secret", validate: (v) => (v.length <= 512 ? null : "Senha longa demais.") },
@@ -449,7 +449,7 @@ export const SETTINGS_SCHEMA = [
         restart: true,
         help: "Separados por vírgula. IPs privados, localhost e .local já são aceitos.",
         validate: (v) =>
-          v.split(",").map((h) => h.trim()).filter(Boolean).every((h) => hostPattern.test(h.toLowerCase()))
+          v.split(",").map((h) => h.trim()).filter(Boolean).every((h) => HOST_PATTERN.test(h.toLowerCase()))
             ? null
             : "Hostname inválido na lista.",
       },

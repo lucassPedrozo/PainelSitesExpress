@@ -1,9 +1,19 @@
+import {
+  BUILD_ENV_LINE_PATTERN,
+  DOMAIN_PATTERN,
+  HOST_PATTERN,
+  MAX_BUILD_ENV,
+  MAX_FTP_LOGIN,
+  MAX_FTP_PASSWORD,
+  SERVER_DIR_PATTERN,
+} from "../../../shared/deploy-rules.js";
 import { HttpError } from "../http.js";
 
 /*
  * Validação da entrada — tudo que vem do navegador passa por aqui antes de
- * virar chamada ao GitHub. A interface tem o espelho destas regras em
- * web/src/features/deploy/validation.ts, para avisar antes de enviar.
+ * virar chamada ao GitHub. Os padrões e limites vêm de shared/deploy-rules.js,
+ * os mesmos com que a interface (web/src/features/deploy/validation.ts) avisa
+ * antes de enviar.
  */
 
 /** `auto` deixa o workflow testar FTPS e cair para FTP apenas se necessário. */
@@ -38,13 +48,9 @@ export const assertWorkflowFileName = (value) => {
   return value;
 };
 
-const domainPattern =
-  /^(?!https?:\/\/)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
-export const hostPattern = /^(?!https?:\/\/)[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/i;
-
 export const assertDomain = (value) => {
   const domain = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (!domainPattern.test(domain)) {
+  if (!DOMAIN_PATTERN.test(domain)) {
     throw new HttpError(
       400,
       "Domínio inválido. Informe apenas o domínio, sem https:// ou caminho.",
@@ -55,7 +61,7 @@ export const assertDomain = (value) => {
 
 const assertFtpServer = (value) => {
   const host = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (!hostPattern.test(host)) {
+  if (!HOST_PATTERN.test(host)) {
     throw new HttpError(
       400,
       "Servidor FTP inválido. Informe apenas o host, sem ftp:// ou caminho.",
@@ -79,7 +85,7 @@ export const assertServerDir = (value) => {
   if (dir.includes("..")) {
     throw new HttpError(400, 'A pasta remota não pode conter "..".');
   }
-  if (!/^[a-z0-9._/-]{1,255}$/i.test(dir)) {
+  if (!SERVER_DIR_PATTERN.test(dir)) {
     throw new HttpError(400, "Pasta remota inválida.");
   }
   return dir.replace(/\/+$/, "");
@@ -105,13 +111,13 @@ export const assertPort = (value) => {
 export const assertBuildEnv = (value) => {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) return "";
-  if (text.length > 16 * 1024) {
+  if (text.length > MAX_BUILD_ENV) {
     throw new HttpError(400, "As variáveis de build excedem o limite de 16 KB.");
   }
   for (const line of text.split(/\r?\n/)) {
     const entry = line.trim();
     if (!entry || entry.startsWith("#")) continue;
-    if (!/^[A-Z_][A-Z0-9_]*=/i.test(entry)) {
+    if (!BUILD_ENV_LINE_PATTERN.test(entry)) {
       throw new HttpError(
         400,
         `Variável de build inválida: "${entry.slice(0, 40)}". Use o formato CHAVE=valor.`,
@@ -130,8 +136,8 @@ export const parsePublicationRequest = (rawBody) => {
   const branch = assertBranch(body.branch);
   const domain = assertDomain(body.domain);
   const ftpServer = assertFtpServer(body.ftpServer);
-  const ftpLogin = assertRequiredText(body.ftpLogin, "Login FTP");
-  const ftpPassword = assertRequiredText(body.ftpPassword, "Senha FTP", 512);
+  const ftpLogin = assertRequiredText(body.ftpLogin, "Login FTP", MAX_FTP_LOGIN);
+  const ftpPassword = assertRequiredText(body.ftpPassword, "Senha FTP", MAX_FTP_PASSWORD);
   const serverDir = assertServerDir(body.serverDir);
   const protocol = assertProtocol(body.protocol);
   const port = assertPort(body.port);

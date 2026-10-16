@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { config, envPath, resetRuntimeConfig, runtimeConfig } from "../config.js";
 import { HttpError } from "../http.js";
 import { maskSecret, upsertEnvFile } from "./env-file.js";
-import { hostPattern } from "./input.js";
+import { HOST_PATTERN } from "../../../shared/deploy-rules.js";
 
 /** Chaves que a tela de configuração pode gravar no `.env`. */
 const editableSettings = [
@@ -89,7 +89,7 @@ export const parseSettingsPayload = (body) => {
 
   if (typeof input.defaultFtpHost === "string") {
     const host = input.defaultFtpHost.trim().toLowerCase();
-    if (host && !hostPattern.test(host)) {
+    if (host && !HOST_PATTERN.test(host)) {
       throw new HttpError(
         400,
         "Servidor FTP padrão inválido. Informe apenas o host.",
