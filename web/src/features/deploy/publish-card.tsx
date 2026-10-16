@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, PlayCircle, ShieldAlert } from "lucide-react";
 import type { PublicationResult } from "@/lib/api/deploy";
-import { usePermissions } from "@/lib/permissions";
-import { noPermission } from "@/features/projects/project-actions";
+import { noPermission, usePermissions } from "@/lib/permissions";
 import { Reason } from "@/components/disabled-hint";
 import { SectionCard } from "@/components/section-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

@@ -10,12 +10,11 @@ import {
   type SiteSource,
 } from "@/lib/api";
 import { formatBytes, pluralize, projectIdentity } from "@/lib/format";
-import { usePermissions } from "@/lib/permissions";
+import { noPermission, usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
 import { REPO_NAME_PATTERN } from "@shared/lovable-repo.js";
 import { itemsFromInput, uploadItems } from "@/features/project-files/upload";
 import { Reason } from "@/components/disabled-hint";
-import { noPermission } from "./project-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {

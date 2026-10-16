@@ -21,6 +21,15 @@ export const PERMISSION_LABELS: Record<
   },
 };
 
+/** Por que esta chave não pode — o mesmo texto em toda tela. */
+export const noPermission: Record<AccessPermission, string> = {
+  organizar: "Sua chave de acesso não pode organizar projetos.",
+  gerar: "Sua chave de acesso não pode gerar nem alterar sites.",
+  publicar: "Sua chave de acesso não pode publicar.",
+  configurar: "Sua chave de acesso não pode mudar as configurações.",
+  administrar: "Sua chave de acesso não pode administrar chaves.",
+};
+
 /**
  * O que a chave desta sessão pode fazer, lido de `/api/me`.
  *

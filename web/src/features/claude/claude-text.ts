@@ -1,6 +1,6 @@
 import { formatElapsed, formatUsd } from "@/lib/format";
 import type { ClaudeNextStep, ClaudeQueueItem, ClaudeRequestType, ClaudeRunStatus } from "@/lib/api";
-import { noPermission } from "@/features/projects/project-actions";
+import { noPermission } from "@/lib/permissions";
 
 /*
  * Os nomes que as telas do motor Claude repetem: os pedidos, as situações de

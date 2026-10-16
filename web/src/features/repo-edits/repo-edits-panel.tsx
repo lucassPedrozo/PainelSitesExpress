@@ -32,7 +32,7 @@ import {
   type RepoEditStatus,
 } from "@/lib/api";
 import { formatElapsed, pluralize } from "@/lib/format";
-import { usePermissions } from "@/lib/permissions";
+import { noPermission, usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
 import { cn } from "@/lib/utils";
 import { ClaudeIcon, GitHubIcon, LovableIcon } from "@/components/brand-icons";
@@ -52,7 +52,6 @@ import { RunCard } from "@/features/claude/claude-panel";
 import { ConfirmClaudeDialog, GenerationOffNotice, SectionDisclosure } from "@/features/claude/claude-shared";
 import { claudeBlock, errorMessage } from "@/features/claude/claude-text";
 import { useClaudeRefresh } from "@/features/claude/use-claude";
-import { noPermission } from "@/features/projects/project-actions";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
 
 /**

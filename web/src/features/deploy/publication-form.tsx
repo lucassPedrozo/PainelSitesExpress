@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Eye, EyeOff, Loader2, Save, Sparkles } from "lucide-react";
 import type { PublicationSettings } from "@/lib/api/deploy";
-import { usePermissions } from "@/lib/permissions";
-import { noPermission } from "@/features/projects/project-actions";
+import { noPermission, usePermissions } from "@/lib/permissions";
 import { AdvancedOptions } from "./advanced-options";
 import type { ValidationErrors } from "./deploy-types";
 import { Reason } from "@/components/disabled-hint";

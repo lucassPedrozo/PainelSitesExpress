@@ -3,7 +3,7 @@ import { Loader2, Plus, Settings2, Tag as TagIcon, Trash2 } from "lucide-react";
 import type { Tag, TagColor } from "@/lib/api";
 import type { TagsController } from "@/features/tags/use-tags";
 import { nextTagColor, TAG_PALETTE, tagColorLabels, tagDotClass } from "@/features/tags/tag-colors";
-import { noPermission } from "@/features/projects/project-actions";
+import { noPermission } from "@/lib/permissions";
 import { usePermissions } from "@/lib/permissions";
 import { pluralize } from "@/lib/format";
 import { DisabledHint, Reason } from "@/components/disabled-hint";

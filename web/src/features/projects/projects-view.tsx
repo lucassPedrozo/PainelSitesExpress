@@ -4,7 +4,7 @@ import { Link2, MoreHorizontal, Plus, Settings2, Sparkles, X } from "lucide-reac
 import { toast } from "sonner";
 import { checkAllSharePreviews, deleteProject, fetchDevAreaStatus, type Project } from "@/lib/api";
 import { formatTime, pluralize, projectIdentity, timeOf } from "@/lib/format";
-import { usePermissions } from "@/lib/permissions";
+import { noPermission, usePermissions } from "@/lib/permissions";
 import { useMinute } from "@/lib/use-now";
 import { GenerateSiteDialog } from "@/features/generate/generate-site-dialog";
 import type { GenerationEngine } from "@/features/generate/engine-choice";
@@ -43,7 +43,7 @@ import { publishToApprovalArea, sendToClient, verifyClientLink } from "./client-
 import { LinkSiteDialog } from "./link-site-dialog";
 import { ListFilters } from "./list-filters";
 import { NewProjectDialog } from "./new-project-dialog";
-import { noPermission, type ProjectActionHandlers } from "./project-actions";
+import type { ProjectActionHandlers } from "./project-actions";
 import { latestGeneration } from "./project-status";
 import { lastActivityOf } from "./last-activity";
 import { collectedAtOf, countTags } from "./project-filters";

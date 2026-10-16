@@ -7,7 +7,7 @@ import { projectIdentity } from "@/lib/format";
 import { latestGeneration } from "@/features/projects/project-status";
 import { lovableEditorUrl } from "@/features/projects/next-step";
 import { requestNotificationPermission } from "@/features/projects/use-stage-alerts";
-import { noPermission } from "@/features/projects/project-actions";
+import { noPermission } from "@/lib/permissions";
 import { usePermissions } from "@/lib/permissions";
 import { DisabledHint, Reason } from "@/components/disabled-hint";
 import { Button } from "@/components/ui/button";

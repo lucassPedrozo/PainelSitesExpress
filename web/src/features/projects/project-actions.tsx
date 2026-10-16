@@ -31,7 +31,7 @@ import { isPanelProject, type Project } from "@/lib/api";
 import type { AccessPermission } from "@shared/access-permissions.js";
 import { isExternalSite } from "@shared/external-site.js";
 import { isClaudeSite } from "@/features/projects/project-status";
-import { usePermissions } from "@/lib/permissions";
+import { noPermission, usePermissions } from "@/lib/permissions";
 import { copyBrief } from "@/features/projects/copy-brief";
 import {
   nextStep,
@@ -100,15 +100,6 @@ export type ProjectActionHandlers = {
   onGenerateWithClaude?: (project: Project) => void;
   /** Manda ao GitHub o site que o Claude gerou e validou. */
   onPushClaudeSite?: (project: Project) => void;
-};
-
-/** Por que esta chave não pode — o mesmo texto em toda tela. */
-export const noPermission: Record<AccessPermission, string> = {
-  organizar: "Sua chave de acesso não pode organizar projetos.",
-  gerar: "Sua chave de acesso não pode gerar nem alterar sites.",
-  publicar: "Sua chave de acesso não pode publicar.",
-  configurar: "Sua chave de acesso não pode mudar as configurações.",
-  administrar: "Sua chave de acesso não pode administrar chaves.",
 };
 
 const icons: Record<string, IconComponent> = {
