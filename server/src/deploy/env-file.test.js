@@ -1,8 +1,40 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { maskSecret, parseEnvFile, upsertEnvFile } from './env-file.js'
+import { maskSecret, upsertEnvFile } from './env-file.js'
 
 const BOM = String.fromCharCode(0xfeff)
+
+// Leitor de `.env` usado como oráculo da escrita: o que o `upsertEnvFile` grava
+// tem de voltar igual na releitura.
+const KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/i
+
+const parseEnvLine = (line) => {
+  const trimmed = line
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .replace(/^export\s+/, '')
+  if (!trimmed || trimmed.startsWith('#')) return null
+
+  const separator = trimmed.indexOf('=')
+  if (separator < 1) return null
+
+  const key = trimmed.slice(0, separator).trim()
+  const value = trimmed
+    .slice(separator + 1)
+    .trim()
+    .replace(/^(['"])([\s\S]*)\1$/, '$2')
+
+  return KEY_PATTERN.test(key) ? [key, value] : null
+}
+
+const parseEnvFile = (content) => {
+  const entries = {}
+  for (const line of content.split(/\r?\n/)) {
+    const entry = parseEnvLine(line)
+    if (entry) entries[entry[0]] = entry[1]
+  }
+  return entries
+}
 
 test('atualiza uma chave existente preservando comentários e ordem', () => {
   const original = [
