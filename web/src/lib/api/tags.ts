@@ -1,15 +1,7 @@
+import type { TagColor } from "@shared/tag-colors.js";
 import { get, send } from "./http";
 
-export type TagColor =
-  | "slate"
-  | "blue"
-  | "cyan"
-  | "emerald"
-  | "amber"
-  | "orange"
-  | "red"
-  | "violet"
-  | "pink";
+export type { TagColor };
 
 export type Tag = {
   id: string;

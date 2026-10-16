@@ -1,19 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { httpError } from "../http.js";
+import { TAG_COLORS } from "../../../shared/tag-colors.js";
 import { flush, normalize, read } from "./db.js";
-
-/** Cores disponíveis para as tags — o front tem a classe CSS de cada uma. */
-export const TAG_COLORS = [
-  "slate",
-  "blue",
-  "cyan",
-  "emerald",
-  "amber",
-  "orange",
-  "red",
-  "violet",
-  "pink",
-];
 
 /** Id da etiqueta que esconde o projeto do painel — `null` se foi excluída. */
 export async function getFinishedTagId() {

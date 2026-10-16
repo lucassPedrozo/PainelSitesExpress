@@ -1,13 +1,7 @@
 import { Router } from "express";
+import { TAG_COLORS } from "../../../shared/tag-colors.js";
 import { requirePermission } from "../security/permissions.js";
-import {
-  createTag,
-  deleteTag,
-  getFinishedTagId,
-  listTags,
-  TAG_COLORS,
-  updateTag,
-} from "../store/tags.js";
+import { createTag, deleteTag, getFinishedTagId, listTags, updateTag } from "../store/tags.js";
 
 /**
  * Tags — estado do painel, guardado no banco local (o Drive é acessado apenas

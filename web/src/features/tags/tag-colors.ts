@@ -1,3 +1,4 @@
+import { TAG_COLORS } from "@shared/tag-colors.js";
 import type { TagColor } from "@/lib/api";
 
 /**
@@ -11,20 +12,9 @@ import type { TagColor } from "@/lib/api";
 
 /**
  * A ordem da paleta: a do seletor de cor e a da cor sugerida para a próxima
- * tag. Uma lista só — antes o diálogo de tags e o seletor tinham cada um a
- * sua cópia.
+ * tag. É a mesma lista da API (`shared/tag-colors.js`).
  */
-export const TAG_PALETTE: TagColor[] = [
-  "slate",
-  "blue",
-  "cyan",
-  "emerald",
-  "amber",
-  "orange",
-  "red",
-  "violet",
-  "pink",
-];
+export const TAG_PALETTE: TagColor[] = TAG_COLORS;
 
 /** A cor depois de `color` na paleta, girando: a sugestão para a próxima tag. */
 export const nextTagColor = (color: TagColor) =>
