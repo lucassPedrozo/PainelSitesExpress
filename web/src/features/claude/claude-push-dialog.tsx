@@ -25,6 +25,7 @@ import { DisabledHint, Reason } from "@/components/disabled-hint";
 import { ErrorNotice } from "@/components/page-header";
 import { claudeBlock, errorMessage } from "./claude-text";
 import { useClaudeRefresh } from "./use-claude";
+import { REPO_NAME_PATTERN } from "@shared/lovable-repo.js";
 
 /**
  * O site que o Claude gerou, a caminho do GitHub.
@@ -85,8 +86,6 @@ function PushForm({ project, onDone }: { project: Project; onDone: () => void })
   );
 }
 
-const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
-
 function PushBody({ project, plan, onDone }: { project: Project; plan: ClaudePushPlan; onDone: () => void }) {
   const { can } = usePermissions();
   const refresh = useClaudeRefresh();
@@ -95,7 +94,7 @@ function PushBody({ project, plan, onDone }: { project: Project; plan: ClaudePus
   const [sending, setSending] = useState(false);
 
   const novo = !plan.repoFullName;
-  const nomeValido = !novo || (REPO_NAME.test(repoName.trim()) && !repoName.trim().endsWith(".git"));
+  const nomeValido = !novo || (REPO_NAME_PATTERN.test(repoName.trim()) && !repoName.trim().endsWith(".git"));
 
   const motivo = !can("publicar")
     ? claudeBlock.semPublicar

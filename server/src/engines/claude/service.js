@@ -19,7 +19,7 @@ import {
   setGenerationDevArea,
   setGenerationRepository,
 } from "../../store/generations.js";
-import { repoNameOf } from "../../../../shared/lovable-repo.js";
+import { REPO_NAME_PATTERN, repoNameOf } from "../../../../shared/lovable-repo.js";
 import { isLocalProjectId } from "../../store/local-projects.js";
 import { copiarSiteAdotado, sitesDoMotorNoProjeto } from "./adopt.js";
 import { conferirAnexos, gravarPendente, guardarAnexo, removerAnexo } from "./attachments.js";
@@ -67,7 +67,6 @@ const TAREFA_OCUPADA = (nome) =>
   httpError(409, `Já há uma tarefa em andamento (${nome}). Espere terminar.`);
 
 const MAX_EVENTOS = 3000;
-const NOME_DE_REPOSITORIO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 /** No envio automático, quantos nomes o painel tenta antes de pedir um a alguém. */
 const TENTATIVAS_DE_NOME = 5;
 const MAX_CARACTERES_DO_AJUSTE = 4000;
@@ -845,7 +844,7 @@ export function criarServicoClaude({
         ? Array.from({ length: TENTATIVAS_DE_NOME }, (_, n) => (n === 0 ? sugerido : `${sugerido}-${n + 1}`))
         : [sugerido];
     for (const nome of candidatos) {
-      if (!NOME_DE_REPOSITORIO.test(nome) || nome.endsWith(".git")) {
+      if (!REPO_NAME_PATTERN.test(nome) || nome.endsWith(".git")) {
         throw httpError(400, "Nome de repositório inválido — use letras, números, hífen, ponto e sublinhado.");
       }
       if (await github.getRepository(github.config(), { owner: organization, repo: nome })) {

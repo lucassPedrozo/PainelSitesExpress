@@ -12,6 +12,7 @@ import {
 import { formatBytes, pluralize, projectIdentity } from "@/lib/format";
 import { usePermissions } from "@/lib/permissions";
 import { queryKeys } from "@/lib/query";
+import { REPO_NAME_PATTERN } from "@shared/lovable-repo.js";
 import { itemsFromInput, uploadItems } from "@/features/project-files/upload";
 import { Reason } from "@/components/disabled-hint";
 import { noPermission } from "./project-actions";
@@ -118,7 +119,7 @@ function PushSiteForm({
   const inApprovalArea = Boolean(site?.devArea?.repoFullName && site.devArea.state !== "retired");
   const canOrganize = can("organizar");
   const busy = sending || Boolean(upload);
-  const nameValid = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name.trim());
+  const nameValid = REPO_NAME_PATTERN.test(name.trim());
   /** Site do motor Claude: enviado como está, não constrói no GitHub. */
   const engineSite = info.data?.engineSite === true;
   // O servidor exige `publicar` para criar ou atualizar o repositório: a

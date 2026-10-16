@@ -10,6 +10,14 @@
  * @param {string} lovableName
  * @returns {string}
  */
+/**
+ * Nome aceito para um repositório novo na organização: começa com letra ou
+ * número e tem até 100 letras, números, pontos, hífens e sublinhados. A API
+ * recusa e a interface avisa pela mesma regra; o sufixo `.git` é conferido à
+ * parte por quem usa.
+ */
+export const REPO_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
 export const repoNameOf = (lovableName) =>
   lovableName
     .toLowerCase()

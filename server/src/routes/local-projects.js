@@ -45,7 +45,7 @@ import {
   isLocalProjectId,
   requireLocalProject,
 } from "../store/local-projects.js";
-import { repoNameOf } from "../../../shared/lovable-repo.js";
+import { REPO_NAME_PATTERN, repoNameOf } from "../../../shared/lovable-repo.js";
 import { singleByteRange } from "./files-helpers.js";
 
 /**
@@ -363,8 +363,6 @@ localProjectsRouter.get("/projects/:id/site-sources", localProject, async (req, 
   });
 });
 
-const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
-
 /**
  * A pasta de um site feito pelo motor Claude (ou pelo Joinvixable, a
  * ferramenta de antes): tem a sessão de trabalho dele. Enviada como está, não
@@ -421,7 +419,7 @@ localProjectsRouter.post("/projects/:id/repository", localProject, async (req, r
       }
     } else {
       const name = typeof body.repoName === "string" ? body.repoName.trim() : "";
-      if (!REPO_NAME.test(name) || name.endsWith(".git")) {
+      if (!REPO_NAME_PATTERN.test(name) || name.endsWith(".git")) {
         throw httpError(400, "Nome de repositório inválido — use letras, números, hífen, ponto e sublinhado.");
       }
       if (await getRepository(githubConfig(), { owner: organization, repo: name })) {
