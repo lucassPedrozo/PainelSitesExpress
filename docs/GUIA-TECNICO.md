@@ -25,7 +25,7 @@ sugerido a partir do site gerado.
 | -------- | ------------------------------------------------------------------------------- |
 | Frontend | Vite + React 19 + TypeScript, Tailwind v4, shadcn/ui, lucide-react, TanStack Query |
 | Backend  | Node + Express, `googleapis` (Drive v3), API REST do GitHub                      |
-| Comum    | `shared/` — o que API e interface precisam enxergar igual (as permissões)         |
+| Comum    | `shared/` — o que API e interface aplicam do mesmo jeito (permissões, domínio, regras e listas fixas) |
 
 A chave da service account e o token do GitHub **nunca** chegam ao navegador: toda
 comunicação com o Drive e com o GitHub acontece no backend, que também faz proxy
@@ -92,7 +92,8 @@ basta recarregar a página depois do banner.
 
 **Faltou instalar as dependências dos subprojetos.** `npm install` na raiz só
 instala o `concurrently`; `server/` e `web/` têm `package.json` próprios. Use
-`npm run setup`, que instala os três.
+`npm run setup`, que instala os quatro: a raiz, `server/`, `web/` e o pacote do
+motor (`joinvixable/`, quando ele está na pasta).
 
 **O `.env` está incompleto.** Sem `DRIVE_ROOT_FOLDER_ID` a API aborta no arranque,
 antes mesmo de abrir a porta. Confira o `.env.example`.
@@ -176,6 +177,13 @@ O arquivo `.env` na raiz define:
 | `DEV_AREA_FTP_DIR`        | Opcional: pasta do domínio no FTP (padrão `domains/<domínio>/public_html`) |
 | `DEV_AREA_FTP_PROTOCOL` / `_PORT` | Opcionais: protocolo e porta do FTP da área              |
 | `DEV_AREA_WATCH_INTERVAL_MS` | Varredura que acha repositórios novos (padrão 3 min; `0` desliga) |
+| `PREVIEW_WATCH_INTERVAL_MS` | Varredura que reconfere os links de cliente (padrão 30 min; `0` desliga) |
+
+Duas fontes de configuração ficam fora da tela de Configurações: a variável
+`JOINVIX_FOOTER_ASSETS_URL`, de onde vêm os arquivos da assinatura Joinvix anexada a
+toda geração no Lovable (sem ela, o repositório `joinvix-footer`), e um segundo arquivo,
+`server/.env`, que a API também carrega, depois do da raiz. O lançador, a varredura de
+segredos e a tela de Configurações só conhecem o `.env` da raiz.
 
 A pasta raiz precisa estar compartilhada com o e-mail da service account
 (o `client_email` do JSON da chave) como leitor.
@@ -346,7 +354,7 @@ para as conexões de entrada no painel.
   *Envio falhou*, *Geração falhou*, *Link não abre*, *Link caiu*) ou em âmbar (*Agente
   parado*, *Interrompida*), para nunca ficar escondido atrás da etapa. A fonte é
   `web/src/features/projects/stage.ts`: os estados de `project-status.ts` viram
-  etapa, problema e grupo do "Fazer agora", e o selo, os contadores, o filtro, a
+  etapa, problema e grupo de trabalho, e o selo, os contadores, o filtro, a
   ordem da lista e o Dashboard leem dali. *No ar* vem da publicação do mesmo domínio
   (com ou sem `www.`) e só vale depois de uma execução de deploy terminar com sucesso
   no GitHub. As colunas: projeto (o domínio; embaixo, o nome e o material; depois,
@@ -377,11 +385,12 @@ para as conexões de entrada no painel.
   e passa a mostrar *Outra coleta* com a ferramenta do site, em vez de pedir *Gerar*. O
   passo é "Abrir coleta do site". Como os projetos só de arquivos, ela fica fora dos
   contadores, do Dashboard e do relatório: o site do domínio conta uma vez, na coleta dele.
-- **"Fazer agora"**: no topo, cinco contadores do que depende de alguém da equipe
-  (*Resolver*, *Revisar*, *Gerar*, *Criar link*, *Enviar ao cliente*) e três do que
-  espera o painel ou o cliente (*Em andamento*, *Com o cliente*, *Sem material*);
-  somados, são os projetos ativos. Cada contador filtra a lista, e clicar de novo
-  desfaz. A lista tem três abas: **Ativos**, **No ar** (o que o GitHub confirma) e
+- **Topo da tela**: o gráfico dos projetos novos do mês, recebidos pelo Drive e
+  criados no painel, dia a dia. Os grupos de trabalho — cinco do que depende de alguém
+  da equipe (*Resolver*, *Revisar*, *Gerar*, *Criar link*, *Enviar ao cliente*) e três
+  do que espera o painel ou o cliente (*Em andamento*, *Com o cliente*, *Sem material*)
+  — ordenam a lista por prioridade, e o Dashboard leva à lista já filtrada pelo que
+  resolver. A lista tem três abas: **Ativos**, **No ar** (o que o GitHub confirma) e
   **Finalizados** (a tag "Finalizado"). Um site no ar com uma publicação nova falhando
   fica em Ativos, porque é problema. Ao lado da lista, a atividade recente de todos os
   projetos; a fila do Claude abre pelo botão do topo, que mostra quantos pedidos há. O
@@ -423,8 +432,7 @@ para as conexões de entrada no painel.
   imagens recomendadas, a assinatura — e avisa o que vale saber antes (site já
   gerado, briefing repetido, anexos cortados pelo teto). *Revisar tudo* abre o
   diálogo completo. Sem briefing, vai direto para o diálogo completo.
-- **Gerar em lote**: pelo contador *Gerar* do "Fazer agora" (ligado, ele oferece
-  **Gerar os N em lote**) ou por qualquer seleção (barra de ações). Os projetos são lidos do Drive
+- **Gerar em lote**: por qualquer seleção (barra de ações). Os projetos são lidos do Drive
   (três por vez), cada um com o seu envio padrão; os que não têm envio padrão ficam
   de fora com o motivo. O diálogo explica as três etapas antes de qualquer envio:
   **1. envio ao Lovable** — um por vez, uns segundos cada, e só esta etapa precisa da
@@ -467,7 +475,7 @@ para as conexões de entrada no painel.
   atividade*, *Prioridade* (o que quebrou primeiro, depois o que espera uma decisão, o
   que está a um clique do cliente e por fim o que só espera; dentro de cada grupo, o
   parado há mais tempo) e nome. Sem paginação: são poucas dezenas de projetos, e a
-  busca e os filtros (etapa, contador do "Fazer agora", tags) resolvem.
+  busca e os filtros (etapa, tags e o grupo que o Dashboard liga) resolvem.
 - **Faixas de data** separando a lista quando a ordenação é por data (coleta ou
   última atividade): *Hoje*, *Ontem*, *Últimos 7 dias*, *Últimos 30 dias*, depois por
   mês no ano corrente e por ano no que é mais antigo, cada faixa com a sua contagem e
@@ -495,7 +503,7 @@ para as conexões de entrada no painel.
   e *Ocultar* / *Mostrar*. Cada projeto é gravado sozinho, três por vez; uma falha não
   desfaz os outros e o aviso diz quantos falharam.
 - **Ocultar projeto** (menu **…** ou barra de seleção): pasta de teste, coleta que não
-  vai virar site. O projeto sai das abas de trabalho, dos contadores do "Fazer agora",
+  vai virar site. O projeto sai das abas de trabalho, dos contadores,
   da atividade recente, do Dashboard e do relatório para pagamento, e fica na aba
   **Ocultos** (que só aparece quando há algum), com quem ocultou e quando. "Mostrar de
   novo" devolve. Gravado em `details.hidden`; a pasta no Drive não muda.
@@ -698,10 +706,10 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 .
 ├── .github/workflows/ # verificação do próprio painel (lint, tipos, testes, build)
 ├── .env               # configuração (não versionar; modelo em .env.example)
-├── server/            # API Express: Google Drive, Lovable e publicação
+├── server/            # API Express: Drive, Lovable, motor Claude e publicação
 │   ├── data/          # estado do painel e backups — criado na 1ª execução
 │   ├── workflows/     # templates publicados nos repositórios dos clientes
-│   │   ├── *.yml      # build e deploy via FTP
+│   │   ├── *.yml      # build, deploy via FTP e área de aprovação
 │   │   └── scripts/   # passos em Bash embutidos nos templates (testados)
 │   └── src/
 │       ├── index.js   # partida: confere a configuração, retoma sessões, escuta
@@ -711,35 +719,45 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │       ├── cache.js   # cache em memória com TTL, sem consultas duplicadas
 │       ├── drive.js   # cliente do Drive, consultas e alcance da pasta raiz
 │       ├── brief.js   # extração do texto do "Informações do Site"
-│       ├── backup.js  # cópias diárias do banco e recuperação
+│       ├── brief-file.js    # qual arquivo da pasta é o briefing
 │       ├── atomic-write.js  # gravação atômica e fila de escrita
 │       ├── express.d.ts     # tipo de req.identity
-│       ├── routes/
+│       ├── routes/    # todos os routers HTTP (a ordem de montagem está no app.js)
 │       │   ├── access.js         # porteiro, sessão, identidade e chaves de acesso
-│       │   ├── projects.js       # projetos, briefing, tags e apelido do projeto
-│       │   ├── tags.js           # CRUD das tags
 │       │   ├── local-projects.js # projetos criados no painel: arquivos e envio ao GitHub
+│       │   ├── projects.js       # projetos, briefing, tags, nome e detalhes corrigidos à mão
+│       │   ├── projects-helpers.js # o site do domínio que está em outra coleta
+│       │   ├── tags.js           # CRUD das tags
 │       │   ├── files.js          # pastas, miniaturas e conteúdo (com Range)
 │       │   ├── files-helpers.js  # regras puras das rotas de arquivo
-│       │   └── drive-scoped.js   # :id válido e dentro da pasta raiz
-│       ├── archive/   # leitura de .zip por faixa de bytes e o tipo dos itens
-│       ├── local/     # arquivos em disco dos projetos do painel e a origem do site
-│       ├── store/     # banco do painel (painel.json)
-│       │   ├── db.js           # leitura, migração, recuperação e gravação
-│       │   ├── tags.js         # tags e as tags de cada projeto
-│       │   ├── project-names.js # apelido do projeto
-│       │   ├── local-projects.js # projetos criados no painel
-│       │   ├── generations.js  # sites gerados e o link do cliente
-│       │   ├── publications.js # histórico de publicação
-│       │   └── access-users.js # chaves de acesso (em hash)
+│       │   ├── lovable.js        # Lovable (conexão e geração), link do cliente, área de aprovação, sites vinculados e imagens de banco
+│       │   ├── claude.js         # rotas /api/claude e /api/projects/:id/claude, e os ajustes (edits)
+│       │   ├── assistant.js      # o assistente (Gemini) da tela de geração
+│       │   ├── deploy.js         # rotas /api/deploy
+│       │   └── settings.js       # rotas /api/settings (a tela de Configurações)
 │       ├── security/
 │       │   ├── authenticate.js   # quem está falando com a API
 │       │   ├── access.js         # chaves em hash e sessões persistidas
 │       │   ├── permissions.js    # o que cada chave pode fazer
 │       │   ├── network.js        # política de acesso LAN
-│       │   ├── drive-scope.js    # id válido e dentro da pasta raiz
+│       │   ├── drive-scope.js    # id válido e dentro da pasta raiz (regra pura)
+│       │   ├── project-scope.js  # middlewares: :id válido e dentro da pasta raiz
 │       │   ├── embedded-asset.js # cabeçalhos do conteúdo embutido
 │       │   └── throttle.js       # bloqueio progressivo e rate limit
+│       ├── store/     # banco do painel (painel.json)
+│       │   ├── db.js           # leitura, migração, recuperação e gravação
+│       │   ├── backup.js       # cópias diárias do banco e recuperação
+│       │   ├── tags.js         # tags e as tags de cada projeto
+│       │   ├── project-names.js # apelido do projeto
+│       │   ├── project-details.js # o que a equipe corrige à mão (domínio, data, etapa…)
+│       │   ├── local-projects.js # projetos criados no painel
+│       │   ├── generations.js  # sites gerados e o link do cliente
+│       │   ├── publications.js # histórico de publicação
+│       │   ├── claude.js       # registro do motor Claude: projetos, fila e execuções
+│       │   ├── repo-edits.js   # a memória dos ajustes pelo Claude em sites de repositório
+│       │   └── access-users.js # chaves de acesso (em hash)
+│       ├── archive/   # zip: leitura por faixa de bytes, o tipo dos itens e o gravador
+│       ├── local/     # arquivos em disco dos projetos do painel e a origem do site
 │       ├── lovable/
 │       │   ├── oauth.js            # registro do cliente, PKCE e renovação do token
 │       │   ├── mcp.js              # cliente MCP (JSON-RPC sobre HTTP)
@@ -747,7 +765,12 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │       │   ├── upload.js           # subida dos anexos ao storage do Lovable
 │       │   ├── generate.js         # dispara a criação (o único gasto de crédito)
 │       │   ├── generation-guard.js # trava contra gasto duplicado de crédito
-│       │   └── routes.js           # rotas de conexão e geração
+│       │   ├── progress.js         # acompanha o agente do Lovable depois do "Gerar"
+│       │   ├── activity.js         # o que o agente está fazendo agora
+│       │   ├── agent-text.js       # o que o agente disse, tirado da mensagem crua
+│       │   ├── signature.js        # a assinatura Joinvix do rodapé, anexada a toda geração
+│       │   ├── style-registry.js   # o bloco "Já usado" da Workspace Knowledge
+│       │   └── link.js             # site existente, vinculado a um projeto
 │       ├── engines/
 │       │   ├── index.js            # os motores e o estado de cada um
 │       │   └── claude/             # o motor Claude (ver "Motor Claude")
@@ -760,16 +783,27 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │       │       ├── workspace.js    # a pasta de trabalho, na pasta de dados
 │       │       ├── motor.js        # a conversa com o pacote do motor
 │       │       ├── material.js     # o material do projeto na pasta de trabalho
+│       │       ├── office.js       # documentos de escritório, abertos para o agente
+│       │       ├── attachments.js  # as imagens que acompanham um pedido de ajuste
 │       │       ├── publish.js      # o site a caminho do GitHub
+│       │       ├── adopt.js        # site feito na ferramenta antiga, trazido para o motor
+│       │       ├── history.js      # o histórico de layouts trazido da ferramenta antiga
 │       │       ├── service.js      # travas, fila, resumo do card e envio
-│       │       ├── routes.js       # rotas /api/claude e /api/projects/:id/claude
+│       │       ├── edicao/         # a edição livre (ajustes em sites de repositório)
 │       │       └── fixtures/       # o claude falso e o motor de mentira dos testes
+│       ├── devarea/   # a área de aprovação: cada site numa pasta própria de um domínio
 │       ├── preview/
 │       │   ├── share-link.js # classificação do link "Share preview"
 │       │   └── service.js    # link do cliente e varredura periódica
 │       ├── shortlinks/
 │       │   ├── mcp.js     # cliente do MCP do BetterLinks
 │       │   └── service.js # link curto estável por projeto
+│       ├── gemini/    # o assistente: cliente do Gemini e análise do briefing
+│       ├── images/    # imagens de banco do Pixabay
+│       ├── settings/
+│       │   ├── schema.js    # as chaves do .env que a tela de Configurações edita
+│       │   ├── service.js   # leitura e gravação das configurações
+│       │   └── env-file.js  # escrita do .env (a leitura é do dotenv)
 │       └── deploy/
 │           ├── github/              # API REST do GitHub
 │           │   ├── client.js        # autenticação, erros, novas tentativas, paginação
@@ -780,43 +814,61 @@ limitada (8 simultâneas, ~2,3s para 61 projetos) e guardadas no cache por 60s.
 │           ├── publication.js       # secrets (sealed box) e escrita dos workflows
 │           ├── workflow-render.js   # substituição dos placeholders do YAML
 │           ├── workflow-template.js # leitura dos templates em disco
-│           ├── env-file.js          # leitura e escrita do .env
-│           ├── settings.js          # tela de configuração
+│           ├── settings.js          # as configurações da rota legada /api/deploy/config
 │           ├── input.js             # validação do que vem do navegador
 │           ├── guards.js            # permissão, cota e organização
 │           ├── operations.js        # disparo, remoção e versão dos workflows
-│           └── routes.js            # rotas /api/deploy
+│           └── watch.js             # acompanha as execuções do workflow de deploy
 ├── joinvixable/       # o pacote do motor Claude — repositório privado, fora do git daqui
-├── scripts/           # varredura de segredos e o atalho para os comandos do motor
-├── shared/            # usado pelos dois lados (permissões, formatos de credencial)
+├── scripts/           # varredura de segredos, atalho do motor, histórico de layouts e a isca do Claude
+├── shared/            # o que API e interface aplicam igual; cada .js tem o seu .d.ts
+│   ├── access-permissions.js # as permissões das chaves
+│   ├── domain.js      # domínio da coleta e nome da pasta
+│   ├── lovable-repo.js # nome do repositório (do Lovable e de um repositório novo)
+│   ├── deploy-rules.js # padrões e limites da configuração de publicação
+│   ├── project-fields.js # etapas manuais e tamanhos dos campos do projeto
+│   ├── tag-colors.js  # as cores das tags
+│   ├── claude-options.js # níveis do motor Claude e limite dos anexos do ajuste
+│   ├── external-site.js # site que não veio do Lovable (prefixo ext-)
+│   ├── stock-images.js # nomes e caminhos das imagens de banco no pacote e no prompt
+│   └── secret-formats.js # formatos de credencial (varredura e envio ao GitHub)
 └── web/               # Aplicação Vite + React + shadcn/ui
     ├── public/        # favicon.png e apple-touch-icon.png (a marca Joinvix)
     └── src/
         ├── main.tsx   # provedores (consultas, tema) e o portão de acesso
         ├── App.tsx    # seção aberta, lista de projetos e alvo da publicação
         ├── app-header.tsx # marca, navegação entre seções, identidade e tema
-        ├── assets/    # joinvix-logo.png (assinatura) e joinvix-mark.png (símbolo)
+        ├── assets/    # joinvix-logo.png (assinatura), joinvix-mark.png (símbolo) e marcas
         ├── components/
         │   ├── ui/    # primitivos do shadcn/ui (só os usados)
-        │   └── *.tsx  # peças genéricas, sem regra de negócio (ícone, tema)
+        │   └── *.tsx  # peças genéricas, sem regra de negócio (cabeçalho, cartões, campos, detalhes técnicos)
         ├── features/  # uma pasta por área; componentes, hooks e regras juntos
-        │   ├── access/         # portão, identidade e chaves de acesso
-        │   ├── projects/       # lista, cartão, ações, estado e link do projeto
+        │   ├── access/         # portão, menu da conta e chaves de acesso
+        │   ├── projects/       # lista, ações, estado, etapas e linha do tempo do projeto
+        │   ├── project-files/  # diálogo do projeto: resumo, arquivos, andamento e link do cliente
         │   ├── tags/           # tags: filtro, seletor, cores e gestão
-        │   ├── project-files/  # diálogo de arquivos da coleta e link do cliente
-        │   ├── generate/       # diálogo de geração, com a escolha do motor
+        │   ├── generate/       # diálogo de geração no Lovable, com a escolha do motor
+        │   ├── material/       # anexos e imagens de banco, usados pelos dois motores
         │   ├── claude/         # o motor Claude: briefing, site, fila, lote e envio
+        │   ├── repo-edits/     # a aba Ajustes: pedidos ao Claude em sites de repositório
+        │   ├── dashboard/      # Dashboard, linha do tempo dos projetos e relatório para pagamento
         │   ├── settings/       # tela de configuração, com o estado do motor Claude
         │   └── deploy/         # tela de publicação
         └── lib/
-            ├── api/   # cliente da API: http.ts (comum) e um módulo por assunto;
-            │          # deploy.ts só carrega com a tela de publicação
-            └── *.ts   # sessão, cache de consultas, permissões e formatadores
+            ├── api/   # cliente da API: http.ts e errors.ts (comuns) e um módulo por assunto
+            └── *.ts   # sessão, cache de consultas, permissões, notificações e formatadores
 ```
 
 Regra de organização da interface: o que pertence a uma área fica em
 `features/<área>/`, com os testes ao lado do código. `components/` guarda só o que
 não conhece o domínio, e `lib/` o que é infraestrutura compartilhada por várias áreas.
+
+Na API, `routes/` é a camada HTTP: todos os routers moram ali, e a ordem em que o
+`app.js` os monta faz parte do contrato. As pastas de cada integração (`deploy/`,
+`lovable/`, `engines/claude/`, `devarea/` e as outras) têm o serviço; `store/` é o
+banco; `security/`, os middlewares. O que a API e a interface precisam aplicar do
+mesmo jeito (listas fixas, limites, padrões) fica em `shared/`, com um `.d.ts` para a
+interface e para o typecheck da API.
 
 Os passos de shell dos workflows ficam em `server/workflows/scripts/*.sh` e são
 embutidos nos templates YAML no momento da publicação. Isso permite testá-los de
@@ -879,7 +931,7 @@ Drive, GitHub, Lovable ou com o Claude de verdade (o executor é exercitado com 
 valem igual aqui e no CI. O pacote do motor não está no repositório público: no CI
 os testes que dependem dele são pulados, e os das rotas rodam com um motor de mentira.
 
-**Backend (502):** a API de verdade numa porta local (entrada, sessão, bloqueio por
+**Backend (511):** a API de verdade numa porta local (entrada, sessão, bloqueio por
 IP, permissões por chave, política de rede e respostas de erro), o banco do painel
 (criação, migração do nome, recuperação de backup, travas do link do cliente, o que
 a equipe corrige à mão em cada projeto), o
@@ -888,12 +940,12 @@ explícita, site criado mas não gravado), alcance dos ids do Drive, gravação 
 geração dos workflows (com validação do YAML resultante), classificação do link de
 share e detecção da pasta de build em cada layout suportado.
 
-**Interface (292):** a lista de projetos sobre o cache de consultas (uma busca para
+**Interface (314):** a lista de projetos sobre o cache de consultas (uma busca para
 vários leitores, escrita otimista e desfazimento quando a API recusa), validação do
 formulário de publicação (espelho dos validadores da API), regras do prompt e da
 seleção de anexos, ordenação dos arquivos, filtros, ordem e faixas de data da lista, a formatação de
 datas e plurais, o cliente HTTP (recusa, sessão vencida, API fora do ar, tempo
-limite), a precedência do selo de estado, a etapa e o grupo do "Fazer agora" de cada
+limite), a precedência do selo de estado, a etapa e o grupo de trabalho de cada
 estado, a etapa escolhida à mão e quando ela perde a validade, as contas do Dashboard, o relatório para pagamento, o autor de cada publicação, o próximo passo de cada etapa, os avisos de site pronto e de publicação, e a
 mensagem enviada ao cliente.
 
@@ -1181,10 +1233,10 @@ Nada nesse arquivo dispara o Claude.
 
 Gerar em lote é pôr vários pedidos na mesma fila: quem ainda não tem briefing pede o
 briefing, quem já tem um briefing aceito pede o site, e cada projeto que não pode
-entrar aparece com o motivo. Cada passo da sequência de um site entra no fim da fila:
-com vários sites em geração, as execuções de uns e de outros se alternam.
+entrar aparece com o motivo. O passo seguinte de um site em andamento passa à frente
+dos pedidos que ainda não começaram (ver "A sequência de um site").
 
-Os selos e os grupos da vista "Fazer agora" que o motor acrescenta: *Geração
+Os selos e os grupos de trabalho que o motor acrescenta: *Geração
 interrompida*, *Geração falhou*, *Direção para aprovar*, *Gerando com o Claude*,
 *Gerando briefing*, *Na fila do Claude*, *Briefing recusado* e *Briefing para revisar*.
 Site gerado e ainda fora do GitHub cai em *Enviar ao GitHub*.
@@ -1234,9 +1286,15 @@ conta própria. Retomar pede a mesma confirmação e a mesma trava.
 | `workspace.js` | A pasta de trabalho, dentro da pasta de dados |
 | `motor.js` | A conversa com o pacote do motor, por processos filhos |
 | `material.js` | O material do projeto (Drive ou painel) copiado para a pasta de trabalho |
+| `office.js` | Documentos de escritório, abertos para o agente |
+| `attachments.js` | As imagens que acompanham um pedido de ajuste |
 | `publish.js` | Os arquivos do site que vão ao GitHub e o que bloqueia o envio |
+| `adopt.js` | Um site feito na ferramenta antiga, trazido para o motor |
+| `history.js` | O histórico de layouts trazido da ferramenta antiga |
 | `service.js` | Junta tudo: travas, fila, a sequência de cada site, as opções do projeto, resumo do card, envio ao GitHub |
-| `routes.js` | As rotas |
+| `edicao/` | A edição livre: ajustes pelo Claude em sites de repositório (ver "Ajustes pelo Claude em sites do Lovable") |
+
+As rotas do motor ficam em `server/src/routes/claude.js`, com as outras da API.
 
 As garantias do executor, cada uma com teste:
 
@@ -1371,7 +1429,11 @@ motivo e o site continua esperando.
   trabalho/                 a raiz que o agente enxerga
     clientes/<pasta>/       material copiado do projeto e o briefing
     projects/<slug>/        o site: código, dist e a sessão das etapas
+    .history/               o histórico de layouts (ver "O que vem da ferramenta antiga")
   execucoes/<id>.jsonl      o stream bruto de cada execução
+  atual/<id>.txt            o projeto em que as ferramentas de cada execução agem
+  entrada/                  passagem das cópias que vão para a pasta de trabalho
+  rodando.lock              a trava das execuções em curso
   runbook.md                o runbook, gerado a cada execução
   configuracoes-do-agente.json
 ```
@@ -1502,6 +1564,13 @@ ensaios aceitam `modelo` e `esforco` no corpo: nos pedidos, a escolha fica grava
 projeto quando o pedido entra na fila; nos ensaios, vale só para o comando mostrado.
 
 ### Como é testado
+
+`npm run motor:isca` (`scripts/isca-do-claude.mjs`) é a conferência que os testes não
+fazem: monta o mesmo comando de uma geração numa pasta temporária com arquivos-isca e
+mostra o comando, sem disparar nada. Com `--executar`, roda o Claude Code de verdade
+(consome a assinatura, e só com autorização) e confere se o agente respeita a lista
+fechada, o login da assinatura e o runbook. Mesmo sem `--executar`, o script carrega o
+`.env` do painel e roda consultas do pacote do motor.
 
 Nenhum teste chama o Claude de verdade. `CLAUDE_BIN` aponta para um claude falso
 (`engines/claude/fixtures/claude-falso.mjs`), que emite eventos `stream-json` de
