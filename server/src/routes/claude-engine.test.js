@@ -22,15 +22,15 @@ process.env.PANEL_DATA_DIR = dataDir;
 process.env.PANEL_ACCESS_TOKEN = "";
 process.env.PREVIEW_WATCH_INTERVAL_MS = "0";
 
-const { createApp } = await import("../../app.js");
-const { resetRuntimeConfig } = await import("../../config.js");
-const { writeFile: gravarNoProjeto } = await import("../../local/storage.js");
-const registro = await import("../../store/claude.js");
-const { CLAUDE_FALSO } = await import("./fixtures/apoio.mjs");
-const { estadoDoPacote } = await import("./motor.js");
-const { criarServicoClaude, usarServicoClaude } = await import("./service.js");
+const { createApp } = await import("../app.js");
+const { resetRuntimeConfig } = await import("../config.js");
+const { writeFile: gravarNoProjeto } = await import("../local/storage.js");
+const registro = await import("../store/claude.js");
+const { CLAUDE_FALSO } = await import("../engines/claude/fixtures/apoio.mjs");
+const { estadoDoPacote } = await import("../engines/claude/motor.js");
+const { criarServicoClaude, usarServicoClaude } = await import("../engines/claude/service.js");
 
-const engineDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "joinvixable");
+const engineDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "joinvixable");
 const pacote = estadoDoPacote(engineDir);
 const pular = pacote.instalado ? false : `pacote do motor ausente: ${pacote.motivo}`;
 
@@ -246,7 +246,7 @@ describe("rotas do motor Claude com o pacote do motor de verdade", { skip: pular
     assert.ok(fs.existsSync(path.join(servico.caminhos.trabalho, "projects", pasta, "src", "App.tsx")), "o site está na pasta de dados do painel");
     assert.equal(fs.existsSync(path.join(engineDir, "projects", pasta)), false, "e não na pasta do pacote");
     // Falhou: não vira site do projeto.
-    const { listGenerations } = await import("../../store/generations.js");
+    const { listGenerations } = await import("../store/generations.js");
     assert.deepEqual((await listGenerations())[projectId] ?? [], []);
 
     // Com a etapa aberta, o ajuste é recusado pelo motor antes de gastar; continuar é aceito.

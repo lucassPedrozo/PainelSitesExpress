@@ -3,8 +3,8 @@ import { assertInsideDriveRoot } from "../drive.js";
 import { httpError } from "../http.js";
 import { requirePermission } from "../security/permissions.js";
 import { RateLimiter, scheduleThrottlePruning } from "../security/throttle.js";
-import { analyzeBriefing, parseAnalysisInput } from "./briefing.js";
-import { candidateModels, geminiPreferredModel, isGeminiConfigured, NOT_CONFIGURED } from "./client.js";
+import { analyzeBriefing, parseAnalysisInput } from "../gemini/briefing.js";
+import { candidateModels, geminiPreferredModel, isGeminiConfigured, NOT_CONFIGURED } from "../gemini/client.js";
 
 /**
  * Rotas do assistente (Gemini): o que a tela de geração pede ao modelo.

@@ -9,27 +9,27 @@ import {
   recordDeploy,
   recordPublicationConfig,
 } from "../store/publications.js";
-import { checkAccess } from "./github/access-check.js";
-import { followPublication } from "./watch.js";
-import { getGitHubConfig } from "./github/client.js";
+import { checkAccess } from "../deploy/github/access-check.js";
+import { followPublication } from "../deploy/watch.js";
+import { getGitHubConfig } from "../deploy/github/client.js";
 import {
   getWorkflowFileContent,
   listWorkflowFiles,
-} from "./github/contents.js";
-import { listRepos, listWorkflowRuns } from "./github/repositories.js";
+} from "../deploy/github/contents.js";
+import { listRepos, listWorkflowRuns } from "../deploy/github/repositories.js";
 import {
   assertConfigured,
   assertCanConfigure,
   assertMutationAllowed,
   repoParams,
-} from "./guards.js";
+} from "../deploy/guards.js";
 import {
   assertBranch,
   assertIdentifier,
   assertWorkflowFileName,
   assertWorkflowPath,
   parsePublicationRequest,
-} from "./input.js";
+} from "../deploy/input.js";
 import {
   deleteWorkflows,
   describeManagedWorkflows,
@@ -38,18 +38,18 @@ import {
   mapRepo,
   mapRun,
   refreshOutdatedWorkflows,
-} from "./operations.js";
-import { configurePublication } from "./publication.js";
+} from "../deploy/operations.js";
+import { configurePublication } from "../deploy/publication.js";
 import {
   parseSettingsPayload,
   readPanelSettings,
   saveSettings,
-} from "./settings.js";
+} from "../deploy/settings.js";
 import {
   buildWorkflowFiles,
   DEPLOY_WORKFLOW_FILE,
   WORKFLOW_TEMPLATE_VERSION,
-} from "./workflow-template.js";
+} from "../deploy/workflow-template.js";
 
 /** Rotas /api/deploy: configuração do painel, repositórios e publicação. */
 export const deployRouter = Router();

@@ -16,7 +16,7 @@ import { assertCanConfigure } from "../deploy/guards.js";
 import { dropSessionsOfUser } from "../security/access.js";
 import { ADMIN } from "../security/authenticate.js";
 import { RateLimiter, scheduleThrottlePruning } from "../security/throttle.js";
-import { readSettings, validateSettings, writeSettings } from "./service.js";
+import { readSettings, validateSettings, writeSettings } from "../settings/service.js";
 
 /**
  * Rotas /api/settings: a tela de configuração do `.env`.

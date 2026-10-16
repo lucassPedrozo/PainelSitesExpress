@@ -5,7 +5,7 @@ import {
   completeAuthorization,
   disconnect,
   getStatus,
-} from "./oauth.js";
+} from "../lovable/oauth.js";
 import {
   changeGenerationProject,
   forgetGeneration,
@@ -25,12 +25,12 @@ import { assertProjectId } from "../security/project-scope.js";
 import { isLocalProjectId } from "../store/local-projects.js";
 import { httpError, publicMessageOf, statusOf } from "../http.js";
 import { identityAllows, requirePermission } from "../security/permissions.js";
-import { listTools } from "./mcp.js";
-import { generateSite, listWorkspaces } from "./generate.js";
-import { buildPackage, previewGeneration } from "./package.js";
+import { listTools } from "../lovable/mcp.js";
+import { generateSite, listWorkspaces } from "../lovable/generate.js";
+import { buildPackage, previewGeneration } from "../lovable/package.js";
 import { parseTerms, pixabay, pixabayStatus } from "../images/pixabay.js";
-import { replyToAgent, watchGeneration } from "./progress.js";
-import { lovableInfoOf, lovableNameOf, parseLovableProject, planLink } from "./link.js";
+import { replyToAgent, watchGeneration } from "../lovable/progress.js";
+import { lovableInfoOf, lovableNameOf, parseLovableProject, planLink } from "../lovable/link.js";
 import { listRepos } from "../deploy/github/repositories.js";
 import { githubConfig } from "../deploy/operations.js";
 import { getPublication, recordPublicationConfig, setPublicationRuns } from "../store/publications.js";

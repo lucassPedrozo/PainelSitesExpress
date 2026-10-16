@@ -22,16 +22,16 @@ process.env.PANEL_DATA_DIR = dataDir;
 process.env.PANEL_ACCESS_TOKEN = MASTER_KEY;
 process.env.PREVIEW_WATCH_INTERVAL_MS = "0";
 
-const { createApp } = await import("../../app.js");
-const { createZip } = await import("../../archive/zip-writer.js");
-const { writeFile: gravarNoProjeto } = await import("../../local/storage.js");
-const registro = await import("../../store/claude.js");
-const { linkGeneration, listGenerations, setGenerationDevArea } = await import("../../store/generations.js");
-const { caminhoDeRegra } = await import("./command.js");
-const { CLAUDE_FALSO, SEGREDOS_DO_PAINEL } = await import("./fixtures/apoio.mjs");
-const { criarMotorFalso } = await import("./fixtures/motor-falso.mjs");
-const { caminhosProtegidos, criarServicoClaude, usarServicoClaude } = await import("./service.js");
-const { caminhosDoMotor } = await import("./workspace.js");
+const { createApp } = await import("../app.js");
+const { createZip } = await import("../archive/zip-writer.js");
+const { writeFile: gravarNoProjeto } = await import("../local/storage.js");
+const registro = await import("../store/claude.js");
+const { linkGeneration, listGenerations, setGenerationDevArea } = await import("../store/generations.js");
+const { caminhoDeRegra } = await import("../engines/claude/command.js");
+const { CLAUDE_FALSO, SEGREDOS_DO_PAINEL } = await import("../engines/claude/fixtures/apoio.mjs");
+const { criarMotorFalso } = await import("../engines/claude/fixtures/motor-falso.mjs");
+const { caminhosProtegidos, criarServicoClaude, usarServicoClaude } = await import("../engines/claude/service.js");
+const { caminhosDoMotor } = await import("../engines/claude/workspace.js");
 
 const engineDir = path.join(raiz, "pacote");
 fs.mkdirSync(path.join(engineDir, "node_modules"), { recursive: true });
