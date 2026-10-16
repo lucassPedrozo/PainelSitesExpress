@@ -11,7 +11,7 @@ A API inteira roda atrás de uma política de rede própria: escuta só em `127.
 ## Funcionalidades
 
 - Listagem dos projetos numa tabela com o domínio em primeiro plano, o selo da etapa (ou do problema, em vermelho ou âmbar) e um botão de próximo passo que muda conforme a etapa: *Gerar*, *Criar link*, *Enviar ao cliente*, *Publicar*
-- "Fazer agora": contadores do que falta fazer, que filtram a lista, e ações em massa sobre vários projetos de uma vez
+- Contadores do que falta fazer no Dashboard, que levam à lista já filtrada, e ações em massa sobre vários projetos de uma vez
 - Geração do site no Lovable via MCP (OAuth), com o briefing do Drive como prompt, anexos (imagem, PDF, vídeo, áudio, compactado) e observações adicionais
 - Assistente na tela de geração (Gemini, nível gratuito): resumo do briefing, o que falta, complementos prontos para as observações e buscas sugeridas no banco de imagens — tudo sugestão, nada entra no envio sem um clique
 - Geração em lote, acompanhamento ao vivo do andamento e resposta ao agente do Lovable quando ele para esperando alguém
@@ -37,82 +37,14 @@ A API inteira roda atrás de uma política de rede própria: escuta só em `127.
 
 ## Estrutura do projeto
 
-```text
-.
-|-- .github/
-|   `-- workflows/
-|       `-- ci.yml
-|-- docs/
-|   `-- GUIA-TECNICO.md
-|-- launcher/
-|   |-- PainelLauncher.cs
-|   `-- build.ps1
-|-- joinvixable/                (pacote do motor Claude: repositório privado, fora do git)
-|-- scripts/
-|   |-- motor.mjs
-|   `-- verificar-segredos.mjs
-|-- server/
-|   |-- src/
-|   |   |-- deploy/
-|   |   |   `-- github/
-|   |   |-- devarea/
-|   |   |-- engines/
-|   |   |   `-- claude/
-|   |   |-- lovable/
-|   |   |-- preview/
-|   |   |-- routes/
-|   |   |-- security/
-|   |   |-- settings/
-|   |   |-- shortlinks/
-|   |   |-- store/
-|   |   |-- app.js
-|   |   |-- backup.js
-|   |   |-- config.js
-|   |   |-- drive.js
-|   |   `-- index.js
-|   |-- workflows/
-|   |   |-- scripts/
-|   |   |-- build.yml
-|   |   |-- deploy-via-ftp.yml
-|   |   `-- dev-area-via-ftp.yml
-|   |-- package.json
-|   `-- tsconfig.json
-|-- shared/
-|   |-- access-permissions.js
-|   |-- domain.js
-|   `-- lovable-repo.js
-|-- web/
-|   |-- public/
-|   |-- src/
-|   |   |-- components/
-|   |   |   `-- ui/
-|   |   |-- features/
-|   |   |   |-- access/
-|   |   |   |-- claude/
-|   |   |   |-- deploy/
-|   |   |   |-- generate/
-|   |   |   |-- project-files/
-|   |   |   |-- projects/
-|   |   |   |-- settings/
-|   |   |   `-- tags/
-|   |   |-- lib/
-|   |   |   `-- api/
-|   |   |-- App.tsx
-|   |   `-- main.tsx
-|   |-- package.json
-|   `-- vite.config.ts
-|-- .env.example
-|-- package.json
-`-- README.md
-```
-
-- `server/` — API em Node + Express: Drive, Lovable (MCP), motor Claude, GitHub, FTP, encurtador, política de rede e banco local
+- `server/` — API em Node + Express. Em `src/`, `routes/` tem todos os routers HTTP; as pastas de cada integração (`deploy/`, `lovable/`, `engines/claude/`, `devarea/`, `preview/`, `shortlinks/`, `gemini/`, `images/`, `local/`, `archive/`, `settings/`) têm o serviço; `store/` é o banco local e `security/`, a política de rede, a sessão e as permissões
+- `server/workflows/` — os workflows e scripts que o painel grava nos repositórios dos sites; o `.github/workflows/ci.yml` da raiz é só a verificação do próprio painel
+- `web/` — interface em React, organizada por funcionalidade em `src/features/`; `src/lib/api/` é a única camada que fala com a API
+- `shared/` — o que API e interface aplicam do mesmo jeito: permissões, domínio da coleta, nome do repositório, regras da publicação, campos do projeto, cores das tags, opções do motor Claude, site externo, imagens de banco e formatos de credencial
 - `joinvixable/` — o pacote do motor Claude: prompts, biblioteca de seções, template e pipeline. É conhecimento interno e vive num repositório privado, clonado nessa pasta; não é versionado aqui, e o painel funciona sem ele (o motor aparece como não instalado)
-- `server/workflows/` — os workflows e scripts que o painel grava nos repositórios dos sites; o `ci.yml` da raiz é só a verificação do próprio painel
-- `web/` — interface em React, organizada por funcionalidade
-- `shared/` — o que API e interface precisam enxergar igual: permissões, leitura do domínio da coleta e nome do repositório
 - `launcher/` — lançador para Windows, compilado localmente com `build.ps1`
-- `scripts/` — varredura de segredos, para rodar antes de cada publicação, e o atalho que roda os comandos do pacote do motor
+- `scripts/` — varredura de segredos, para rodar antes de cada publicação; o atalho que roda os comandos do pacote do motor; a importação do histórico de layouts; e a conferência das permissões do Claude Code (`npm run motor:isca`)
+- `docs/` — o [guia técnico](docs/GUIA-TECNICO.md), com a árvore completa das pastas, e os registros das auditorias de interface
 
 ## Como executar
 
@@ -214,7 +146,7 @@ A arquitetura completa — política de rede, chaves de acesso, API, geração n
 - Secrets gravados no GitHub criptografados com libsodium e actions fixadas por commit nos workflows gerados
 - Status de publicação lido das execuções reais do GitHub Actions, ignorando execuções canceladas e simulações
 - Banco local com escrita atômica, backup diário rotativo e subida a partir da última cópia legível se o arquivo principal corromper
-- Mais de 680 testes automatizados (API e interface) rodando no CI a cada push, sem nenhuma chave real
+- Mais de 800 testes automatizados (API e interface) rodando no CI a cada push, sem nenhuma chave real
 
 **Stack:**
 
