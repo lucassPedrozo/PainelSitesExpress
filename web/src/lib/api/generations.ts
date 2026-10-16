@@ -168,9 +168,6 @@ export const checkAllSharePreviews = () =>
     summary: Record<PreviewState, number>;
   }>("POST", "/api/share-links/check");
 
-export const fetchShortlinkStatus = () =>
-  get<{ configured: boolean }>("/api/shortlinks/status");
-
 /** Registra (ou desfaz) a entrega ao cliente. A API exige link `alive`. */
 export const setGenerationDelivered = (
   projectId: string,
@@ -254,10 +251,4 @@ export const changeLovableProject = (
     "PUT",
     `/api/projects/${projectId}/generations/${lovableId}/lovable-project`,
     input,
-  );
-
-export const forgetGeneration = (projectId: string, lovableId: string) =>
-  send<void>(
-    "DELETE",
-    `/api/projects/${projectId}/generations/${lovableId}`,
   );

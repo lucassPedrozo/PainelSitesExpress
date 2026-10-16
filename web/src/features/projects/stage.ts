@@ -191,18 +191,6 @@ export function stageOf(project: Project): StageView {
   };
 }
 
-/** Quanto o projeto pede ação agora: a posição do grupo dele em `PRIORITY`. */
-export const priorityOf = (project: Project) => {
-  const group = STAGES[projectStatus(project).stage].group;
-  return group ? PRIORITY.indexOf(group) : PRIORITY.length;
-};
-
-/** Pede alguém da equipe agora (os 5 primeiros contadores). */
-export const needsAction = (project: Project) => {
-  const group = STAGES[projectStatus(project).stage].group;
-  return group ? workGroupOf(group).acting : false;
-};
-
 /**
  * As abas da lista. Finalizado é uma escolha de quem opera (a tag); no ar é o
  * que o GitHub confirma; o resto está ativo — inclusive o site no ar com uma

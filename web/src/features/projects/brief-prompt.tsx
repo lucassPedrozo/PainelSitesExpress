@@ -49,63 +49,6 @@ function useBrief(project: Project) {
   return { brief, loading, load };
 }
 
-export function CopyBriefButton({
-  project,
-  variant = "outline",
-  size = "sm",
-  label = "Copiar prompt",
-  className,
-  disabled = false,
-  title,
-}: {
-  project: Project;
-  variant?: "outline" | "ghost" | "secondary" | "default";
-  size?: "sm" | "default";
-  label?: string;
-  className?: string;
-  /** Projeto sem briefing no Drive: o botão fica à vista, mas inerte. */
-  disabled?: boolean;
-  title?: string;
-}) {
-  const { loading, load } = useBrief(project);
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    try {
-      const data = await load();
-      const ok = await copyToClipboard(data.text);
-      if (!ok) throw new Error("O navegador bloqueou o acesso à área de transferência");
-
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toast.success("Prompt copiado", {
-        description: `${pluralize(data.text.length, "caractere")} de “${data.file.name}”`,
-      });
-    } catch (err) {
-      toast.error("Não foi possível copiar o prompt", {
-        description: err instanceof Error ? err.message : undefined,
-      });
-    }
-  };
-
-  return (
-    <Button
-      variant={variant}
-      size={size}
-      className={className}
-      disabled={loading || disabled}
-      onClick={(event) => {
-        event.stopPropagation();
-        void copy();
-      }}
-      title={title ?? (project.brief?.name ? `Copiar o conteúdo de “${project.brief.name}”` : "Copiar o prompt")}
-    >
-      {loading ? <Loader2 className="animate-spin" /> : copied ? <Check /> : <Copy />}
-      {copied ? "Copiado" : label}
-    </Button>
-  );
-}
-
 /** Visualização do prompt antes de levá-lo para o Lovable. */
 export function ViewBriefButton({ project }: { project: Project }) {
   const { brief, loading, load } = useBrief(project);

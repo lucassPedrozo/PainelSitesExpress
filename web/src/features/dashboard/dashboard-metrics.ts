@@ -21,8 +21,6 @@ import { ETAPA_ORDER, STAGES, tabOf, type Etapa } from "@/features/projects/stag
 /** Em que trecho do fluxo o projeto está — a mesma cor no gráfico e na linha. */
 export type Phase = "waiting" | "production" | "client" | "done";
 
-export const PHASES: Phase[] = ["waiting", "production", "client", "done"];
-
 export const phaseLabels: Record<Phase, string> = {
   waiting: "Aguardando geração",
   production: "Em produção",
