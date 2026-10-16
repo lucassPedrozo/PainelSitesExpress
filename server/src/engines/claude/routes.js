@@ -3,7 +3,7 @@ import express, { Router } from "express";
 import { assertProjectId } from "../../routes/drive-scoped.js";
 import { activeEngineId } from "../index.js";
 import { identityAllows, requirePermission } from "../../security/permissions.js";
-import { MAX_BYTES_DO_ANEXO } from "./attachments.js";
+import { MAX_ADJUST_ATTACHMENT_BYTES as MAX_BYTES_DO_ANEXO } from "../../../../shared/claude-options.js";
 import { servicoClaude } from "./service.js";
 
 /**

@@ -1,6 +1,10 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  MAX_ADJUST_ATTACHMENT_BYTES as MAX_BYTES_DO_ANEXO,
+  MAX_ADJUST_ATTACHMENTS as MAX_ANEXOS,
+} from "../../../../shared/claude-options.js";
 import { httpError } from "../../http.js";
 
 /**
@@ -17,8 +21,6 @@ import { httpError } from "../../http.js";
  * nome: PNG, JPEG, WebP e GIF.
  */
 
-export const MAX_ANEXOS = 6;
-export const MAX_BYTES_DO_ANEXO = 8 * 1024 * 1024;
 /** Rascunhos guardados por site: o do pedido atual e os dos ajustes recentes. */
 const RASCUNHOS_GUARDADOS = 8;
 

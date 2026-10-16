@@ -7,10 +7,11 @@ import { formatBytes } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { errorMessage } from "./claude-text";
+import {
+  MAX_ADJUST_ATTACHMENT_BYTES as MAX_BYTES,
+  MAX_ADJUST_ATTACHMENTS as MAX_ATTACHMENTS,
+} from "@shared/claude-options.js";
 
-/** O mesmo teto do painel: até seis imagens de 8 MB por pedido. */
-export const MAX_ATTACHMENTS = 6;
-const MAX_BYTES = 8 * 1024 * 1024;
 const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 export type AdjustAttachment = {

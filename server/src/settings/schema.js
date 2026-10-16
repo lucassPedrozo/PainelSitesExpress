@@ -1,4 +1,5 @@
 import path from "node:path";
+import { ART_DIRECTION_LEVELS, EFFORT_LABELS, MOTION_LEVELS } from "../../../shared/claude-options.js";
 import { ESFORCOS, MODELO_INVALIDO, MODELO_VALIDO } from "../engines/claude/command.js";
 import { config } from "../config.js";
 import { isLocalNetworkAddress } from "../security/network.js";
@@ -68,8 +69,6 @@ const programaConhecido = (nomes, quais, { soNome = false } = {}) => (valor) => 
 const CLAUDE_CODE = /^claude(\.exe)?$/i;
 /** Os navegadores que o motor sabe usar nas capturas (Chrome, Edge e Chromium). */
 const NAVEGADOR = /^(chrome|msedge|chromium|chromium-browser|google-chrome(-stable)?|microsoft-edge(-stable)?|Google Chrome|Microsoft Edge|Chromium)(\.exe)?$/i;
-/** Como a tela chama cada nível do `--effort` do Claude Code. */
-const NOME_DO_ESFORCO = { low: "Baixo", medium: "Médio", high: "Alto", xhigh: "Muito alto", max: "Máximo" };
 
 const urlHttps = (value) => {
   try {
@@ -191,7 +190,7 @@ export const SETTINGS_SCHEMA = [
         type: "select",
         options: [
           { value: "", label: "O que o motor espera" },
-          ...ESFORCOS.map((nivel) => ({ value: nivel, label: `${NOME_DO_ESFORCO[nivel]} (${nivel})` })),
+          ...ESFORCOS.map((nivel) => ({ value: nivel, label: `${EFFORT_LABELS[nivel]} (${nivel})` })),
         ],
         help: "Quanto o modelo pensa antes de escrever. Mais esforço dá um site mais bem resolvido; cada execução demora mais e consome mais da assinatura. É o padrão de todos os projetos; cada um pode escolher outro na hora de gerar.",
       },
@@ -241,9 +240,7 @@ export const SETTINGS_SCHEMA = [
         type: "select",
         options: [
           { value: "", label: "Padrão do motor" },
-          { value: "sobria", label: "Sóbria" },
-          { value: "autoral", label: "Autoral" },
-          { value: "ousada", label: "Ousada" },
+          ...ART_DIRECTION_LEVELS.map(({ value, label }) => ({ value, label })),
         ],
         help: "Até onde o visual do site se afasta do convencional: da sóbria, mais contida, à ousada, que arrisca mais. É o padrão de todos os projetos; cada site pode escolher outra na revisão do briefing.",
       },
@@ -253,9 +250,7 @@ export const SETTINGS_SCHEMA = [
         type: "select",
         options: [
           { value: "", label: "Padrão do motor" },
-          { value: "discreto", label: "Discreto" },
-          { value: "expressivo", label: "Expressivo" },
-          { value: "cinematografico", label: "Cinematográfico" },
+          ...MOTION_LEVELS.map(({ value, label }) => ({ value, label })),
         ],
         help: "Quanta animação o site leva: do discreto, só com transições leves, ao cinematográfico, em que o movimento faz parte da apresentação. É o padrão de todos os projetos; cada site pode escolher outro na revisão do briefing.",
       },

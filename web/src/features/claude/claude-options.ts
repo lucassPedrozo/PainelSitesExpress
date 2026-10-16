@@ -1,3 +1,4 @@
+import { ART_DIRECTION_LEVELS, EFFORT_LABELS, MOTION_LEVELS } from "@shared/claude-options.js";
 import type { ClaudeEffort, ClaudeOptions, ClaudeRunChoices, ClaudeSiteOptions } from "@/lib/api";
 import { pluralize } from "@/lib/format";
 import { linesToList } from "./briefing-fields";
@@ -31,16 +32,8 @@ export const defaultLabel = (atual: string | null | undefined) =>
 
 /* ---- modelo e esforço -------------------------------------------------- */
 
-export const effortLabels: Record<ClaudeEffort, string> = {
-  low: "Baixo",
-  medium: "Médio",
-  high: "Alto",
-  xhigh: "Muito alto",
-  max: "Máximo",
-};
-
 /** O nível de esforço por extenso; um nível que a tela não conhece vai como veio. */
-export const effortLabel = (nivel: string) => effortLabels[nivel as ClaudeEffort] ?? nivel;
+export const effortLabel = (nivel: string) => EFFORT_LABELS[nivel as ClaudeEffort] ?? nivel;
 
 /** O nome do modelo; um id fora da lista vai como foi digitado. */
 export const modelLabel = (id: string, modelos: Defaults["modelos"]) =>
@@ -113,43 +106,24 @@ export const EFFORT_HELP =
 
 export type Level = { value: string; label: string; help: string };
 
+/** A frase de cada nível; o valor e o nome vêm de `shared/claude-options.js`, os mesmos da tela de Configurações. */
+const LEVEL_HELP: Record<string, string> = {
+  sobria: "Composição clara e estável, com a cor da marca na medida. Para clientes que pedem sobriedade.",
+  autoral: "Uma ideia de composição própria do negócio, do cabeçalho ao rodapé, sem estranheza gratuita.",
+  ousada: "Composição que surpreende quem conhece o ramo. Para clientes que comportam risco.",
+  discreto: "Entradas curtas, quase imperceptíveis: boa parte da página fica parada.",
+  expressivo: "Cada seção tem a sua animação, e a página responde à rolagem sem atrapalhar a leitura.",
+  cinematografico: "O movimento conduz a visita: a abertura e a rolagem são pensadas como um filme curto.",
+};
+
+const withHelp = (levels: { value: string; label: string }[]): Level[] =>
+  levels.map(({ value, label }) => ({ value, label, help: LEVEL_HELP[value] }));
+
 /** Até onde o visual do site se afasta do convencional. */
-export const ART_DIRECTIONS: Level[] = [
-  {
-    value: "sobria",
-    label: "Sóbria",
-    help: "Composição clara e estável, com a cor da marca na medida. Para clientes que pedem sobriedade.",
-  },
-  {
-    value: "autoral",
-    label: "Autoral",
-    help: "Uma ideia de composição própria do negócio, do cabeçalho ao rodapé, sem estranheza gratuita.",
-  },
-  {
-    value: "ousada",
-    label: "Ousada",
-    help: "Composição que surpreende quem conhece o ramo. Para clientes que comportam risco.",
-  },
-];
+export const ART_DIRECTIONS: Level[] = withHelp(ART_DIRECTION_LEVELS);
 
 /** Quanta animação o site leva. */
-export const MOTIONS: Level[] = [
-  {
-    value: "discreto",
-    label: "Discreto",
-    help: "Entradas curtas, quase imperceptíveis: boa parte da página fica parada.",
-  },
-  {
-    value: "expressivo",
-    label: "Expressivo",
-    help: "Cada seção tem a sua animação, e a página responde à rolagem sem atrapalhar a leitura.",
-  },
-  {
-    value: "cinematografico",
-    label: "Cinematográfico",
-    help: "O movimento conduz a visita: a abertura e a rolagem são pensadas como um filme curto.",
-  },
-];
+export const MOTIONS: Level[] = withHelp(MOTION_LEVELS);
 
 /** O nome de um nível; um valor que a tela não conhece vai como veio. */
 export const levelLabel = (levels: Level[], value: string) =>
