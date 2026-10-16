@@ -1,12 +1,10 @@
 import {
-  CheckCheck,
   CirclePause,
   FolderOpen,
   Globe,
   Inbox,
   Layers,
   Link2,
-  Loader,
   Rocket,
   Send,
   Sparkles,
@@ -66,24 +64,20 @@ export type WorkGroupKey =
 export type WorkGroup = {
   key: WorkGroupKey;
   label: string;
-  /** O que entra no grupo — o tooltip do contador. */
-  hint: string;
-  tone: StageTone | null;
-  icon: LucideIcon;
   /** `true`: depende de alguém da equipe agora. `false`: espera o painel ou o cliente. */
   acting: boolean;
 };
 
-/** Os contadores do "Fazer agora", na ordem da faixa. */
+/** Os grupos de trabalho, do que pede a equipe agora ao que só espera. */
 export const WORK_GROUPS: WorkGroup[] = [
-  { key: "resolver", label: "Resolver", hint: "Falhas, links que não abrem, agente parado e geração interrompida.", tone: "erro", icon: TriangleAlert, acting: true },
-  { key: "revisar", label: "Revisar", hint: "Briefing, direção criativa e sequência do Claude esperando alguém.", tone: "atencao", icon: CheckCheck, acting: true },
-  { key: "gerar", label: "Gerar", hint: "Material no lugar, site ainda não gerado.", tone: "geracao", icon: Sparkles, acting: true },
-  { key: "criar-link", label: "Criar link", hint: "Site gerado, falta o link do cliente.", tone: "link", icon: Link2, acting: true },
-  { key: "enviar", label: "Enviar ao cliente", hint: "O link abre: falta mandar.", tone: "cliente", icon: Send, acting: true },
-  { key: "andamento", label: "Em andamento", hint: "O painel acompanha sozinho e avisa quando terminar.", tone: null, icon: Loader, acting: false },
-  { key: "com-cliente", label: "Com o cliente", hint: "Link enviado; publique quando o cliente aprovar.", tone: null, icon: Send, acting: false },
-  { key: "sem-material", label: "Sem material", hint: "A pasta do Drive ainda está vazia.", tone: null, icon: Inbox, acting: false },
+  { key: "resolver", label: "Resolver", acting: true },
+  { key: "revisar", label: "Revisar", acting: true },
+  { key: "gerar", label: "Gerar", acting: true },
+  { key: "criar-link", label: "Criar link", acting: true },
+  { key: "enviar", label: "Enviar ao cliente", acting: true },
+  { key: "andamento", label: "Em andamento", acting: false },
+  { key: "com-cliente", label: "Com o cliente", acting: false },
+  { key: "sem-material", label: "Sem material", acting: false },
 ];
 
 export const workGroupOf = (key: WorkGroupKey) => WORK_GROUPS.find((group) => group.key === key)!;

@@ -7,8 +7,8 @@ import { projectStatus } from "./project-status";
 import { engineLabels, engineOf } from "./site-engine";
 
 /*
- * As regras da lista de projetos, sem React: abas, filtros, contadores do
- * "Fazer agora" e ordenação. Testadas em project-filters.test.ts.
+ * As regras da lista de projetos, sem React: abas, filtros, contadores e
+ * ordenação. Testadas em project-filters.test.ts.
  */
 
 export type SortKey = "prioridade" | "atividade" | "coleta-recente" | "coleta-antiga" | "nome";
@@ -88,20 +88,6 @@ export function filterProjects(projects: Project[], options: FilterOptions) {
       matchesEtapa(project, options.etapa ?? null) &&
       matchesGroup(project, options.group),
   );
-}
-
-/**
- * Quantos projetos cada contador do "Fazer agora" tem — entre os ativos, com
- * a busca, as tags e a etapa aplicadas, mas sem o próprio contador. O número
- * é o que aparece ao clicar nele.
- */
-export function countGroups(projects: Project[], options: FilterOptions) {
-  const counts = new Map<WorkGroupKey, number>();
-  for (const project of filterProjects(projects, { ...options, tab: "ativos", group: null })) {
-    const group = STAGES[projectStatus(project).stage].group;
-    if (group) counts.set(group, (counts.get(group) ?? 0) + 1);
-  }
-  return counts;
 }
 
 /** Quantos há em cada aba, com a busca e as tags aplicadas. */

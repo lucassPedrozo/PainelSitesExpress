@@ -9,7 +9,6 @@ import { queryKeys } from "@/lib/query";
 import type { TagsController } from "@/features/tags/use-tags";
 import { isInProgress } from "./project-progress";
 import {
-  countGroups,
   countTabs,
   countTags,
   filterProjects,
@@ -44,8 +43,6 @@ export type ProjectList = {
   tab: ListTab;
   setTab: (value: ListTab) => void;
   tabCounts: Record<ListTab, number>;
-  /** Os contadores do "Fazer agora", com os outros filtros aplicados. */
-  groupCounts: Map<WorkGroupKey, number>;
   group: WorkGroupKey | null;
   /** Liga um contador; o mesmo de novo desliga. Também leva para a aba Ativos. */
   toggleGroup: (value: WorkGroupKey) => void;
@@ -250,7 +247,6 @@ export function useProjectList(tags: TagsController): ProjectList {
     [query, tagFilter, tab, tags.finishedTagId, etapa, group],
   );
 
-  const groupCounts = useMemo(() => countGroups(projects, filterOptions), [projects, filterOptions]);
   const tabCounts = useMemo(() => countTabs(projects, filterOptions), [projects, filterOptions]);
   const tagCounts = useMemo(() => countTags(projects, filterOptions), [projects, filterOptions]);
   const visible = useMemo(
@@ -323,7 +319,6 @@ export function useProjectList(tags: TagsController): ProjectList {
     tab,
     setTab,
     tabCounts,
-    groupCounts,
     group,
     toggleGroup,
     etapa,

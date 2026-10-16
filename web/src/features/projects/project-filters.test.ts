@@ -3,7 +3,6 @@ import type { Project } from "@/lib/api";
 import { emptyTagFilter } from "@/features/tags/tag-filter";
 import {
   collectedAtOf,
-  countGroups,
   countTabs,
   countTags,
   filterProjects,
@@ -125,7 +124,7 @@ describe("filterProjects — busca, tags e etapa", () => {
   });
 });
 
-describe("contadores do “Fazer agora”", () => {
+describe("filtro por grupo de trabalho", () => {
   const lista = [
     projeto({ id: "vazio", fileCount: 0 }),
     projeto({ id: "gerar-1" }),
@@ -135,20 +134,12 @@ describe("contadores do “Fazer agora”", () => {
     projeto({ id: "no-ar", publication: vivo } as never),
   ];
 
-  it("conta os ativos por grupo; no ar e finalizado ficam fora", () => {
-    const counts = countGroups(lista, base);
-    expect(Object.fromEntries(counts)).toEqual({ "sem-material": 1, gerar: 2, "criar-link": 1, resolver: 1 });
-  });
-
-  it("o número segue a busca e as tags — é o que aparece ao clicar", () => {
-    const counts = countGroups(lista, { ...base, tagFilter: { ...emptyTagFilter, tagIds: ["t1"] } });
-    expect(Object.fromEntries(counts)).toEqual({ gerar: 1 });
+  it("o grupo segue a busca e as tags", () => {
     expect(filterProjects(lista, { ...base, group: "gerar", tagFilter: { ...emptyTagFilter, tagIds: ["t1"] } })).toHaveLength(1);
   });
 
-  it("o contador escolhido filtra a lista, mas não muda a própria contagem", () => {
+  it("o grupo escolhido filtra a lista", () => {
     expect(filterProjects(lista, { ...base, group: "gerar" }).map((p) => p.id)).toEqual(["gerar-1", "gerar-2"]);
-    expect(countGroups(lista, { ...base, group: "gerar" }).get("resolver")).toBe(1);
   });
 });
 
