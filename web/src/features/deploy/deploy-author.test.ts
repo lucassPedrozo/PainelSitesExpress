@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Publication } from "@/lib/api/deploy";
-import { deployAuthor } from "./publications-card";
+import { deployAuthor } from "./deploy-author";
 
 const base: Publication = {
   repoFullName: "org/site",

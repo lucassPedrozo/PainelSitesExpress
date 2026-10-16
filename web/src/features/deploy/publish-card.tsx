@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { errorMessage } from "./deploy-placeholders";
+import { errorMessage } from "./error-message";
 import { StepBadge } from "./step-badge";
 
 type PublishCardProps = {

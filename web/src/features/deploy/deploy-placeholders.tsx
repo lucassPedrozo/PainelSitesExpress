@@ -5,15 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Reason } from "@/components/disabled-hint";
 import { EmptyState, ErrorNotice, PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
+import { errorMessage } from "./error-message";
 
 /*
  * O que a tela de publicação mostra fora do fluxo principal: o cabeçalho, a
  * carga, a API fora do ar, a configuração pendente e a falta de repositório.
  */
-
-/** A mensagem de um erro de leitura, ou `null` quando não há o que mostrar. */
-export const errorMessage = (error: unknown) =>
-  error instanceof Error && error.message ? error.message : null;
 
 const TITULO = "Deploy";
 const DESCRICAO = "Escolha o repositório do site, confira o destino e publique no domínio do cliente.";

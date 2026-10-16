@@ -37,7 +37,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { errorMessage } from "./deploy-placeholders";
+import { errorMessage } from "./error-message";
 import type { ValidationErrors } from "./deploy-types";
 import { PublicationFields } from "./publication-form";
 import { OutdatedWorkflowsAlert } from "./publication-summary";

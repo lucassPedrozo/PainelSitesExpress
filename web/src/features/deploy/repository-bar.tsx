@@ -1,7 +1,7 @@
 import type { RepoOption } from "@/lib/api/deploy";
 import { pluralize } from "@/lib/format";
 import { When } from "@/components/when";
-import { errorMessage } from "./deploy-placeholders";
+import { errorMessage } from "./error-message";
 import type { PublishTarget, RepositorySuggestion } from "./publish-target";
 import { RepositoryPicker } from "./repository-picker";
 import { SuggestionNote } from "./suggestion-note";

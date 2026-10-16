@@ -46,7 +46,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { AdjustAttachments, attachmentsPayload, useAdjustAttachments } from "@/features/claude/claude-adjust-attachments";
+import { AdjustAttachments } from "@/features/claude/claude-adjust-attachments";
+import { attachmentsPayload, useAdjustAttachments } from "@/features/claude/use-adjust-attachments";
 import { ClaudeLog } from "@/features/claude/claude-log";
 import { RunCard } from "@/features/claude/claude-panel";
 import { ConfirmClaudeDialog, GenerationOffNotice, SectionDisclosure } from "@/features/claude/claude-shared";

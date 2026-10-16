@@ -8,22 +8,11 @@ import {
   axisTicks,
   developerLabel,
   durationOf,
+  phaseColor,
   phaseLabels,
   segmentsOf,
   type DashboardRow,
 } from "./dashboard-metrics";
-
-/**
- * A cor de cada trecho do fluxo, nos tons das etapas: a espera é cinza de
- * propósito (ninguém trabalhou no projeto), a produção tem o tom da Geração,
- * o tempo com o cliente o do Cliente e o ponto "no ar" o da Publicação.
- */
-export const phaseColor: Record<keyof typeof phaseLabels, string> = {
-  waiting: "bg-muted-foreground/35",
-  production: "bg-stage-geracao",
-  client: "bg-stage-cliente",
-  done: "bg-stage-publicacao",
-};
 
 const GRID = "md:grid-gantt";
 

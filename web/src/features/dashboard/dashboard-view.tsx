@@ -36,13 +36,14 @@ import {
   inPeriod,
   periodLabels,
   periodStart,
+  phaseColor,
   phaseLabels,
   summarize,
   type DashboardRow,
   type PeriodKey,
 } from "./dashboard-metrics";
 import { PaymentReportDialog } from "./payment-report-dialog";
-import { phaseColor, ProjectsGantt } from "./projects-gantt";
+import { ProjectsGantt } from "./projects-gantt";
 
 const ALL = "__todos__";
 const PERIODS: PeriodKey[] = ["30", "90", "365", "all"];
