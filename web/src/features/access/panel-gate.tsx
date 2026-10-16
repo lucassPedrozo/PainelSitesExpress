@@ -4,7 +4,7 @@ import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { AccessGate } from "@/features/access/access-gate";
-import { ApiError, onUnauthorized } from "@/lib/access-token";
+import { ApiError, onUnauthorized } from "@/lib/api/errors";
 import { queryKeys } from "@/lib/query";
 import { fetchGate, openSession } from "@/lib/api";
 

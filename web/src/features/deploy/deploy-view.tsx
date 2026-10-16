@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageColumns, PageSkeleton } from "@/components/page-layout";
 import { toast } from "sonner";
-import { ApiError } from "@/lib/access-token";
+import { ApiError } from "@/lib/api/errors";
 import {
   deployApi,
   type DeleteWorkflowResult,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, onUnauthorized } from "@/lib/access-token";
+import { ApiError, onUnauthorized } from "@/lib/api/errors";
 import { request, send } from "./http";
 
 const respond = (status: number, body?: unknown) =>

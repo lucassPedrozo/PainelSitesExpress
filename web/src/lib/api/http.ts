@@ -1,4 +1,4 @@
-import { ApiError, reportUnauthorized } from "@/lib/access-token";
+import { ApiError, reportUnauthorized } from "@/lib/api/errors";
 
 /**
  * O cliente HTTP da interface. A autenticação vai no cookie de sessão, que o

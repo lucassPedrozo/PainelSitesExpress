@@ -1,4 +1,4 @@
-import { ApiError, reportUnauthorized } from "@/lib/access-token";
+import { ApiError, reportUnauthorized } from "@/lib/api/errors";
 import type { AccessCheckResult } from "./deploy";
 import { request } from "./http";
 

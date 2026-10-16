@@ -10,15 +10,6 @@
  */
 const LEGACY_ACCESS_TOKEN_KEY = "sites-express-access-token";
 
-export class ApiError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
 /** Versões anteriores guardavam a chave aqui; ela some na primeira carga. */
 export const forgetStoredAccessToken = () => {
   try {
@@ -26,18 +17,4 @@ export const forgetStoredAccessToken = () => {
   } catch {
     // Armazenamento bloqueado: não havia o que apagar.
   }
-};
-
-/** Uma resposta 401 significa sessão encerrada, vencida ou chave revogada. */
-type UnauthorizedListener = (message: string) => void;
-
-const listeners = new Set<UnauthorizedListener>();
-
-export const onUnauthorized = (listener: UnauthorizedListener) => {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-};
-
-export const reportUnauthorized = (message: string) => {
-  for (const listener of listeners) listener(message);
 };

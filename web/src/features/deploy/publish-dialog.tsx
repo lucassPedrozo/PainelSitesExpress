@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ApiError } from "@/lib/access-token";
+import { ApiError } from "@/lib/api/errors";
 import type { Project } from "@/lib/api";
 import { setGenerationRepository } from "@/lib/api";
 import { latestGeneration } from "@/features/projects/project-status";

@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { ApiError } from "@/lib/access-token";
+import { ApiError } from "@/lib/api/errors";
 
 /**
  * Cache das leituras da API.
