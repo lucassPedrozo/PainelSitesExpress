@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Loader2, Replace } from "lucide-react";
 import { toast } from "sonner";
-import type { Project } from "@/lib/api";
-import { changeLovableProject } from "@/lib/api/generations";
+import { changeLovableProject, type Project } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { projectIdentity } from "@/lib/format";
 import { Button } from "@/components/ui/button";
