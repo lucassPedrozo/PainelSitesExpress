@@ -1,5 +1,6 @@
 import type { Generation, Project } from "@/lib/api";
-import { clientUrlOf, isClaudeSite, isExternalSite } from "./project-status";
+import { isExternalSite } from "@shared/external-site.js";
+import { clientUrlOf, isClaudeSite } from "./project-status";
 
 /**
  * Com que ferramenta o site do projeto foi feito: o Lovable (gerado pelo

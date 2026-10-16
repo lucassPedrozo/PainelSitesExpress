@@ -1,3 +1,4 @@
+import { isExternalSite } from "../../../shared/external-site.js";
 import { config } from "../config.js";
 import { httpError } from "../http.js";
 import { generationGate } from "./package.js";
@@ -284,7 +285,7 @@ async function backfillLovableNames(todas) {
   for (const [projectId, lista] of Object.entries(todas)) {
     for (const generation of lista) {
       // Site vinculado de fora do Lovable: não há projeto lá para consultar.
-      if (!generation.id || generation.lovableName || generation.id.startsWith("ext-")) continue;
+      if (!generation.id || generation.lovableName || isExternalSite(generation)) continue;
       try {
         const { name } = readProject(
           await callTool("get_project", { project_id: generation.id }),

@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { isPanelProject, type Project } from "@/lib/api";
 import type { AccessPermission } from "@shared/access-permissions.js";
+import { isExternalSite } from "@shared/external-site.js";
 import { isClaudeSite } from "@/features/projects/project-status";
 import { usePermissions } from "@/lib/permissions";
 import { copyBrief } from "@/features/projects/copy-brief";
@@ -358,7 +359,7 @@ export function ProjectActions({
       ? item(
           "change",
           <Replace />,
-          site.id.startsWith("ext-") ? "Definir projeto do Lovable" : "Trocar projeto do Lovable",
+          isExternalSite(site) ? "Definir projeto do Lovable" : "Trocar projeto do Lovable",
           () => onChangeProject(project),
           {
             permission: "gerar",

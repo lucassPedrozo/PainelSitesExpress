@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { isExternalSite, latestGeneration } from "./project-status";
+import { isExternalSite } from "@shared/external-site.js";
+import { latestGeneration } from "./project-status";
 
 /**
  * Troca o projeto do Lovable do site — o cliente pediu mudanças e o site foi

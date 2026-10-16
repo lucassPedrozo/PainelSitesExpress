@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { isExternalSite, parseLovableProject, parseRepository, planLink } from "./link.js";
+import { isExternalSite } from "../../../shared/external-site.js";
+import { parseLovableProject, parseRepository, planLink } from "./link.js";
 import { resetRuntimeConfig } from "../config.js";
 import { joinsAutomatically } from "../devarea/service.js";
 

@@ -145,14 +145,6 @@ export type ProjectStatus = {
   attention: boolean;
 };
 
-/**
- * Site vinculado que não veio do Lovable (o id foi criado pelo painel): não
- * há editor, Share preview nem agente — o link do cliente é a área de
- * aprovação.
- */
-export const isExternalSite = (site: Generation | undefined): boolean =>
-  Boolean(site?.id?.startsWith("ext-"));
-
 /** Site que o Claude Code gerou nesta máquina, pelo motor do painel. */
 export const isClaudeSite = (site: Generation | undefined): boolean => site?.engine === "claude";
 

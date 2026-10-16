@@ -1,6 +1,7 @@
 import { isPanelProject, type Project } from "@/lib/api";
 import type { AccessPermission } from "@shared/access-permissions.js";
-import { clientUrlOf, devAreaOf, isClaudeSite, isExternalSite, latestGeneration, projectStatus } from "./project-status";
+import { isExternalSite } from "@shared/external-site.js";
+import { clientUrlOf, devAreaOf, isClaudeSite, latestGeneration, projectStatus } from "./project-status";
 import { lovableUrlOf } from "./site-engine";
 
 /**

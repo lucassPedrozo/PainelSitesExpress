@@ -11,7 +11,7 @@ import { githubConfig } from "../deploy/operations.js";
 import { followDevArea, publishDevAreaNow } from "../devarea/service.js";
 import { kindOf, previewKindOf } from "../drive.js";
 import { httpError, publicMessageOf, statusOf } from "../http.js";
-import { EXTERNAL_PREFIX } from "../lovable/link.js";
+import { EXTERNAL_PREFIX } from "../../../shared/external-site.js";
 import { findSiteSources, openSiteSource } from "../local/site-source.js";
 import {
   cleanRelativePath,

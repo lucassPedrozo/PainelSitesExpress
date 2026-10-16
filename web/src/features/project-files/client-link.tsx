@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { isExternalSite } from "@/features/projects/project-status";
+import { isExternalSite } from "@shared/external-site.js";
 import { useQuery } from "@tanstack/react-query";
 import {
   CheckCircle2,

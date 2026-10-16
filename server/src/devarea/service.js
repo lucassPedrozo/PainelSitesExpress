@@ -2,7 +2,8 @@ import { devAreaConfig, isDevAreaConfigured, runtimeConfig } from "../config.js"
 import { httpError } from "../http.js";
 import { repoNameOf } from "../../../shared/lovable-repo.js";
 import { slugForProject } from "../preview/service.js";
-import { EXTERNAL_PREFIX, lovableNameOf } from "../lovable/link.js";
+import { isExternalSite } from "../../../shared/external-site.js";
+import { lovableNameOf } from "../lovable/link.js";
 import { listGenerations, setGenerationAgent, setGenerationDevArea } from "../store/generations.js";
 import { listPublications } from "../store/publications.js";
 import { deleteFile, listWorkflowFiles } from "../deploy/github/contents.js";
@@ -145,7 +146,7 @@ export async function findRepoRefreshingName(projectId, generation, repos, deps 
   const { nameOf = lovableNameOf, save = setGenerationAgent } = deps;
   const repo = findRepoForGeneration(generation, repos);
   if (repo || generation.devArea?.repoFullName || generation.repoFullName) return repo;
-  if (!generation.id || generation.id.startsWith(EXTERNAL_PREFIX)) return null;
+  if (!generation.id || isExternalSite(generation)) return null;
 
   const nome = await nameOf(generation.id);
   if (!nome || nome === generation.lovableName) return null;

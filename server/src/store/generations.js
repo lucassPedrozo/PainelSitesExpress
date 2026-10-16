@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { EXTERNAL_PREFIX, isExternalSite } from "../../../shared/external-site.js";
 import { httpError } from "../http.js";
 import { flush, read } from "./db.js";
 
@@ -133,7 +134,7 @@ export async function recordClaudeSite(projectId, site) {
 
   const entry = {
     ...PREVIEW_DEFAULTS,
-    id: `ext-${randomBytes(6).toString("hex")}`,
+    id: `${EXTERNAL_PREFIX}${randomBytes(6).toString("hex")}`,
     /** O motor que fez o site. As gerações do Lovable não têm o campo. */
     engine: "claude",
     claudeSlug: site.slug,
@@ -370,7 +371,7 @@ export async function adoptClaudeSite(projectId, site) {
   const data = await read();
   const lista = data.generations[projectId] ?? [];
   const ultimo = lista.at(-1);
-  if (!ultimo || !String(ultimo.id).startsWith("ext-") || ultimo.engine === "claude") {
+  if (!ultimo || !isExternalSite(ultimo) || ultimo.engine === "claude") {
     return recordClaudeSite(projectId, site);
   }
   ultimo.engine = "claude";

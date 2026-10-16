@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { EXTERNAL_PREFIX } from "../../../shared/external-site.js";
 import { runtimeConfig } from "../config.js";
 import { httpError } from "../http.js";
 import { callTool } from "./mcp.js";
@@ -14,13 +15,6 @@ import { readProject } from "./progress.js";
  * ------------------------------------------------------------------ */
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-
-/** Prefixo dos sites que não vieram do Lovable: nunca são consultados lá. */
-export const EXTERNAL_PREFIX = "ext-";
-
-/** Site sem projeto no Lovable — o id foi criado pelo painel. */
-export const isExternalSite = (generation) =>
-  typeof generation?.id === "string" && generation.id.startsWith(EXTERNAL_PREFIX);
 
 /**
  * O id do projeto a partir do que a pessoa colou: o endereço do editor
