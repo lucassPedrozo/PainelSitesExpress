@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
 import { createSerialQueue, writeFileAtomic } from "../atomic-write.js";
-import { guardarCopia, recuperarDoBackup } from "../backup.js";
+import { guardarCopia, recuperarDoBackup } from "./backup.js";
 
 /*
  * Leitura e gravação do banco do painel. Cada tipo de dado tem o seu módulo
