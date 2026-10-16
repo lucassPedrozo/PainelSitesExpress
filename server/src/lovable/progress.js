@@ -97,7 +97,7 @@ export const hasSignatureAsset = (paths) =>
   paths.some((file) => /^(src|public)\/.*joinvix/i.test(file));
 
 /** A correção pedida ao agente quando a assinatura não veio. */
-export const SIGNATURE_FIX_MESSAGE =
+const SIGNATURE_FIX_MESSAGE =
   "Adicione a assinatura Joinvix no rodapé, conforme a §8 da Workspace Knowledge. " +
   "Use a imagem anexada que combina com o fundo real do rodapé (o nome diz para qual " +
   "fundo cada uma serve) e salve em src/assets/joinvix-rodape-claro ou " +

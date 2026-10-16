@@ -37,7 +37,7 @@ export type FieldDraft =
 
 export type Drafts = Record<string, FieldDraft>;
 
-export const initialDraft = (field: SettingField): FieldDraft =>
+const initialDraft = (field: SettingField): FieldDraft =>
   field.type === "secret"
     ? { kind: "secret", replacement: "", clear: false }
     : { kind: "value", value: field.value ?? "" };
@@ -95,7 +95,7 @@ const ESSENCIAIS: Record<string, string[]> = {
 };
 
 /** Há valor gravado: o segredo está definido, ou o texto não é vazio. */
-export const isFieldSet = (field: SettingField) =>
+const isFieldSet = (field: SettingField) =>
   field.type === "secret" ? Boolean(field.set) : (field.value ?? "").trim() !== "";
 
 /** Os endereços em que o painel só atende esta máquina; vazio é o padrão, 127.0.0.1. */

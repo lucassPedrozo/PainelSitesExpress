@@ -33,7 +33,7 @@ export const getGitHubConfig = (overrides = {}) => ({
 
 const allowedTokenPrefixes = ["github_pat_"];
 
-export const assertValidGitHubToken = (token) => {
+const assertValidGitHubToken = (token) => {
   const normalized = token.trim();
 
   if (!normalized) {
@@ -51,7 +51,7 @@ export const assertValidGitHubToken = (token) => {
   return normalized;
 };
 
-export const createGitHubHeaders = (config) => ({
+const createGitHubHeaders = (config) => ({
   Authorization: `Bearer ${assertValidGitHubToken(config.token)}`,
   Accept: "application/vnd.github+json",
   "X-GitHub-Api-Version": "2022-11-28",
@@ -62,7 +62,7 @@ export const getGitHubBaseUrl = (config) => config.baseUrl;
 
 // A API do GitHub devolve um JSON detalhado; repassar o corpo inteiro polui a
 // interface e pode vazar dados internos. Aqui fica apenas a mensagem curta.
-export const describeGitHubFailure = (status, rawBody, requiredPermission) => {
+const describeGitHubFailure = (status, rawBody, requiredPermission) => {
   let detail;
   try {
     const parsed = JSON.parse(rawBody);

@@ -38,7 +38,7 @@ export function itemsFromInput(
   return items;
 }
 
-export const joinPath = (...parts: string[]) => parts.filter(Boolean).join("/");
+const joinPath = (...parts: string[]) => parts.filter(Boolean).join("/");
 
 const CONCURRENCY = 3;
 

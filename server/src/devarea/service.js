@@ -545,7 +545,7 @@ export function followDevArea(projectId, lovableId) {
  * workflow de versão velha e relê as execuções. O último site de cada projeto
  * é o que vale.
  */
-export async function sweepDevArea() {
+async function sweepDevArea() {
   if (!isDevAreaConfigured() || !runtimeConfig().githubToken) return;
   const area = devAreaConfig();
   const todas = await listGenerations();

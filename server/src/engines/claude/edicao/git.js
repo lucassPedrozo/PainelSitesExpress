@@ -18,7 +18,7 @@ import { ambienteDoFilho } from "../environment.js";
  */
 
 /** Uma falha de comando, com a saída já sem o token. */
-export class FalhaDoGit extends Error {
+class FalhaDoGit extends Error {
   /** @param {string} mensagem @param {{ saida?: string, codigo?: number | null }} [extra] */
   constructor(mensagem, { saida = "", codigo = null } = {}) {
     super(mensagem);

@@ -53,7 +53,7 @@ export const assertDomain = (value) => {
   return domain;
 };
 
-export const assertFtpServer = (value) => {
+const assertFtpServer = (value) => {
   const host = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (!hostPattern.test(host)) {
     throw new HttpError(
@@ -64,7 +64,7 @@ export const assertFtpServer = (value) => {
   return host;
 };
 
-export const assertRequiredText = (value, label, maxLength = 200) => {
+const assertRequiredText = (value, label, maxLength = 200) => {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) throw new HttpError(400, `${label} é obrigatório.`);
   if (text.length > maxLength) {
@@ -85,7 +85,7 @@ export const assertServerDir = (value) => {
   return dir.replace(/\/+$/, "");
 };
 
-export const assertProtocol = (value) => {
+const assertProtocol = (value) => {
   if (value === undefined || value === null || value === "") return "auto";
   if (typeof value !== "string" || !ftpProtocols.includes(value)) {
     throw new HttpError(400, "Protocolo de transferência inválido.");

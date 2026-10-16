@@ -31,7 +31,7 @@ const TAIL_BYTES = 128 * 1024;
 /** Um índice maior que isto não é uma coleta de cliente. */
 const MAX_DIRECTORY_BYTES = 16 * 1024 * 1024;
 /** Teto do que vai para a tela; o total verdadeiro segue na resposta. */
-export const MAX_ENTRIES = 5000;
+const MAX_ENTRIES = 5000;
 
 const notZip = () =>
   httpError(422, "Este arquivo não é um .zip que o painel consiga abrir. Baixe-o para ver o conteúdo.");
@@ -94,7 +94,7 @@ const isJunk = (path) =>
  * @param {Buffer} tail
  * @returns {{ count: number, size: number, offset: number } | null}
  */
-export function findEndOfCentralDirectory(tail) {
+function findEndOfCentralDirectory(tail) {
   for (let at = tail.length - END_MIN_BYTES; at >= 0; at--) {
     if (tail.readUInt32LE(at) !== END_SIGNATURE) continue;
     // O comentário tem de caber no que sobra: descarta a assinatura que é só
@@ -128,7 +128,7 @@ export function findEndOfCentralDirectory(tail) {
  * @param {Buffer} directory
  * @returns {Omit<ZipEntry, "end">[]}
  */
-export function parseCentralDirectory(directory) {
+function parseCentralDirectory(directory) {
   const entries = [];
   let at = 0;
 
@@ -237,7 +237,7 @@ export function unreadableReason(entry) {
  * @param {AsyncIterable<Buffer>} source
  * @param {Pick<ZipEntry, "compressedSize">} entry
  */
-export async function* entryBytes(source, entry) {
+async function* entryBytes(source, entry) {
   let header = Buffer.alloc(0);
   let started = false;
   let remaining = entry.compressedSize;

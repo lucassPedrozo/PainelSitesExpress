@@ -20,7 +20,7 @@ export const isValidDriveId = (id) => typeof id === "string" && DRIVE_ID.test(id
  * A coleta é rasa (raiz → projeto → poucas subpastas); o teto existe para um
  * atalho ou pai circular não fazer a subida passear para sempre.
  */
-export const MAX_SCOPE_DEPTH = 12;
+const MAX_SCOPE_DEPTH = 12;
 
 /**
  * `id` é a própria raiz ou está em algum nível abaixo dela? Sobe pelos pais —

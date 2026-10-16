@@ -27,7 +27,7 @@ import type { useClaudeOptions } from "./use-claude";
  * A explicação longa de uma opção, no "?" ao lado do rótulo: no hover vem
  * como dica; no toque e no teclado, o clique abre o texto inteiro.
  */
-export function HelpTip({ children }: { children: string }) {
+function HelpTip({ children }: { children: string }) {
   return (
     <Popover>
       <PopoverTrigger asChild>

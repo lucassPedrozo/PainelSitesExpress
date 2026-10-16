@@ -243,7 +243,7 @@ function useRowData(project: Project) {
 }
 
 /** O responsável e a observação interna, quando a equipe os definiu. */
-export function ProjectNotes({ project, className }: { project: Project; className?: string }) {
+function ProjectNotes({ project, className }: { project: Project; className?: string }) {
   const responsavel = project.details?.responsible ?? null;
   const nota = project.details?.note ?? null;
   const oculto = project.details?.hidden ?? null;
@@ -275,7 +275,7 @@ export function ProjectNotes({ project, className }: { project: Project; classNa
 }
 
 /** O material numa frase curta: a contagem real e se há briefing. */
-export function materialOf(project: Project): { main: string; sub: string | null; full: string } {
+function materialOf(project: Project): { main: string; sub: string | null; full: string } {
   const full = describeMaterial(project);
   if (project.fileCount === 0 && project.folderCount === 0) {
     return { main: project.source === "panel" ? "Sem arquivos" : "Pasta vazia", sub: null, full };

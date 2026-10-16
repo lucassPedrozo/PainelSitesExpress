@@ -34,7 +34,7 @@ const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
 const DOWNLOAD_CONCURRENCY = 4;
 
 /** Tetos de uma busca: o bastante para um site institucional inteiro. */
-export const STOCK_LIMITS = {
+const STOCK_LIMITS = {
   maxTerms: 8,
   maxQuantity: 10,
   defaultQuantity: 5,

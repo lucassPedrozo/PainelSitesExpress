@@ -19,7 +19,7 @@
  * para quem já conferiu e precisa gerar de novo antes do prazo.
  */
 
-export const UNCERTAIN_HOLD_MS = 10 * 60_000;
+const UNCERTAIN_HOLD_MS = 10 * 60_000;
 
 export class GenerationBlockedError extends Error {
   constructor(message) {

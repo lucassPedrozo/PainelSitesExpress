@@ -18,7 +18,7 @@
  * As fases de uma construção, na ordem. A fase só avança: uma leitura de
  * arquivo depois de escrever não volta o trabalho para o planejamento.
  */
-export const AGENT_PHASES = ["planning", "writing", "checking", "answering"];
+const AGENT_PHASES = ["planning", "writing", "checking", "answering"];
 
 // Atributo a atributo, com o valor entre aspas: o `data` de um patch traz `>`
 // (`=>`, `<div>`), e parar no primeiro `>` cortava a tag no meio.
@@ -86,7 +86,7 @@ const FIXED = {
 const WRITES = /apply_patch|--write$|line_replace|--rename$|--delete$/;
 
 /** Os arquivos que a ferramenta gravou. */
-export function writtenFiles(name, data) {
+function writtenFiles(name, data) {
   if (!WRITES.test(name)) return [];
   const doPatch = patchFiles(data.patch);
   if (doPatch.length) return doPatch;

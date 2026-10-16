@@ -91,7 +91,7 @@ export function ClaudeQueueButton({
 }
 
 /** A fila inteira, num diálogo: o que roda, o que espera e o que um reinício interrompeu. */
-export function ClaudeQueueDialog({
+function ClaudeQueueDialog({
   open,
   onOpenChange,
   projects,

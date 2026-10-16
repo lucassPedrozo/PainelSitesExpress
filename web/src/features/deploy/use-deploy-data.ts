@@ -12,7 +12,7 @@ import { queryKeys } from "@/lib/query";
 /** Enquanto houver execução em andamento, o painel se atualiza sozinho. */
 const RUN_POLL_INTERVAL_MS = 6_000;
 
-export const DEFAULT_DEPLOY_WORKFLOW = "Deploy-via-FTP.yml";
+const DEFAULT_DEPLOY_WORKFLOW = "Deploy-via-FTP.yml";
 
 /*
  * As leituras devolvem o erro em vez de avisar num toast. Antes uma falha

@@ -73,7 +73,7 @@ export function parseRepository(raw) {
 }
 
 /** Estados que dá para declarar ao vincular. */
-export const LINK_STATES = /** @type {const} */ (["ready", "delivered", "live"]);
+const LINK_STATES = /** @type {const} */ (["ready", "delivered", "live"]);
 
 /**
  * Confere o pedido de vínculo e diz o que gravar.

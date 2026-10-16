@@ -15,7 +15,7 @@ const END = "<!-- ja-usado:fim -->";
 
 /** Limite do Lovable para a Workspace Knowledge. */
 export const KNOWLEDGE_LIMIT = 10_000;
-export const MAX_ENTRIES = 5;
+const MAX_ENTRIES = 5;
 
 const decodeEntities = (text) =>
   text

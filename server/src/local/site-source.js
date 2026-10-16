@@ -15,9 +15,9 @@ import { listChildren, readRange, readStream, statFile, walkFiles } from "./stor
  */
 
 /** O GitHub recusa blob acima de 100 MB; bem antes disso já não é código de site. */
-export const MAX_SITE_FILE_BYTES = 50 * 1024 * 1024;
-export const MAX_SITE_FILES = 3000;
-export const MAX_SITE_BYTES = 500 * 1024 * 1024;
+const MAX_SITE_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_SITE_FILES = 3000;
+const MAX_SITE_BYTES = 500 * 1024 * 1024;
 
 /** Nunca vão, em nenhum nível: não são do site ou são administrados pelo painel. */
 const SKIPPED_DIRS = new Map([

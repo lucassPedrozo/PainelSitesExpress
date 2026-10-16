@@ -48,7 +48,7 @@ export function leitorDeLinhas(onLinha) {
 const cortar = (texto, n) => (texto.length > n ? `${texto.slice(0, n)}…` : texto);
 
 /** "1m01s", "42s". */
-export const duracao = (ms) => {
+const duracao = (ms) => {
   const seg = Math.round(ms / 1000);
   return seg >= 60 ? `${Math.floor(seg / 60)}m${String(seg % 60).padStart(2, "0")}s` : `${seg}s`;
 };

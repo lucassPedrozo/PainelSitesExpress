@@ -197,7 +197,7 @@ const doPainel = {
 };
 
 /** @param {string} projectId @returns {Fonte} */
-export const fonteDoProjeto = (projectId) => (isLocalProjectId(projectId) ? doPainel : doDrive);
+const fonteDoProjeto = (projectId) => (isLocalProjectId(projectId) ? doPainel : doDrive);
 
 /**
  * Tudo o que a tela de geração precisa para o motor Claude: o texto das

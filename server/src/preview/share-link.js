@@ -18,7 +18,7 @@ const PROBE_TIMEOUT_MS = 15_000;
 /** Formato do link de share. O token é opaco, gerado pelo Lovable. */
 const SHARE_URL = /^https:\/\/lovable\.dev\/preview\/([A-Za-z0-9_-]{8,128})\/?$/;
 
-export class SharePreviewError extends Error {
+class SharePreviewError extends Error {
   constructor(message, status = 400) {
     super(message);
     this.status = status;

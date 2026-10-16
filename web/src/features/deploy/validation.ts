@@ -41,7 +41,7 @@ export const fieldOrder: Array<keyof ValidationErrors> = [
 ];
 
 /** Campos que moram dentro de "Opções avançadas". */
-export const advancedFields = ["serverDir", "port", "buildEnv"] as const;
+const advancedFields = ["serverDir", "port", "buildEnv"] as const;
 
 export const hasAdvancedError = (errors: ValidationErrors) =>
   advancedFields.some((field) => Boolean(errors[field]));

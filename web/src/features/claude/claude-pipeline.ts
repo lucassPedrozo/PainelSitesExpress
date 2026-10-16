@@ -68,7 +68,7 @@ export function pipelineNote(pipeline: ClaudeSite["pipeline"], critica: ClaudeCr
 /* ---- a última crítica -------------------------------------------------- */
 
 /** A nota a partir da qual um critério não pede mais trabalho. */
-export const NOTA_DE_APROVACAO = 8;
+const NOTA_DE_APROVACAO = 8;
 
 /** Os critérios do parecer, na ordem em que o motor os escreve. */
 const CRITERIOS: Array<[key: string, label: string]> = [

@@ -60,7 +60,7 @@ export function modelSelection(modelo: string | null, modelos: Defaults["modelos
 type InEffect = { label: string; value: string; chosen: boolean };
 
 /** O modelo e o esforço como valem: a escolha do projeto ou, sem ela, o padrão do painel. */
-export function choicesInEffect(choices: ClaudeRunChoices, defaults: Defaults): { modelo: InEffect; esforco: InEffect } {
+function choicesInEffect(choices: ClaudeRunChoices, defaults: Defaults): { modelo: InEffect; esforco: InEffect } {
   const modelo = choices.modelo ?? defaults.modelo;
   const esforco = choices.esforco ?? defaults.esforco;
   return {

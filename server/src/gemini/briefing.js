@@ -41,7 +41,7 @@ const CACHE_TTL_MS = 24 * 60 * 60_000;
  * O que o modelo precisa saber do trabalho. Não é o prompt do site (esse vai
  * ao Lovable e é outro): é a instrução para avaliar o briefing e sugerir.
  */
-export const SYSTEM_INSTRUCTION = `Você é o assistente da equipe da Joinvix, uma agência brasileira que produz sites institucionais ("Sites Express") para pequenas e médias empresas. O site é gerado por uma IA a partir do briefing que o cliente preencheu num formulário, mais observações escritas pela equipe e os arquivos da pasta do cliente (logo, fotos, documentos).
+const SYSTEM_INSTRUCTION = `Você é o assistente da equipe da Joinvix, uma agência brasileira que produz sites institucionais ("Sites Express") para pequenas e médias empresas. O site é gerado por uma IA a partir do briefing que o cliente preencheu num formulário, mais observações escritas pela equipe e os arquivos da pasta do cliente (logo, fotos, documentos).
 
 Sua tarefa é ler o briefing e ajudar a equipe a completá-lo ANTES da geração, que custa crédito. Responda em português do Brasil, de forma direta e curta.
 
@@ -53,7 +53,7 @@ Regras:
 - "imageQueries": até 6 buscas para um banco de imagens (Pixabay), para completar fotos que o cliente não enviou. "term" em português, concreto e visual (ex.: "dentista atendendo paciente"), com 2 a 4 palavras; "section" é a seção do site onde a foto entra (hero, sobre, serviços, equipe, contato…), em minúsculas; "quantity" de 2 a 4; "reason" é opcional e curta. Se os arquivos do cliente já parecem cobrir uma seção, proponha menos buscas.`;
 
 /** O formato da resposta — o Gemini devolve JSON neste schema. */
-export const RESPONSE_SCHEMA = {
+const RESPONSE_SCHEMA = {
   type: "object",
   properties: {
     summary: { type: "string", description: "Que negócio é, onde atua e para quem, em 1 ou 2 frases." },

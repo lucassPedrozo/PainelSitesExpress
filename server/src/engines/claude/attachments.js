@@ -30,7 +30,7 @@ const ARQUIVO = /^\d{2}-[a-z0-9][a-z0-9-]{0,59}\.(png|jpg|webp|gif)$/;
  * @param {Buffer} corpo
  * @returns {"png" | "jpg" | "webp" | "gif" | null}
  */
-export function tipoDaImagem(corpo) {
+function tipoDaImagem(corpo) {
   if (!Buffer.isBuffer(corpo) || corpo.length < 12) return null;
   if (corpo.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
   if (corpo[0] === 0xff && corpo[1] === 0xd8 && corpo[2] === 0xff) return "jpg";

@@ -14,7 +14,7 @@ const normalizeExpiration = (raw) => {
   return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
 };
 
-export const getAuthenticatedUser = async (config) => {
+const getAuthenticatedUser = async (config) => {
   const response = await requestRaw(`${getGitHubBaseUrl(config)}/user`, config, {
     method: "GET",
   });

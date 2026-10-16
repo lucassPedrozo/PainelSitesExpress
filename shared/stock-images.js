@@ -8,7 +8,7 @@
  */
 
 /** "Escritório Moderno!" → "escritorio-moderno". */
-export function stockSlug(text) {
+function stockSlug(text) {
   const slug = String(text ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -26,7 +26,7 @@ export function stockSlug(text) {
  *
  * @param {{ term: string, section?: string | null }} image
  */
-export const stockGroupOf = (image) => (image.section ?? "").trim() || image.term.trim();
+const stockGroupOf = (image) => (image.section ?? "").trim() || image.term.trim();
 
 /** O anexo único que leva todas as fotos de banco ao Lovable. */
 export const STOCK_ZIP_NAME = "imagens-pixabay.zip";

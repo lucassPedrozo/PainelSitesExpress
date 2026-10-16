@@ -41,7 +41,7 @@ export const projectsRouter = Router();
  * uma consulta ao Drive por pasta a cada minuto, inclusive das dezenas de
  * pastas que ninguém mais toca. "Atualizar" continua refazendo todas.
  */
-export const FINISHED_STATS_TTL_MS = 6 * 60 * 60_000;
+const FINISHED_STATS_TTL_MS = 6 * 60 * 60_000;
 
 const STATS_CONCURRENCY = 8;
 

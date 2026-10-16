@@ -28,7 +28,7 @@ const porData = (a, b) =>
   dataDaCopia(a).localeCompare(dataDaCopia(b)) ||
   Number(a.startsWith("painel-")) - Number(b.startsWith("painel-"));
 
-export const backupDir = (dataDir) => path.join(dataDir, "backups");
+const backupDir = (dataDir) => path.join(dataDir, "backups");
 
 /**
  * Nome da cópia pela data **local** da máquina. Com `toISOString` a data era a

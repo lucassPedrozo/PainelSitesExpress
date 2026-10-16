@@ -22,7 +22,7 @@ import { walkFiles } from "../../local/storage.js";
  * sessão, e o nome da pasta de trabalho é o painel que escolhe.
  */
 
-export const LIMITES_DA_ADOCAO = { maxArquivos: 6000, maxBytes: 600 * 1024 * 1024 };
+const LIMITES_DA_ADOCAO = { maxArquivos: 6000, maxBytes: 600 * 1024 * 1024 };
 
 const SESSAO = ".session/session.json";
 const HISTORICO = ".session/headless.json";
@@ -75,7 +75,7 @@ function arquivosDoSite(todos, raiz) {
  * @param {string} texto o conteúdo de `.session/session.json`
  * @param {string} slug a pasta de trabalho que o painel escolheu
  */
-export function sessaoAdotada(texto, slug) {
+function sessaoAdotada(texto, slug) {
   /** @type {any} */
   let sessao;
   try {
@@ -105,7 +105,7 @@ export function sessaoAdotada(texto, slug) {
  *
  * @param {string} texto o conteúdo de `.session/headless.json`
  */
-export function historicoAdotado(texto) {
+function historicoAdotado(texto) {
   /** @type {any} */
   let historico;
   try {

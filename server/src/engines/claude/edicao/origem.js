@@ -40,7 +40,7 @@ export function origemDoCommit(commit) {
 }
 
 /** O ajuste do painel que gerou o commit, quando ele tem a marca. */
-export const ajusteDoCommit = (/** @type {CommitLido} */ commit) => TEM_MARCA.exec(commit.body ?? "")?.[1] ?? null;
+const ajusteDoCommit = (/** @type {CommitLido} */ commit) => TEM_MARCA.exec(commit.body ?? "")?.[1] ?? null;
 
 /**
  * O commit como a tela o vê: quem fez, quando e o quê.

@@ -24,7 +24,7 @@ export const isLocalProjectId = (id) => typeof id === "string" && LOCAL_ID.test(
  * Para que o projeto serve — só muda a fila "Fazer agora": `site` espera o
  * envio ao GitHub; `files` é um arquivo de material e não cobra passo nenhum.
  */
-export const LOCAL_PROJECT_KINDS = /** @type {const} */ (["site", "files"]);
+const LOCAL_PROJECT_KINDS = /** @type {const} */ (["site", "files"]);
 
 export async function listLocalProjects() {
   const { localProjects } = await read();

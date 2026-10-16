@@ -77,7 +77,7 @@ export function publishTargetOf(project: Project): PublishTarget {
  * sempre casa com a coleta. Quando não casa, o painel só deixa a lista aberta
  * em vez de escolher errado.
  */
-export function matchRepository(
+function matchRepository(
   repos: RepoOption[],
   target: PublishTarget,
 ): RepoOption | undefined {

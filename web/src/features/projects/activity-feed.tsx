@@ -21,7 +21,7 @@ const chaveDe = (item: ActivityItem) => `${item.project.id}-${item.key}`;
  * do projeto: uma publicação que falhou ontem num site de seis meses
  * aparece.
  */
-export function recentActivity(projects: Project[], limit: number): ActivityItem[] {
+function recentActivity(projects: Project[], limit: number): ActivityItem[] {
   return projects
     .flatMap((project) => projectTimeline(project).map((event) => ({ ...event, project })))
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))

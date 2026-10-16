@@ -5,7 +5,7 @@ import { maskSecret, upsertEnvFile } from "./env-file.js";
 import { hostPattern } from "./input.js";
 
 /** Chaves que a tela de configuração pode gravar no `.env`. */
-export const editableSettings = [
+const editableSettings = [
   "GITHUB_TOKEN",
   "GITHUB_ORG",
   "DEFAULT_FTP_HOST",

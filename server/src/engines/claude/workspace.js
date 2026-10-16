@@ -62,7 +62,7 @@ const barras = (caminho) => caminho.replace(/\\/g, "/");
  *
  * @param {string} dirMotor
  */
-export function pacoteDaRaiz(dirMotor) {
+function pacoteDaRaiz(dirMotor) {
   const tsx = barras(path.join(dirMotor, "node_modules", "tsx", "dist", "cli.mjs"));
   const script = (nome) => `node "${tsx}" "${barras(path.join(dirMotor, "scripts", `${nome}.ts`))}"`;
   return {
@@ -158,7 +158,7 @@ const arquivoDoHistorico = (trabalho, slug) =>
  * @param {string} slug
  * @returns {Array<Record<string, any>>}
  */
-export function lerHistoricoDoProjeto(trabalho, slug) {
+function lerHistoricoDoProjeto(trabalho, slug) {
   const lido = lerJson(arquivoDoHistorico(trabalho, slug));
   return Array.isArray(lido?.execucoes) ? lido.execucoes : [];
 }

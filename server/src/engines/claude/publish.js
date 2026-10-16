@@ -32,7 +32,7 @@ const ARQUIVOS_DO_PROJETO = ["content.json", "imagens.json"];
 /** Da raiz do template, isto fica: é o conteúdo de exemplo. */
 const SO_DO_PROJETO = new Set(ARQUIVOS_DO_PROJETO);
 
-export const LIMITES_DO_SITE = Object.freeze({
+const LIMITES_DO_SITE = Object.freeze({
   maxArquivos: 3000,
   maxBytesPorArquivo: 50 * 1024 * 1024,
   maxBytesTotal: 500 * 1024 * 1024,

@@ -23,16 +23,16 @@ import { isLocalProjectId } from "../store/local-projects.js";
  */
 
 /** 500 MB por arquivo: cabe um vídeo de cliente; mais que isso não é material de site. */
-export const MAX_FILE_BYTES = 500 * 1024 * 1024;
+const MAX_FILE_BYTES = 500 * 1024 * 1024;
 const MAX_DEPTH = 16;
 const MAX_SEGMENT_LENGTH = 180;
 /** Teto das varreduras: um projeto com mais arquivos que isto não é um site. */
-export const MAX_WALK_FILES = 20_000;
+const MAX_WALK_FILES = 20_000;
 
 const projectsRoot = () => path.join(config.dataDir, "projetos");
 
 /** A pasta do projeto em disco. */
-export const projectDir = (projectId) => {
+const projectDir = (projectId) => {
   if (!isLocalProjectId(projectId)) throw httpError(404, "Projeto não encontrado.");
   return path.join(projectsRoot(), projectId);
 };
@@ -71,7 +71,7 @@ export function cleanRelativePath(raw) {
 }
 
 /** O caminho em disco de um item do projeto — sempre dentro da pasta dele. */
-export function resolveInProject(projectId, relativePath) {
+function resolveInProject(projectId, relativePath) {
   const root = projectDir(projectId);
   const clean = cleanRelativePath(relativePath);
   const absolute = path.resolve(root, ...clean.split("/").filter(Boolean));

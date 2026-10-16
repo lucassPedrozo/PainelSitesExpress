@@ -54,7 +54,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * antes de responder, e cortar cedo demais transformaria uma criação que deu
  * certo num erro — o pior resultado possível, porque convida a gerar de novo.
  */
-export const TOOL_CALL_TIMEOUT_MS = 180_000;
+const TOOL_CALL_TIMEOUT_MS = 180_000;
 
 async function rpc(
   method,

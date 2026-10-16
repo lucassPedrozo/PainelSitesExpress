@@ -99,7 +99,7 @@ function metadata() {
   return metadataPromise;
 }
 
-export const redirectUri = () =>
+const redirectUri = () =>
   `http://localhost:${config.port}/api/lovable/callback`;
 
 const base64url = (buffer) => buffer.toString("base64url");

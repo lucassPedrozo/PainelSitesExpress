@@ -17,7 +17,7 @@ import { HttpError } from "../../http.js";
  */
 
 /** Recusa vinda do motor, escrita para a pessoa: briefing recusado, etapa aberta, cliente que já tem projeto. */
-export class RecusaDoMotor extends HttpError {
+class RecusaDoMotor extends HttpError {
   /** @param {string} mensagem */
   constructor(mensagem) {
     super(409, mensagem);
@@ -25,7 +25,7 @@ export class RecusaDoMotor extends HttpError {
 }
 
 /** O motor não está nesta cópia do painel, ou está sem as dependências instaladas. */
-export class MotorIndisponivel extends HttpError {
+class MotorIndisponivel extends HttpError {
   /** @param {string} mensagem */
   constructor(mensagem) {
     super(503, mensagem);
@@ -245,7 +245,7 @@ export function criarMotor({ dirMotor, ambiente, log = (linha) => console.error(
  * a árvore sai na hora, pelo taskkill.
  * @param {number | undefined} pid
  */
-export function encerrarArvore(pid) {
+function encerrarArvore(pid) {
   if (!pid) return;
   if (process.platform === "win32") {
     spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true });

@@ -6,7 +6,7 @@ import { ACCESS_PERMISSIONS } from "../../../shared/access-permissions.js";
 
 export { ACCESS_PERMISSIONS };
 
-export const PERMISSION_LABELS = {
+const PERMISSION_LABELS = {
   organizar: "organizar projetos (tags e nomes)",
   gerar: "gerar sites",
   publicar: "publicar sites",

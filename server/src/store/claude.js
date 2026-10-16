@@ -23,7 +23,7 @@ import { flush, read } from "./db.js";
  * ------------------------------------------------------------------ */
 
 /** As execuções mais recentes ficam; as demais saem, com o stream delas. */
-export const MAX_RUNS = 300;
+const MAX_RUNS = 300;
 
 const FOLDER_BASE_LENGTH = 32;
 
@@ -35,7 +35,7 @@ const FOLDER_BASE_LENGTH = 32;
  * @param {string} base
  * @param {Set<string>} taken
  */
-export function newFolderName(base, taken) {
+function newFolderName(base, taken) {
   const limpo =
     String(base ?? "")
       .normalize("NFD")

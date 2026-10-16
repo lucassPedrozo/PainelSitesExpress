@@ -138,7 +138,7 @@ const hasForwardingHeaders = (req) =>
       req.headers["x-real-ip"],
   );
 
-export const evaluateIncomingNetworkAccess = (req, allowedHosts = []) =>
+const evaluateIncomingNetworkAccess = (req, allowedHosts = []) =>
   evaluateNetworkAccess({
     remoteAddress: req.socket.remoteAddress,
     host: req.headers.host,

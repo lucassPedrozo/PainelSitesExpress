@@ -70,7 +70,7 @@ export const latestLovableSite = (project: Pick<Project, "generations" | "domain
  * O site que vale para o projeto: o mais recente dele ou, numa coleta sem
  * site, o do domínio registrado em outra coleta.
  */
-export const currentSiteOf = (project: Pick<Project, "generations" | "domainSite">): Generation | undefined =>
+const currentSiteOf = (project: Pick<Project, "generations" | "domainSite">): Generation | undefined =>
   project.generations.at(-1) ?? project.domainSite?.site;
 
 /** O domínio principal do site, com o protocolo; `null` sem domínio. */

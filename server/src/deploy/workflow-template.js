@@ -18,7 +18,7 @@ const buildWorkflowTemplate = read("build.yml");
 const deployWorkflowTemplate = read("deploy-via-ftp.yml");
 const devAreaWorkflowTemplate = read("dev-area-via-ftp.yml");
 
-export const workflowScripts = {
+const workflowScripts = {
   __DETECT_PACKAGE_MANAGER__: read("scripts", "detect-package-manager.sh"),
   __INSTALL_AND_BUILD__: read("scripts", "install-and-build.sh"),
   __RESOLVE_BUILD_OUTPUT__: read("scripts", "resolve-build-output.sh"),
@@ -77,4 +77,4 @@ export const buildDevAreaWorkflowFile = ({ branch, basePath, serverDir, publicUr
   message: "Publicar na area de desenvolvimento",
 });
 
-export { readTemplateVersion, renderWorkflow, WORKFLOW_TEMPLATE_VERSION };
+export { readTemplateVersion, WORKFLOW_TEMPLATE_VERSION };

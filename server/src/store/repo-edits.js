@@ -15,7 +15,7 @@ import { flush, read } from "./db.js";
  * ------------------------------------------------------------------ */
 
 /** Quantos ajustes cada projeto guarda; os mais antigos saem. */
-export const MAX_EDITS_PER_PROJECT = 200;
+const MAX_EDITS_PER_PROJECT = 200;
 
 /**
  * @typedef {"queued" | "running" | "pushed" | "unchanged" | "failed" | "conflict" | "cancelled" | "interrupted"} EditStatus

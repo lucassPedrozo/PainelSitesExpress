@@ -32,7 +32,7 @@ export function slugifyShortlink(valor) {
 }
 
 /** `formularios.joinvix.com.br` + caminho do link. */
-export function publicUrlFor(path) {
+function publicUrlFor(path) {
   const base = config.shortlinks.publicBase;
   if (!base) return null;
   return `${base}/${path}`;
@@ -226,7 +226,7 @@ export async function ensureShortLink({ slug, title, targetUrl, ownIds = [] }) {
  * Os campos que repontar pretende mudar. Só eles podem ser confirmados sem
  * perguntar: foi o operador quem pediu, ao colar o preview novo.
  */
-export const REPOINT_FIELDS = new Set(["target_url", "link_title"]);
+const REPOINT_FIELDS = new Set(["target_url", "link_title"]);
 
 /**
  * Confirma sozinho o que foi pedido — e nada além. Se o BetterLinks quiser
@@ -259,4 +259,4 @@ export async function inspectShortLink({ slug, id }) {
   return link ? normalizar(link) : null;
 }
 
-export { isConfigured, ShortlinkError };
+export { isConfigured };

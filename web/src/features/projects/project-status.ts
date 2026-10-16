@@ -157,7 +157,7 @@ export const isExternalSite = (site: Generation | undefined): boolean =>
 export const isClaudeSite = (site: Generation | undefined): boolean => site?.engine === "claude";
 
 /** As etapas do motor Claude, na língua de quem opera. */
-export const claudeStageLabels: Record<string, string> = {
+const claudeStageLabels: Record<string, string> = {
   direcao: "direção criativa",
   geracao: "geração",
   revisao: "revisão",
@@ -215,7 +215,7 @@ export const clientUrlOf = (site: Generation | undefined): string | null =>
  * No ar é ter um envio real que terminou com sucesso — configurar não basta,
  * e disparar também não: o build ou o FTP ainda podem falhar.
  */
-export const isLive = (project: Project) =>
+const isLive = (project: Project) =>
   Boolean(project.publication?.lastDeployAt);
 
 /** Desde quando o site está no domínio: a primeira publicação, não a última. */
@@ -241,7 +241,7 @@ const status = (stage: ProjectStage, detail: string, attention: boolean, label =
  * domínio, mandar ao GitHub, o material ir ao Claude, uma execução do Claude.
  * Conferências periódicas (o link, o agente) não contam: não são passos.
  */
-export function lastFactAt(project: Project): number | null {
+function lastFactAt(project: Project): number | null {
   const instantes: Array<string | null | undefined> = [];
   for (const site of project.generations) {
     instantes.push(

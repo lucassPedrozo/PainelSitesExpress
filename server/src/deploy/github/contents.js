@@ -44,7 +44,7 @@ const getFileSha = async (params) => {
 };
 
 /** O SHA que o git daria ao conteúdo — o mesmo que a API devolve por arquivo. */
-export const gitBlobSha = (content) => {
+const gitBlobSha = (content) => {
   const bytes = Buffer.from(content, "utf8");
   return createHash("sha1")
     .update(`blob ${bytes.length}\0`)
