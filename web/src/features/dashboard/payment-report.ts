@@ -1,4 +1,4 @@
-import { formatDate } from "@/lib/format";
+import { formatDate, timeOf } from "@/lib/format";
 import { normalizeDomain } from "@shared/domain.js";
 import { timelineSummary } from "@/features/projects/project-timeline";
 import { ETAPAS, ETAPA_ORDER, type Etapa } from "@/features/projects/stage";
@@ -83,11 +83,6 @@ export type ReportResult = {
   withoutDate: number;
   /** Finalizados nas etapas escolhidas que ficaram de fora (`includeFinished` desligado). */
   finished: number;
-};
-
-const timeOf = (iso: string | null | undefined) => {
-  const time = iso ? Date.parse(iso) : Number.NaN;
-  return Number.isFinite(time) ? time : null;
 };
 
 /** O começo ou o fim do dia "aaaa-mm-dd", no fuso de quem opera. */

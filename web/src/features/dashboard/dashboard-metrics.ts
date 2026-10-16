@@ -1,8 +1,8 @@
 import type { Project } from "@/lib/api";
-import { projectIdentity } from "@/lib/format";
+import { projectIdentity, timeOf } from "@/lib/format";
 import { liveSinceOf, projectStatus, type ProjectStatus } from "@/features/projects/project-status";
 import { timelineSummary } from "@/features/projects/project-timeline";
-import { ETAPA_ORDER, STAGES, tabOf, type Etapa } from "@/features/projects/stage";
+import { ETAPA_ORDER, STAGES, WORK_GROUPS, tabOf, type Etapa } from "@/features/projects/stage";
 
 /**
  * Os números do dashboard: cada projeto vira uma linha com os seus marcos
@@ -72,11 +72,6 @@ export type DashboardRow = {
    * finalizado sem ir ao ar por aqui. `null`: em aberto, vai até agora.
    */
   endAt: number | null;
-};
-
-const timeOf = (iso: string | null | undefined) => {
-  const time = iso ? Date.parse(iso) : Number.NaN;
-  return Number.isFinite(time) ? time : null;
 };
 
 export function buildRows(projects: Project[], finishedTagId: string | null): DashboardRow[] {
@@ -235,7 +230,8 @@ export type DashboardSummary = {
   medianToGenerate: number | null;
 };
 
-const ACTING = new Set(["resolver", "revisar", "gerar", "criar-link", "enviar"]);
+/** Os grupos que pedem alguém da equipe agora: os mesmos de `WORK_GROUPS`. */
+const ACTING = new Set<string>(WORK_GROUPS.filter((g) => g.acting).map((g) => g.key));
 
 /**
  * Uma recoleta do mesmo domínio herda a publicação dele (é o mesmo site do

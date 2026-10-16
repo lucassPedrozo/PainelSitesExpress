@@ -1,5 +1,5 @@
 import type { ClaudeSummary, Generation, Project } from "@/lib/api";
-import { describeMaterial, pluralize } from "@/lib/format";
+import { describeMaterial, pluralize, timeOf } from "@/lib/format";
 import { clientUrlOf, latestGeneration, liveSinceOf } from "./project-status";
 
 /**
@@ -58,11 +58,6 @@ type EventInput = Pick<TimelineEvent, "key" | "icon" | "title"> &
 
 /** Material que chega até uma hora depois da pasta ainda é o envio original. */
 const SAME_DELIVERY_MS = 60 * 60_000;
-
-const timeOf = (iso: string | null | undefined) => {
-  const time = iso ? Date.parse(iso) : Number.NaN;
-  return Number.isFinite(time) ? time : null;
-};
 
 /** "18 min", "5 h 12 min", "3 dias 4 h", "21 dias". */
 export function formatSpan(ms: number): string {
