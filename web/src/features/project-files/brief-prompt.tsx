@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { OtherBriefsNotice } from "./other-briefs-notice";
+import { OtherBriefsNotice } from "@/features/projects/other-briefs-notice";
 
 /**
  * Busca o briefing uma vez e reaproveita o texto entre copiar, visualizar e o

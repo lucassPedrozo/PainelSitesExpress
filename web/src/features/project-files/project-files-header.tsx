@@ -4,7 +4,7 @@ import { projectIdentity } from "@/lib/format";
 import type { TagsController } from "@/features/tags/use-tags";
 import { ProjectActions, useStepBlock, type ProjectActionHandlers } from "@/features/projects/project-actions";
 import { isInProgress } from "@/features/projects/project-progress";
-import { ProjectProgress } from "@/features/projects/project-progress-view";
+import { ProjectProgress } from "./project-progress-view";
 import { ProjectTags } from "@/features/projects/project-tags";
 import { SiteEngineBadges } from "@/features/projects/site-engine-badge";
 import { StageBadge } from "@/features/projects/stage-badge";

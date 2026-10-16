@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DevArea } from "@/lib/api";
-import { devAreaSteps } from "@/features/projects/dev-area-steps";
+import { devAreaSteps } from "./dev-area-steps";
 
 const area = (over: Partial<DevArea> = {}): DevArea => ({
   state: "publishing",

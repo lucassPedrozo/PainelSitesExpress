@@ -6,7 +6,7 @@ import { claudeImageUrl, fetchFolderFiles, fetchProjectBrief, fileThumbnailUrl, 
 import { describeMaterial, formatDate, formatDateTime, formatDay, pluralize } from "@/lib/format";
 import { queryKeys } from "@/lib/query";
 import { cn } from "@/lib/utils";
-import { ViewBriefButton } from "@/features/projects/brief-prompt";
+import { ViewBriefButton } from "./brief-prompt";
 import { nextStep } from "@/features/projects/next-step";
 import { OtherBriefsNotice } from "@/features/projects/other-briefs-notice";
 import { devAreaOf, latestGeneration, liveSinceOf } from "@/features/projects/project-status";

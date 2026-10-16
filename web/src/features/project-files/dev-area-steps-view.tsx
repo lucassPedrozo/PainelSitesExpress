@@ -1,6 +1,6 @@
 import { CheckCircle2, Circle, Loader2, Rocket, XCircle } from "lucide-react";
 import type { DevArea, PreviewState } from "@/lib/api";
-import { devAreaSteps, type StepStatus } from "@/features/projects/dev-area-steps";
+import { devAreaSteps, type StepStatus } from "./dev-area-steps";
 import { Reason } from "@/components/disabled-hint";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

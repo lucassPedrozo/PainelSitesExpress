@@ -3,7 +3,7 @@ import type { Project } from "@/lib/api";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/format";
-import { formatElapsed, progressOf, type ProgressModel } from "./project-progress";
+import { formatElapsed, progressOf, type ProgressModel } from "@/features/projects/project-progress";
 
 /**
  * O andamento do que está em curso no projeto, com o relógio correndo: a
