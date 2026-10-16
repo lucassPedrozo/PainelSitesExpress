@@ -30,7 +30,7 @@ export type FilterOptions = {
   tab: ListTab;
   finishedTagId: string | null;
   etapa?: EtapaFilter;
-  /** O contador do "Fazer agora" escolhido. */
+  /** O grupo de trabalho escolhido (o Dashboard é quem liga). */
   group?: WorkGroupKey | null;
 };
 

@@ -9,7 +9,7 @@ import { ApiError } from "@/lib/api/errors";
  * era buscada de novo a cada abertura de diálogo, duas telas pediam a mesma
  * coisa ao mesmo tempo, e o "recarregar depois de salvar" dependia de cada
  * componente lembrar de avisar os outros. Agora as leituras têm chave, cache e
- * invalidação; as escritas continuam sendo chamadas diretas de `api.ts`.
+ * invalidação; as escritas continuam sendo chamadas diretas de `lib/api/`.
  */
 
 /** Chaves do cache, num lugar só — é por elas que a invalidação acontece. */

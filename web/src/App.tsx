@@ -69,7 +69,7 @@ export default function App() {
     [showProject, tags.finishedTagId],
   );
 
-  /** Do Dashboard à lista, já com o contador do "Fazer agora" ou a etapa ligados. */
+  /** Do Dashboard à lista, já com o grupo de trabalho ou a etapa ligados. */
   const { setEtapa } = list;
   const openWork = useCallback(
     ({ group, etapa }: WorkFilter) => {

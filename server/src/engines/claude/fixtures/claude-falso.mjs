@@ -209,7 +209,7 @@ if (cenario === 'briefing-simples') {
 
 /**
  * O pipeline de um site, no arquivo que o motor de mentira lê (`.session/pipeline.json`): quantas rodadas de crítica e
- * refino ele tem, em qual está, a fase e a última crítica. É o que o agente de verdade deixa na sessão do projeto.
+ * refino ele tem, em qual está, a fase e a última crítica. O motor de verdade não grava este arquivo: é só do de mentira.
  */
 const arquivoDoPipeline = (slug) => join(process.cwd(), 'projects', slug, '.session', 'pipeline.json')
 const lerPipeline = (slug) => JSON.parse(readFileSync(arquivoDoPipeline(slug), 'utf8'))

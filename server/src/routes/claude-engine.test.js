@@ -12,7 +12,7 @@ import { after, before, describe, it } from "node:test";
  * e os comandos que o claude falso digita rodam os scripts dele.
  *
  * O pacote vive num repositório privado. Onde ele não está — um clone público,
- * o CI sem a chave de leitura — este arquivo é pulado; `routes.test.js` prova
+ * o CI sem a chave de leitura — este arquivo é pulado; `claude.test.js` prova
  * as mesmas rotas com um motor de mentira, em qualquer lugar.
  */
 

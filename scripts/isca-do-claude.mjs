@@ -13,9 +13,11 @@
  * prova: monta o mesmo comando de uma geração, numa pasta de dados temporária
  * com arquivos-isca, e pede ao agente que tente o que não pode.
  *
- * Nada aqui toca na pasta de dados do painel nem lê o `.env`: tudo acontece
- * numa pasta temporária, apagada no fim. O stream bruto fica guardado nela só
- * quando alguma conferência falha.
+ * Nada aqui toca na pasta de dados do painel: tudo acontece numa pasta
+ * temporária, apagada no fim. O `.env` do painel é carregado (o `config.js`
+ * vem junto com o `service.js`), mas o ambiente do agente sai da mesma lista de
+ * permissão de uma geração. Quando alguma conferência falha ou fica sem prova, o
+ * stream bruto fica na pasta temporária do sistema, fora da que é apagada.
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";

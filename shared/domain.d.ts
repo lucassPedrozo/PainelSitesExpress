@@ -1,4 +1,4 @@
-/** Tipos de `domain.js` para a interface (TypeScript). */
+/** Tipos de `domain.js`, lidos pela interface e pelo typecheck da API. */
 export function findDomain(
   text: string | null | undefined,
 ): { domain: string; exact: boolean } | null;

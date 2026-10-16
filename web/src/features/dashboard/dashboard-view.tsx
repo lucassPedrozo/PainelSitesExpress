@@ -48,14 +48,14 @@ import { ProjectsGantt } from "./projects-gantt";
 const ALL = "__todos__";
 const PERIODS: PeriodKey[] = ["30", "90", "365", "all"];
 const GANTT_PAGE = 20;
-/** A grade dos contadores do topo: a mesma distância da faixa "Fazer agora". */
+/** A grade dos contadores do topo. */
 const RESUMO = "grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6";
 /** O círculo do ícone de um número que não tem etapa (as medianas). */
 const NEUTRO = "bg-muted text-muted-foreground";
 
 type GanttSort = "recent" | "longest";
 
-/** O que abrir na tela Projetos: um contador do "Fazer agora" ou uma etapa. */
+/** O que abrir na tela Projetos: um grupo de trabalho ou uma etapa. */
 export type WorkFilter = { group?: WorkGroupKey | null; etapa?: Etapa | null };
 
 type DashboardViewProps = {
@@ -189,8 +189,8 @@ export function DashboardView({ list, finishedTagId, onShowInProjects, onOpenWor
         />
       ) : (
         <>
-          {/* Os mesmos contadores da faixa "Fazer agora" da tela Projetos; os
-              que levam a uma lista abrem a tela Projetos já filtrada. */}
+          {/* Os contadores do que falta fazer; os que levam a uma lista abrem
+              a tela Projetos já filtrada. */}
           <section aria-label="Resumo" className={RESUMO}>
             <CounterCard
               // Sites: os projetos só de arquivos, que a aba Ativos também lista, ficam fora.

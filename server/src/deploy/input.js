@@ -16,7 +16,7 @@ import { HttpError } from "../http.js";
  * antes de enviar.
  */
 
-/** `auto` deixa o workflow testar FTPS e cair para FTP apenas se necessário. */
+/** `auto` exige FTPS explícito e para a publicação se o servidor não aceitar: nunca cai sozinho para FTP simples. */
 const ftpProtocols = ["auto", "ftps", "ftps-legacy", "ftp"];
 
 export const assertIdentifier = (value, label) => {

@@ -9,7 +9,7 @@ import { caminhosDoMotor } from '../workspace.js'
 
 export const CLAUDE_FALSO = fileURLToPath(new URL('./claude-falso.mjs', import.meta.url))
 
-/** O contrato de permissões, como está em joinvixable/config/headless.json. */
+/** Um subconjunto do contrato de permissões de joinvixable/config/headless.json: o que os testes conferem. */
 export const CONTRATO = {
   ferramentas: ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep'],
   modo_de_permissao: 'dontAsk',

@@ -22,7 +22,7 @@ function stockSlug(text) {
 
 /**
  * O grupo de uma foto: a seção do site, quando informada, ou o termo buscado.
- * É o equivalente da subpasta por termo do script de busca.
+ * Vira a subpasta da foto dentro do zip.
  *
  * @param {{ term: string, section?: string | null }} image
  */
@@ -40,8 +40,8 @@ export const stockImageName = (image) =>
   `pixabay-${stockSlug(stockGroupOf(image))}-${image.id}.jpg`;
 
 /**
- * Onde a foto fica dentro do zip: uma pasta por grupo, como as subpastas por
- * termo do script de busca (`hero/pixabay-hero-123.jpg`).
+ * Onde a foto fica dentro do zip: uma pasta por grupo
+ * (`hero/pixabay-hero-123.jpg`).
  *
  * @param {{ id: number, term: string, section?: string | null }} image
  */

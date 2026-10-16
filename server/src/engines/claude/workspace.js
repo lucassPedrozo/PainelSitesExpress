@@ -16,13 +16,16 @@ import { HttpError } from "../../http.js";
  *       node_modules          junção para as dependências do motor
  *     execucoes/<id>.jsonl    o stream bruto de cada execução
  *     runbook.md              o runbook, gerado das fontes a cada execução
+ *     configuracoes-do-agente.json  as configurações passadas ao claude -p
  *     atual/<id>.txt          o projeto em que as ferramentas de cada execução agem
+ *     rodando.lock            a trava das execuções em curso
+ *     entrada/                passagem das cópias que vão para a pasta de trabalho
  *
  * O agente roda de `trabalho/`, e não da pasta do pacote: os caminhos que o
  * runbook cita (`projects/<slug>/`, `clientes/<pasta>/`) continuam valendo, e
  * ele deixa de enxergar o código do motor, as seções, o template e os prompts
- * — que o runbook já mandava não ler. O stream e a fila ficam um nível acima,
- * fora do alcance dele.
+ * — que o runbook já mandava não ler. O stream, o runbook e a trava ficam um
+ * nível acima, fora do alcance dele; a fila fica no banco do painel.
  */
 
 /**
@@ -149,8 +152,8 @@ const arquivoDoHistorico = (trabalho, slug) =>
   path.join(trabalho, "projects", slug, ".session", "headless.json");
 
 /**
- * As execuções do `claude -p` de um projeto, no arquivo da sessão dele que o
- * motor conhece (`.session/headless.json`): a sessão do Claude Code de cada
+ * As execuções do `claude -p` de um projeto, num arquivo ao lado da sessão
+ * dele (`.session/headless.json`), gravado e lido só pelo painel: a sessão do Claude Code de cada
  * uma, como terminou e a estimativa de custo que o Claude Code informou. É
  * dele que sai a sessão que a execução seguinte retoma.
  *

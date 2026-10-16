@@ -25,7 +25,7 @@ import { projectStatus, type ProjectStage } from "./project-status";
  * - um **problema**, quando há: erro, link caído, agente parado ou geração
  *   interrompida trocam o selo por um vermelho ou âmbar, para nunca ficarem
  *   escondidos atrás da etapa;
- * - um **grupo** do "Fazer agora" — o contador que filtra a lista;
+ * - um **grupo** de trabalho — o que ordena a lista e o que o Dashboard filtra;
  * - o ícone e o tom.
  *
  * O selo, os contadores, o filtro, a ordem da lista, o Dashboard e a linha do
@@ -164,7 +164,7 @@ export type StageView = {
   /** Algo em curso: o selo gira. */
   running: boolean;
   problem: ProblemKind | null;
-  /** O contador do "Fazer agora"; `null` para os que estão no ar e os só de arquivos. */
+  /** O grupo de trabalho; `null` para os que estão no ar e os só de arquivos. */
   group: WorkGroupKey | null;
   /** O porquê da etapa, em uma frase. */
   detail: string;

@@ -13,8 +13,8 @@ g-suite-*.json
 *service-account*.json
 
 # Estado local do painel: tags, gerações, chaves (hash), sessões (hash) e
-# tokens do Lovable. Os dados do motor Claude (clientes, sites, fila e o
-# stream de cada execução) ficam em server/data/joinvixable/.
+# tokens do Lovable. Os dados do motor Claude (clientes, sites e o stream de
+# cada execução) ficam em server/data/joinvixable/; a fila fica no painel.json.
 server/data/
 
 # O pacote do motor de geração com o Claude (Joinvixable). Prompts, seções e

@@ -201,7 +201,7 @@ export const claudeConfig = () => {
     enableGeneration: process.env.CLAUDE_ENABLE_GENERATION === "1",
     /** Executável do Claude Code. Vazio: o `claude` do PATH. */
     bin: (process.env.CLAUDE_BIN ?? "").trim(),
-    /** Vazio: o modelo que o motor espera (`joinvixable/config/models.json`). */
+    /** Vazio: o modelo que o motor espera (`modelo` em `joinvixable/config/headless.json`). */
     model: (process.env.CLAUDE_MODEL ?? "").trim(),
     /** Esforço de raciocínio (`--effort`). Vazio: o que o motor espera para cada tipo de pedido. */
     effort: (process.env.CLAUDE_REASONING_EFFORT ?? "").trim(),

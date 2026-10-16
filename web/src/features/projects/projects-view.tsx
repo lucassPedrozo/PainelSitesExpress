@@ -69,7 +69,7 @@ type ProjectsViewProps = {
 };
 
 /**
- * A tela Projetos: "Fazer agora", a lista com os filtros numa linha, a
+ * A tela Projetos: o gráfico do mês, a lista com os filtros numa linha, a
  * atividade recente ao lado e os diálogos que se abrem a partir de um
  * projeto. Cada linha responde em que etapa o projeto está, o que aconteceu
  * por último e o que fazer agora — com um botão só.

@@ -10,7 +10,7 @@ import { formatDate, parseProjectName, pluralize } from "@/lib/format";
  * e a ordem é a do fluxo de trabalho: o que está mais adiante ganha.
  *
  * Isto diz **qual** é o estado e **por quê** (`detail`). O que a tela faz com
- * ele — a etapa visível, o selo, a cor, o contador do "Fazer agora" e o botão —
+ * ele — a etapa visível, o selo, a cor, o grupo de trabalho e o botão —
  * mora em `stage.ts`, a fonte única que todas as telas leem.
  */
 
