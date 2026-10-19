@@ -116,6 +116,12 @@ function normalize(field, raw) {
  *   "" apaga
  * @returns {{ ok: true, values: Record<string, string> } | { ok: false, errors: Record<string, string> }}
  */
+/** Cada endereço e o segredo que o painel envia a ele. */
+const SEGREDOS_DO_ENDERECO = [
+  ["BETTERLINKS_MCP_URL", "BETTERLINKS_MCP_TOKEN"],
+  ["DEV_AREA_FTP_SERVER", "DEV_AREA_FTP_PASSWORD"],
+];
+
 export function validateSettings(updates) {
   /** @type {Record<string, string>} */
   const errors = {};
@@ -159,6 +165,15 @@ export function validateSettings(updates) {
   const host = (depois.SERVER_HOST || "127.0.0.1").toLowerCase();
   if (host !== "127.0.0.1" && host !== "localhost" && !depois.PANEL_ACCESS_TOKEN) {
     errors.PANEL_ACCESS_TOKEN ??= "Com o painel aberto para a rede, a chave do administrador é obrigatória.";
+  }
+
+  // Um segredo salvo não segue sozinho para um endereço novo: quem configura não
+  // o vê, e trocar só o endereço o entregaria a outro servidor.
+  for (const [endereco, segredo] of SEGREDOS_DO_ENDERECO) {
+    const trocou = endereco in values && values[endereco] !== "" && values[endereco] !== current(endereco);
+    if (trocou && current(segredo) && !(segredo in values)) {
+      errors[segredo] ??= "O endereço mudou: digite este segredo de novo. O salvo não vai para outro servidor.";
+    }
   }
 
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, values };

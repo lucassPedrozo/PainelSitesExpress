@@ -18,6 +18,9 @@ const chaves = [
   "SERVER_HOST",
   "PANEL_ACCESS_TOKEN",
   "DEV_AREA_FTP_PASSWORD",
+  "DEV_AREA_FTP_SERVER",
+  "BETTERLINKS_MCP_URL",
+  "BETTERLINKS_MCP_TOKEN",
   "PORT",
   "CLAUDE_ENABLE_GENERATION",
   "CLAUDE_HUMAN_APPROVAL",
@@ -99,6 +102,25 @@ describe("validateSettings", () => {
     // Apagar a chave com a rede aberta também é recusado.
     const r = validateSettings({ PANEL_ACCESS_TOKEN: "" });
     assert.match(r.errors.PANEL_ACCESS_TOKEN, /obrigatória/);
+  });
+
+  it("trocar o endereço de um segredo salvo exige o segredo de novo", () => {
+    process.env.BETTERLINKS_MCP_URL = "https://links.exemplo.com.br/mcp";
+    process.env.BETTERLINKS_MCP_TOKEN = "token-salvo-do-encurtador";
+    process.env.DEV_AREA_FTP_SERVER = "ftp.exemplo.com.br";
+    process.env.DEV_AREA_FTP_PASSWORD = "senha-salva-da-area";
+
+    const r = validateSettings({ BETTERLINKS_MCP_URL: "https://outro.exemplo.com.br/mcp", DEV_AREA_FTP_SERVER: "ftp.outro.com.br" });
+    assert.match(r.errors.BETTERLINKS_MCP_TOKEN, /digite este segredo de novo/);
+    assert.match(r.errors.DEV_AREA_FTP_PASSWORD, /digite este segredo de novo/);
+
+    // Com o segredo junto, o mesmo endereço de antes, ou o endereço apagado, passa.
+    assert.equal(validateSettings({ BETTERLINKS_MCP_URL: "https://outro.exemplo.com.br/mcp", BETTERLINKS_MCP_TOKEN: "token-novo-do-encurtador" }).ok, true);
+    assert.equal(validateSettings({ DEV_AREA_FTP_SERVER: "ftp.exemplo.com.br" }).ok, true);
+    assert.equal(validateSettings({ DEV_AREA_FTP_SERVER: "" }).ok, true);
+    // Sem segredo salvo, não há o que proteger.
+    process.env.DEV_AREA_FTP_PASSWORD = "";
+    assert.equal(validateSettings({ DEV_AREA_FTP_SERVER: "ftp.outro.com.br" }).ok, true);
   });
 
   it("o motor que vem marcado é o Lovable ou o Claude", () => {
