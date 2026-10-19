@@ -92,7 +92,12 @@ describe("linha de comando do claude -p", () => {
   });
 
   it("o que o painel protege vira regra de leitura negada, por caminho absoluto", () => {
-    assert.equal(caminhoDeRegra("C:\\Users\\Ana\\Painel - Sites\\.env").toLowerCase(), "//c/users/ana/painel - sites/.env");
+    // A letra da unidade só existe no Windows; fora dele, o caminho absoluto já parte da raiz.
+    if (process.platform === "win32") {
+      assert.equal(caminhoDeRegra("C:\\Users\\Ana\\Painel - Sites\\.env").toLowerCase(), "//c/users/ana/painel - sites/.env");
+    } else {
+      assert.equal(caminhoDeRegra("/home/ana/Painel - Sites/.env"), "//home/ana/Painel - Sites/.env");
+    }
     const config = configuracoesDoAgente({ contrato: CONTRATO, protegidos: [path.resolve("/dados/painel/.env"), path.resolve("/dados/painel/server/data/painel.json")] });
     assert.equal(config.permissions.blockReadsOutsideWorkingDirectories, true, "a cerca de leitura do contrato continua");
     const env = caminhoDeRegra(path.resolve("/dados/painel/.env"));

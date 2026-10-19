@@ -97,7 +97,12 @@ describe("o claude roda com a assinatura, o pedido vai pelo stdin e tudo fica re
     // O runbook chega anexado ao prompt de sistema, gerado pelo motor; as regras do painel vão no arquivo de configurações.
     assert.match(c1.runbook, /^# Runbook do modo CLI/);
     assert.equal(c1.configuracoes.permissions.blockReadsOutsideWorkingDirectories, true);
-    const env = path.join(b.raiz, ".env").replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => `//${d.toLowerCase()}`);
+    // A regra leva o caminho absoluto com // na frente: //c/... no Windows, //tmp/... no Linux.
+    const env = path
+      .join(b.raiz, ".env")
+      .replace(/\\/g, "/")
+      .replace(/^([A-Za-z]):/, (_, d) => `//${d.toLowerCase()}`)
+      .replace(/^\/(?!\/)/, "//");
     assert.ok(
       c1.configuracoes.permissions.deny.some((regra) => regra.toLowerCase() === `Read(${env})`.toLowerCase()),
       "o .env do painel está entre o que o agente não lê",
