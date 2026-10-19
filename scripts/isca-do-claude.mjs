@@ -314,7 +314,7 @@ if (semProva) console.log(`\n${semProva} conferência(s) ficaram sem prova: o ag
 if (falhas || semProva) {
   const guardado = path.join(os.tmpdir(), `painel-isca-stream-${Date.now()}.jsonl`);
   fs.writeFileSync(guardado, `${tudo}\n`);
-  console.log(`\n${falhas} conferência(s) falharam. O stream bruto ficou em ${guardado}`);
+  console.log(`\n${falhas ? `${falhas} conferência(s) falharam. ` : ""}O stream bruto ficou em ${guardado}`);
 }
 limpar();
 // 0: tudo provado · 1: algo falhou · 3: nada falhou, mas ficou conferência sem prova
