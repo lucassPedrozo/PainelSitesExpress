@@ -12,7 +12,7 @@
  * - o agente não roda `git`, não instala pacote, não apaga nem move arquivo
  *   pelo shell, e não toca no que mantém o site compatível com o Lovable e
  *   com a publicação (`package.json`, travas de dependência, configuração do
- *   Vite, `.github/`, `.env`);
+ *   gerenciador de pacotes, configuração do Vite, `.github/`, `.env`);
  * - quem decide se o ajuste vai ao GitHub é o painel, depois: o build tem de
  *   passar, nenhum import pode estar fora do `package.json` e nenhuma
  *   credencial pode estar no código.
@@ -67,6 +67,11 @@ export const CONTRATO_DA_EDICAO = Object.freeze({
     "Edit(./bun.lock)",
     "Edit(./pnpm-lock.yaml)",
     "Edit(./yarn.lock)",
+    "Edit(./.npmrc)",
+    "Edit(./.yarnrc)",
+    "Edit(./.yarnrc.yml)",
+    "Edit(./bunfig.toml)",
+    "Edit(./.pnpmfile.cjs)",
     "Edit(./vite.config.*)",
     "Edit(./node_modules/**)",
     "Edit(./.env)",
@@ -100,6 +105,10 @@ export const INTOCAVEIS = [
   /^bun\.lockb?$/,
   /^pnpm-lock\.yaml$/,
   /^yarn\.lock$/,
+  /^\.npmrc$/,
+  /^\.yarnrc(\.yml)?$/,
+  /^bunfig\.toml$/,
+  /^\.pnpmfile\.cjs$/,
   /^vite\.config\.[cm]?[jt]s$/,
   /^\.env(\..*)?$/,
   /(^|\/)node_modules\//,
@@ -125,7 +134,7 @@ Você está dentro do repositório de um site institucional de um cliente da Joi
 ## O que não muda
 
 - **Nada de dependências novas.** Use só o que está no \`package.json\`. Um import de pacote que não está lá quebra o build no GitHub e o painel recusa o envio. Ícones: os do pacote que o site já usa (normalmente \`lucide-react\`).
-- **A estrutura do projeto fica.** Não mexa em \`package.json\`, nas travas de dependência, em \`vite.config\`, em \`.github/\` nem em \`.env\`; não renomeie nem mova pastas; não troque o roteador nem a forma como as páginas são montadas. É isso que mantém o site editável no Lovable depois do seu ajuste.
+- **A estrutura do projeto fica.** Não mexa em \`package.json\`, nas travas de dependência, na configuração do gerenciador de pacotes (\`.npmrc\` e afins), em \`vite.config\`, em \`.github/\` nem em \`.env\`; não renomeie nem mova pastas; não troque o roteador nem a forma como as páginas são montadas. É isso que mantém o site editável no Lovable depois do seu ajuste.
 - **A assinatura da Joinvix** (a logo com link para joinvix.com.br no rodapé) continua lá, do mesmo tamanho. Nunca a remova.
 - **Sem git.** O painel faz o commit e o envio depois que você terminar; você não roda git.
 - **Nada de arquivos fora do pedido**: nada de README, notas, testes ou componentes de exemplo que o pedido não pediu.

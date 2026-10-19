@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { CONTRATO_DA_EDICAO, MODELO_PADRAO } from "./contrato.js";
+import { CONTRATO_DA_EDICAO, INTOCAVEIS, MODELO_PADRAO } from "./contrato.js";
 
 /**
  * O contrato da edição é uma adaptação do contrato do motor
@@ -47,6 +47,23 @@ describe("o contrato da edição acompanha o do motor", { skip: pular }, () => {
   it("nega todo comando de shell e toda leitura que o motor nega", () => {
     for (const regra of motor.negar.filter((r) => /^(Bash|Read)\(/.test(r))) {
       assert.ok(CONTRATO_DA_EDICAO.negar.includes(regra), `falta negar ${regra}`);
+    }
+  });
+});
+
+describe("o que o ajuste nunca muda", () => {
+  const intocavel = (arquivo) => INTOCAVEIS.some((regra) => regra.test(arquivo));
+
+  it("a configuração do gerenciador de pacotes fica, negada ao agente e conferida antes do commit", () => {
+    for (const arquivo of [".npmrc", ".yarnrc", ".yarnrc.yml", "bunfig.toml", ".pnpmfile.cjs"]) {
+      assert.ok(intocavel(arquivo), arquivo);
+      assert.ok(CONTRATO_DA_EDICAO.negar.includes(`Edit(./${arquivo})`), `falta negar a edição de ${arquivo}`);
+    }
+  });
+
+  it("o código do site continua livre", () => {
+    for (const arquivo of ["src/App.tsx", "src/components/Footer.tsx", "public/logo.svg", "index.html", "tailwind.config.ts"]) {
+      assert.equal(intocavel(arquivo), false, arquivo);
     }
   });
 });
