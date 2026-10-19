@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
+import { randomBytes, createHash, scryptSync, timingSafeEqual } from "node:crypto";
 import { createSerialQueue, writeFileAtomic } from "../atomic-write.js";
 
 /**
@@ -63,16 +63,28 @@ const PERSIST_SEEN_EVERY_MS = 5 * 60_000;
 
 const hashSessionId = (id) => createHash("sha256").update(id).digest("hex");
 
+/** O custo do scrypt: cerca de 32 MB e algumas dezenas de ms por chave. */
+const SCRYPT = { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+/** A última chave e a marca dela: cada pedido com cookie confere a marca. */
+let ultimaMarca = { segredo: "", marca: "" };
+
 /**
  * Impressão digital de uma credencial, para amarrar a sessão a ela. A chave
  * mestra do `.env` não tem cadastro que se revogue: se ela for trocada, é esta
  * marca que faz as sessões abertas com a antiga deixarem de valer — inclusive
  * quando a troca é feita à mão no arquivo.
+ *
+ * A marca fica gravada nas sessões em disco. Derivada com scrypt, ela não
+ * deixa ninguém que leia o arquivo testar chaves em massa.
  */
-export const credentialFingerprint = (secret) =>
-  secret
-    ? createHash("sha256").update(`painel-sessao:${secret}`).digest("hex")
-    : null;
+export const credentialFingerprint = (secret) => {
+  if (!secret) return null;
+  if (ultimaMarca.segredo !== secret) {
+    const marca = scryptSync(secret, "painel-sessao", 32, SCRYPT).toString("hex");
+    ultimaMarca = { segredo: secret, marca };
+  }
+  return ultimaMarca.marca;
+};
 
 let persistence = null;
 

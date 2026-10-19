@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -179,5 +180,11 @@ describe("credentialFingerprint", () => {
     assert.equal(antiga, credentialFingerprint("chave-mestra-antiga"));
     assert.ok(!antiga.includes("chave"));
     assert.equal(credentialFingerprint(""), null);
+  });
+
+  it("não é um hash rápido da chave: o sessions.json não serve para testar chaves em massa", () => {
+    const marca = credentialFingerprint("chave-mestra-antiga");
+    assert.match(marca, /^[0-9a-f]{64}$/);
+    assert.notEqual(marca, createHash("sha256").update("painel-sessao:chave-mestra-antiga").digest("hex"));
   });
 });
