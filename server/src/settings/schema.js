@@ -156,6 +156,14 @@ export const SETTINGS_SCHEMA = [
         placeholder: "67108864",
       },
       {
+        key: "JOINVIX_FOOTER_ASSETS_URL",
+        label: "Endereço da assinatura Joinvix",
+        type: "url",
+        placeholder: "https://raw.githubusercontent.com/…/joinvix-footer-main/assets",
+        help: "De onde o painel baixa as imagens da assinatura que vão em toda geração no Lovable. Vazio: o repositório joinvix-footer. A cópia baixada vale por até 6 horas.",
+        validate: urlHttps,
+      },
+      {
         key: "PIXABAY_API_KEY",
         label: "Chave da API do Pixabay",
         type: "secret",
