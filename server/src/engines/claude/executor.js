@@ -50,7 +50,8 @@ import { gravarNoHistorico, prepararRaiz, projetosDoCliente, temSessao, ultimaSe
  *   | { tipo: "ajuste", slug: string, pedido: string }
  *   | { tipo: "continuar", slug: string }
  *   | { tipo: "criticar", slug: string }
- *   | { tipo: "refinar", slug: string }} Pedido
+ *   | { tipo: "refinar", slug: string }
+ *   | import("./edicao/executar.js").PedidoDeEdicao} Pedido
  * @typedef {"rodando" | "sucesso" | "falha" | "cancelada" | "aguardando_aprovacao" | "interrompida"} StatusExecucao
  * @typedef {import("./stream.js").Legivel} Legivel
  * @typedef {{ ts: string, legiveis: Legivel[], bruto?: unknown, slug?: string,

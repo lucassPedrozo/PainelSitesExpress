@@ -22,7 +22,7 @@ import path from "node:path";
  *   cancelamento_espera_ms: number,
  * }} Contrato
  * @typedef {{ bin: string, args: string[] }} Comando
- * @typedef {"cliente" | "analisar" | "ajuste" | "continuar" | "criticar" | "refinar"} TipoDePedido
+ * @typedef {"cliente" | "analisar" | "ajuste" | "continuar" | "criticar" | "refinar" | "edicao"} TipoDePedido
  */
 
 /** Os níveis que o `--effort` do Claude Code aceita, do mais raso ao mais fundo. */
