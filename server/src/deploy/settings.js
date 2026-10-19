@@ -59,10 +59,28 @@ const settingKeys = new Set([
   "panelAccessToken",
 ]);
 
-/** Valida o formulário de configuração e o traduz em chaves do `.env`. */
+/** O painel escuta além desta máquina: agora, ou no próximo início. */
+const abertoParaARede = () =>
+  [config.serverHost, process.env.SERVER_HOST].some((valor) => {
+    const host = (valor ?? "").trim().toLowerCase() || "127.0.0.1";
+    return host !== "127.0.0.1" && host !== "localhost";
+  });
+
+/**
+ * Valida o formulário de configuração e o traduz em chaves do `.env`. As
+ * regras que valem para todo campo são as mesmas da tela de Configurações
+ * (`settings/service.js`): nenhuma quebra de linha, e a chave do administrador
+ * não some com o painel aberto para a rede.
+ */
 export const parseSettingsPayload = (body) => {
   const input = body ?? {};
   const updates = {};
+
+  for (const [campo, valor] of Object.entries(input)) {
+    if (typeof valor === "string" && /[\r\n]/.test(valor.trim())) {
+      throw new HttpError(400, `${campo}: o valor não pode ter quebra de linha.`);
+    }
+  }
 
   if (typeof input.githubToken === "string" && input.githubToken.trim()) {
     const token = input.githubToken.trim();
@@ -107,6 +125,12 @@ export const parseSettingsPayload = (body) => {
       );
     }
     if (token.length > 256) throw new HttpError(400, "Chave do painel muito longa.");
+    if (!token && abertoParaARede()) {
+      throw new HttpError(
+        400,
+        "Com o painel aberto para a rede, a chave do administrador é obrigatória.",
+      );
+    }
     updates.PANEL_ACCESS_TOKEN = token;
   }
 
