@@ -110,20 +110,37 @@ function jsonsEm(pasta) {
   });
 }
 
+/**
+ * Onde moram os segredos desta máquina: esta pasta ou, num worktree do git (que
+ * não tem `.env` próprio), a pasta principal do repositório. Sem isso, um push
+ * feito de um worktree só conferia formatos.
+ */
+function raizDosSegredos() {
+  if (existsSync(join(RAIZ, ".env"))) return RAIZ;
+  try {
+    const comum = git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).toString().trim();
+    const principal = resolve(comum, "..");
+    if (existsSync(join(principal, ".env"))) return principal;
+  } catch {
+    // Sem git ou fora de um repositório: fica a pasta do script.
+  }
+  return RAIZ;
+}
+
 /** Cada segredo desta máquina, como { rótulo → valor }. */
-function segredosConhecidos() {
+function segredosConhecidos(base) {
   const segredos = new Map();
-  const env = lerEnv(join(RAIZ, ".env"));
+  const env = lerEnv(join(base, ".env"));
   for (const [chave, valor] of Object.entries(env)) {
     if (CHAVES_PUBLICAS.has(chave) || valor.length < 6 || /^\d+$/.test(valor)) continue;
     segredos.set(`.env:${chave}`, valor);
   }
 
-  const chaves = readdirSync(RAIZ)
+  const chaves = readdirSync(base)
     .filter((n) => /^g-suite-.*\.json$|service-account.*\.json$/i.test(n))
-    .map((n) => join(RAIZ, n));
-  if (env.GOOGLE_CREDENTIALS_PATH) chaves.push(resolve(RAIZ, env.GOOGLE_CREDENTIALS_PATH));
-  const dados = resolve(RAIZ, env.PANEL_DATA_DIR || "server/data");
+    .map((n) => join(base, n));
+  if (env.GOOGLE_CREDENTIALS_PATH) chaves.push(resolve(base, env.GOOGLE_CREDENTIALS_PATH));
+  const dados = resolve(base, env.PANEL_DATA_DIR || "server/data");
 
   /**
    * @param {unknown} valor
@@ -199,7 +216,8 @@ function main() {
   const ref = process.argv[2] || "HEAD";
   const alvo = ref === "--arvore" ? "arquivos do próximo commit" : `tudo o que um push de "${ref}" enviaria`;
   // Latin-1 preserva cada byte, então o valor procurado precisa da mesma codificação.
-  const segredos = [...segredosConhecidos()].map(([r, v]) => [r, Buffer.from(v, "utf8").toString("latin1")]);
+  const base = raizDosSegredos();
+  const segredos = [...segredosConhecidos(base)].map(([r, v]) => [r, Buffer.from(v, "utf8").toString("latin1")]);
   const arquivos = arquivosPublicados(ref);
   const achados = [];
 
@@ -217,6 +235,7 @@ function main() {
 
   console.log(`Varredura: ${alvo}`);
   console.log(`  ${arquivos.length} arquivos examinados, ${segredos.length} segredos conhecidos nesta máquina`);
+  if (base !== RAIZ) console.log(`  segredos lidos da pasta principal do repositório (${basename(base)})`);
   if (segredos.length === 0) console.log("  aviso: nenhum segredo local encontrado — só formatos e nomes foram conferidos");
 
   if (achados.length === 0) {
