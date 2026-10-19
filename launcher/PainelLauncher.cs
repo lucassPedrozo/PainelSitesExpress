@@ -114,10 +114,14 @@ namespace PainelLauncher
             DateTime compilada = File.GetLastWriteTimeUtc(index);
             string web = Path.Combine(raiz, "web");
             var fontes = new List<string>();
-            try { fontes.AddRange(Directory.GetFiles(Path.Combine(web, "src"), "*", SearchOption.AllDirectories)); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-            foreach (var f in new[] { "index.html", "package.json", "vite.config.ts" }) fontes.Add(Path.Combine(web, f));
+            // O shared/ entra no build da interface (alias @shared): mudar só ele também pede build.
+            foreach (var pasta in new[] { Path.Combine(web, "src"), Path.Combine(web, "public"), Path.Combine(raiz, "shared") })
+            {
+                try { fontes.AddRange(Directory.GetFiles(pasta, "*", SearchOption.AllDirectories)); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            foreach (var f in new[] { "index.html", "package.json", "vite.config.ts", "tsconfig.json", "tsconfig.app.json" }) fontes.Add(Path.Combine(web, f));
             foreach (var f in fontes)
             {
                 if (File.Exists(f) && File.GetLastWriteTimeUtc(f) > compilada) return true;
