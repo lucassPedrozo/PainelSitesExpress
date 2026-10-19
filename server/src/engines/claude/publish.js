@@ -170,8 +170,8 @@ export function pacotesImportados(texto, caminho) {
 }
 
 const EH_CODIGO = /\.(tsx?|jsx?|mts|mjs|cjs|css)$/i;
-/** O que pode carregar texto: código, dados, marcação. Imagem e fonte não são lidas. */
-const EH_TEXTO = /\.(tsx?|jsx?|mts|mjs|cjs|css|json|html?|svg|md|txt|xml|webmanifest|map|ya?ml)$/i;
+/** O que pode carregar texto: código, dados, marcação e `.env`. Imagem e fonte não são lidas. */
+const EH_TEXTO = /\.(tsx?|jsx?|mts|mjs|cjs|css|json|html?|svg|md|txt|xml|webmanifest|map|ya?ml)$|(^|\/)\.env[^/]*$/i;
 
 /**
  * As duas conferências que bloqueiam o envio. Lê só o que veio do projeto —

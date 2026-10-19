@@ -164,6 +164,7 @@ describe("site do Claude a caminho do GitHub — o que bloqueia o envio", () => 
     const senha = "senha-do-ftp-desta-maquina";
     const { dirTemplate, dirProjeto } = caso({
       "src/lib-do-site.ts": `export const t = "${token}"`,
+      "src/.env": `VITE_CHAVE=${token}\n`,
       "content.json": JSON.stringify({ site: { titulo: "x" }, rodape: `ftp://usuario:${senha}@servidor.exemplo` }),
       // Montado aqui: a varredura de segredos do repositório procura este formato em cada arquivo.
       "public/dados.json": `{"chave":"${["-----BEGIN", "PRIVATE KEY-----"].join(" ")}"}`,
@@ -175,6 +176,7 @@ describe("site do Claude a caminho do GitHub — o que bloqueia o envio", () => 
     });
     assert.equal(motivos.length, 1);
     assert.match(motivos[0], /src\/lib-do-site\.ts contém o valor de GITHUB_TOKEN/);
+    assert.match(motivos[0], /src\/\.env contém o valor de GITHUB_TOKEN/);
     assert.match(motivos[0], /content\.json contém o valor de DEV_AREA_FTP_PASSWORD/);
     assert.match(motivos[0], /content\.json contém algo com formato de senha embutida em URL/);
     assert.match(motivos[0], /public\/dados\.json contém algo com formato de chave privada PEM/);
