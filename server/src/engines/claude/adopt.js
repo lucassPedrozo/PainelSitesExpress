@@ -116,7 +116,7 @@ function historicoAdotado(texto) {
   }
   const execucoes = (Array.isArray(historico?.execucoes) ? historico.execucoes : [])
     .filter((item) => item && typeof item === "object")
-    .map(({ session_id, retomou, ...resto }) => ({
+    .map(({ session_id, retomou: _retomou, ...resto }) => ({
       ...resto,
       ...(session_id ? { sessao_da_ferramenta_antiga: session_id } : {}),
     }));

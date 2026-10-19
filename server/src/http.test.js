@@ -26,7 +26,7 @@ describe("publicMessageOf", () => {
   });
 
   it("esconde o detalhe de falha interna, que pode conter caminho ou id", () => {
-    const err = new Error("ENOENT: no such file, open C:\painel\server\data\painel.json");
+    const err = new Error("ENOENT: no such file, open C:\\painel\\server\\data\\painel.json");
     assert.equal(publicMessageOf(err, 500), INTERNAL_ERROR_MESSAGE);
   });
 });

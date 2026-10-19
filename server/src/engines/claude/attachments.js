@@ -44,6 +44,7 @@ function tipoDaImagem(corpo) {
 /** O nome com que a pessoa enviou, sem caminho nem caractere de controle. */
 const nomeOriginal = (nome) =>
   String(nome ?? "")
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, "")
     .split(/[\\/]/)
     .pop()

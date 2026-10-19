@@ -19,7 +19,8 @@
     // não exigir anotação em todo parâmetro. `strict` é o padrão do TS 6.
     "strict": false
   },
-  "include": ["src/**/*.js", "src/**/*.d.ts", "../shared/**/*.js"],
+  // Os scripts da raiz (`scripts/`) entram junto: usam o código da API e do shared.
+  "include": ["src/**/*.js", "src/**/*.d.ts", "../shared/**/*.js", "../scripts/**/*.mjs"],
   // Os testes usam asserções dinâmicas (`assert.rejects` entrega `unknown`);
   // tipá-los traria ruído sem pegar defeito. Eles rodam no `npm test`.
   "exclude": ["src/**/*.test.js", "../shared/**/*.test.js"]

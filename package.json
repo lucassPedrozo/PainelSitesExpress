@@ -10,7 +10,7 @@
     "start": "npm --prefix server run start",
     "setup": "npm install && npm --prefix server install && npm --prefix web install && node scripts/motor.mjs install",
     "test": "npm --prefix server run test && npm --prefix web run test && node scripts/motor.mjs run test",
-    "lint": "npm --prefix web run lint",
+    "lint": "npm --prefix web run lint && npm --prefix web run lint:api",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build",
     "test:server": "npm --prefix server run test",
     "test:web": "npm --prefix web run test",

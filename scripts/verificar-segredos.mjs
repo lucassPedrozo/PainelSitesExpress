@@ -43,6 +43,7 @@ const CHAVES_PUBLICAS = new Set([
 const CAMPO_SENSIVEL = /(token|secret|key|hash|salt|password|senha|sess|refresh|access|private|code|client_id)/i;
 const CAMPO_PUBLICO = /(uri|url|expires|type|scope)$/i;
 
+/** @type {Array<[RegExp, string]>} */
 const ARQUIVOS_PROIBIDOS = [
   [/(^|\/)\.env(\.(?!example$)[^/]+)?$/, "arquivo .env"],
   [/(^|\/)g-suite-[^/]*\.json$|service-account[^/]*\.json$/i, "chave de service account"],
