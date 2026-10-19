@@ -67,7 +67,7 @@ server.on("listening", () => {
     config.serverHost !== "localhost"
   ) {
     console.warn(
-      "Aviso: o painel está exposto à rede sem PANEL_ACCESS_TOKEN. Defina uma chave no .env.",
+      "Aviso: o painel escuta a rede sem PANEL_ACCESS_TOKEN. Sem nenhuma chave de acesso, ele só atende nesta máquina.",
     );
   }
 });

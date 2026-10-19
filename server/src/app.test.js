@@ -24,6 +24,7 @@ process.env.PREVIEW_WATCH_INTERVAL_MS = "0";
 const { createApp } = await import("./app.js");
 const { resetRuntimeConfig } = await import("./config.js");
 const { AuthThrottle } = await import("./security/throttle.js");
+const { createAuthentication } = await import("./security/authenticate.js");
 
 /** Endereço da API que o bloco de testes em andamento está usando. */
 let base;
@@ -107,6 +108,42 @@ describe("API — entrada e sessão", () => {
     assert.equal(me.status, 200);
     assert.equal(me.body.user, null);
     assert.deepEqual(me.body.permissions, ["organizar", "gerar", "publicar", "configurar", "administrar"]);
+  });
+
+  it("sem chave nenhuma, só esta máquina entra: pela rede, até o porteiro recusa", async () => {
+    // O servidor dos testes só escuta em 127.0.0.1: quem chega pela rede é simulado.
+    const autenticar = createAuthentication({ throttle: new AuthThrottle() });
+    const passar = async (caminho, remoteAddress) => {
+      const resultado = { status: 200, corpo: null, seguiu: false };
+      const res = {
+        status(codigo) {
+          resultado.status = codigo;
+          return this;
+        },
+        json(dados) {
+          resultado.corpo = dados;
+          return this;
+        },
+        set() {
+          return this;
+        },
+      };
+      await autenticar({ path: caminho, socket: { remoteAddress }, headers: {} }, res, () => {
+        resultado.seguiu = true;
+      });
+      return resultado;
+    };
+
+    for (const local of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
+      assert.equal((await passar("/api/projects", local)).seguiu, true, local);
+    }
+    for (const caminho of ["/api/projects", "/api/gate"]) {
+      const pelaRede = await passar(caminho, "192.168.1.20");
+      assert.deepEqual([pelaRede.seguiu, pelaRede.status], [false, 403], caminho);
+      assert.match(pelaRede.corpo.error, /só atende na própria máquina/);
+    }
+    // A interface continua servida pela rede: é ela que mostra o motivo.
+    assert.equal((await passar("/assets/index.js", "192.168.1.20")).seguiu, true);
   });
 
   it("com a chave mestra definida, pede autenticação e troca a chave por cookie", async () => {

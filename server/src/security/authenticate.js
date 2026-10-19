@@ -11,6 +11,7 @@ import {
   credentialFingerprint,
   readSession,
 } from "./access.js";
+import { isLoopbackAddress } from "./network.js";
 import { ACCESS_PERMISSIONS } from "./permissions.js";
 import { AuthThrottle, scheduleThrottlePruning } from "./throttle.js";
 
@@ -38,6 +39,9 @@ export const ADMIN = "admin";
  * indefensável quando qualquer aparelho do Wi-Fi alcança a porta.
  */
 const OPEN_PATHS = new Set(["/api/gate", "/api/lovable/callback"]);
+
+const SO_ESTA_MAQUINA =
+  "Este painel não tem chave de acesso e por isso só atende na própria máquina. Abra-o nela e defina a chave do administrador nas Configurações.";
 
 /**
  * Miniaturas e previews entram na página por `<img>` e `<iframe>`, que não têm
@@ -185,11 +189,19 @@ export function createAuthentication({ throttle } = {}) {
   if (!throttle) scheduleThrottlePruning(authThrottle);
 
   return async (req, res, next) => {
-    if (OPEN_PATHS.has(req.path)) return next();
     // O bundle da interface não guarda segredo nenhum, e barrá-lo tornaria a
     // própria tela que pede a chave inalcançável. Só a API é protegida.
     if (!req.path.startsWith("/api/")) return next();
-    if (!(await authenticationRequired())) return next();
+    const exigeChave = await authenticationRequired();
+    // Sem chave nenhuma, tudo é permitido — o que só vale para quem está nesta
+    // máquina. Pela rede, qualquer um entraria como administrador. A tela de
+    // Configurações já recusa abrir para a rede sem a chave; isto cobre o `.env`
+    // editado à mão. O porteiro também recusa: a tela de entrada mostra o motivo.
+    if (!exigeChave && !isLoopbackAddress(req.socket.remoteAddress)) {
+      return res.status(403).json({ error: SO_ESTA_MAQUINA });
+    }
+    if (OPEN_PATHS.has(req.path)) return next();
+    if (!exigeChave) return next();
 
     const key = bearerKey(req);
     const cookieSession = readSession(readSessionCookie(req));
