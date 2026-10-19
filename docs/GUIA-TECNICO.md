@@ -293,6 +293,13 @@ acessa: o que cada pessoa vê e pode fazer vem só das permissões da chave dela
 chave de IA, rede — exige a permissão **Configurar o painel**; a chave do `.env`
 sempre a tem.
 
+**Sem chave nenhuma, só esta máquina.** Sem a chave do `.env` e sem chave
+cadastrada, o painel não pede identificação e tudo é permitido — mas só a quem está
+na própria máquina (loopback). Pela rede, a API responde 403 a tudo, inclusive ao
+porteiro (`/api/gate`), e a tela de entrada mostra o motivo. A tela de
+Configurações já recusa abrir para a rede sem a chave; a regra cobre o `.env`
+editado à mão.
+
 ### Chaves de acesso, uma por pessoa
 
 A chave do `.env` (`PANEL_ACCESS_TOKEN`) é a **do administrador**. Cada pessoa
@@ -325,7 +332,9 @@ As sessões ficam em `server/data/sessions.json`, **só como hash** do id: quem 
 arquivo não obtém um cookie utilizável. Por isso reiniciar a API não obriga ninguém a
 informar a chave de novo. Uma sessão cai após 12 h parada ou 7 dias de vida, ao sair
 do painel, ao revogar a chave da pessoa e — no caso da chave do `.env` — quando ela é
-trocada, seja pela tela de configuração ou à mão no arquivo.
+trocada, seja pela tela de configuração ou à mão no arquivo. Para isso a sessão do
+administrador guarda uma marca da chave do `.env`, derivada com scrypt: ela não
+serve para testar chaves em massa a partir do arquivo.
 
 Só tentativas com chave contam para o bloqueio progressivo por IP; um cookie vencido
 recebe 401 (`code: "session-expired"`) sem bloquear ninguém.
@@ -1603,7 +1612,7 @@ Um site feito no Lovable (ou vinculado de fora) que já mora num repositório do
 **Como um ajuste roda** (`server/src/engines/claude/edicao/`), como um pedido `edicao` na mesma fila do Claude, na cota dos ajustes, e nunca dois no mesmo repositório:
 
 1. **preparar** — o painel mantém um clone do repositório em `<dados>/joinvixable/edicao-<dono>--<nome>/` e o alinha com a última versão do branch principal (o que o Lovable sincroniza): `fetch`, `reset --hard`, `clean` (as dependências ficam). Instala as dependências quando o `package.json` ou a trava mudaram (`npm ci --ignore-scripts`; nenhum script do repositório roda só por instalar). As imagens do pedido entram em `.painel-anexos/` (ignorada pelo Git) ou, as de usar no site, em `public/img/ajustes/`.
-2. **editar** — o `claude -p` roda dentro do clone, com o contrato da edição livre (`edicao/contrato.js`): lê e edita qualquer arquivo do clone e roda `npm run build`/`npm run lint`; não roda `git`, não instala pacote, não apaga nem move pelo shell, e não toca em `package.json`, travas de dependência, `vite.config`, `.github/` e `.env`. Nada fora do clone é legível (o banco, o motor, os outros clones, os segredos do painel). As regras do ajuste vão no prompt de sistema; o pedido leva de onde o ajuste parte (quem fez a última alteração) e a memória dos ajustes anteriores. As guardas de sempre valem: login da assinatura (nunca chave de API), sem MCP, sem plugin, sem ferramenta fora do contrato, log filtrado. O contrato da edição nega pelo menos os comandos de shell e as leituras que o do motor nega, tem as mesmas variáveis de ambiente e o mesmo modelo padrão; `edicao/contrato.test.js` compara os dois quando o pacote do motor está na pasta.
+2. **editar** — o `claude -p` roda dentro do clone, com o contrato da edição livre (`edicao/contrato.js`): lê e edita qualquer arquivo do clone e roda `npm run build`/`npm run lint`; não roda `git`, não instala pacote, não apaga nem move pelo shell, e não toca em `package.json`, travas de dependência, configuração do gerenciador de pacotes (`.npmrc`, `.yarnrc`, `bunfig.toml`, `.pnpmfile.cjs`), `vite.config`, `.github/` e `.env`. Nada fora do clone é legível (o banco, o motor, os outros clones, os segredos do painel). As regras do ajuste vão no prompt de sistema; o pedido leva de onde o ajuste parte (quem fez a última alteração) e a memória dos ajustes anteriores. As guardas de sempre valem: login da assinatura (nunca chave de API), sem MCP, sem plugin, sem ferramenta fora do contrato, log filtrado. O contrato da edição nega pelo menos os comandos de shell e as leituras que o do motor nega, tem as mesmas variáveis de ambiente e o mesmo modelo padrão; `edicao/contrato.test.js` compara os dois quando o pacote do motor está na pasta.
 3. **conferir** — o painel confere o que mudou: nada do que é intocável, nenhum import fora do `package.json` (quebraria no GitHub), nenhuma credencial no código, e `npm run build` passando. Sem alteração, o ajuste termina como "sem mudança".
 4. **enviar** — um commit normal, com o autor "Claude (Painel Sites Express)" e a marca `Ajuste-Painel: <id>` no fim da mensagem. Se o GitHub andou durante o ajuste (alguém editou no Lovable), o commit vai para cima do que chegou (rebase só local; o histórico do GitHub nunca é reescrito — o Lovable perderia o que não estava lá) e o build é conferido de novo; mexendo nas mesmas linhas, é **conflito** e nada é enviado. O push publica a área de aprovação sozinho (o workflow dela roda a cada push), e o painel passa a acompanhá-la.
 
