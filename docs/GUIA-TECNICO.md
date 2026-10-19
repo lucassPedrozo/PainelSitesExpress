@@ -115,8 +115,9 @@ Para o uso do dia a dia, sem terminal: um duplo clique no
   lançador", quando outro processo já serve a porta. Nesse caso ele não sobe um
   segundo painel. A cada 2 s o lançador confere se a API responde;
 - **o endereço** do painel e, com `SERVER_HOST=0.0.0.0`, os endereços na rede local;
-- **a interface**: se está compilada e se o código dela mudou desde a última
-  compilação. Com a opção ligada, ele compila sozinho ao iniciar;
+- **a interface**: se está compilada e se o código dela (o `web/` e o `shared/`,
+  que ela importa) mudou desde a última compilação. Com a opção ligada, ele compila
+  sozinho ao iniciar;
 - **o log** ao vivo, com erros e avisos destacados, e uma cópia em `painel.log`.
 
 Na primeira vez, se faltar alguma dependência, ele roda `npm run setup` sozinho.
@@ -919,7 +920,8 @@ npm test          # backend (node --test) + interface (vitest) + pacote do motor
 npm run test:server
 npm run test:web
 npm run test:motor # só o pacote do motor (pulado com aviso onde ele não está)
-npm run typecheck # tipos da API (checkJs), da interface e do pacote do motor
+npm run lint      # oxlint na interface, na API, no shared/ e nos scripts/
+npm run typecheck # tipos da API e dos scripts/ (checkJs), da interface e do pacote do motor
 npm run check     # lint + tipos + testes + build
 ```
 
@@ -1598,7 +1600,7 @@ Um site feito no Lovable (ou vinculado de fora) que já mora num repositório do
 **Como um ajuste roda** (`server/src/engines/claude/edicao/`), como um pedido `edicao` na mesma fila do Claude, na cota dos ajustes, e nunca dois no mesmo repositório:
 
 1. **preparar** — o painel mantém um clone do repositório em `<dados>/joinvixable/edicao-<dono>--<nome>/` e o alinha com a última versão do branch principal (o que o Lovable sincroniza): `fetch`, `reset --hard`, `clean` (as dependências ficam). Instala as dependências quando o `package.json` ou a trava mudaram (`npm ci --ignore-scripts`; nenhum script do repositório roda só por instalar). As imagens do pedido entram em `.painel-anexos/` (ignorada pelo Git) ou, as de usar no site, em `public/img/ajustes/`.
-2. **editar** — o `claude -p` roda dentro do clone, com o contrato da edição livre (`edicao/contrato.js`): lê e edita qualquer arquivo do clone e roda `npm run build`/`npm run lint`; não roda `git`, não instala pacote, não apaga nem move pelo shell, e não toca em `package.json`, travas de dependência, `vite.config`, `.github/` e `.env`. Nada fora do clone é legível (o banco, o motor, os outros clones, os segredos do painel). As regras do ajuste vão no prompt de sistema; o pedido leva de onde o ajuste parte (quem fez a última alteração) e a memória dos ajustes anteriores. As guardas de sempre valem: login da assinatura (nunca chave de API), sem MCP, sem plugin, sem ferramenta fora do contrato, log filtrado.
+2. **editar** — o `claude -p` roda dentro do clone, com o contrato da edição livre (`edicao/contrato.js`): lê e edita qualquer arquivo do clone e roda `npm run build`/`npm run lint`; não roda `git`, não instala pacote, não apaga nem move pelo shell, e não toca em `package.json`, travas de dependência, `vite.config`, `.github/` e `.env`. Nada fora do clone é legível (o banco, o motor, os outros clones, os segredos do painel). As regras do ajuste vão no prompt de sistema; o pedido leva de onde o ajuste parte (quem fez a última alteração) e a memória dos ajustes anteriores. As guardas de sempre valem: login da assinatura (nunca chave de API), sem MCP, sem plugin, sem ferramenta fora do contrato, log filtrado. O contrato da edição nega pelo menos os comandos de shell e as leituras que o do motor nega, tem as mesmas variáveis de ambiente e o mesmo modelo padrão; `edicao/contrato.test.js` compara os dois quando o pacote do motor está na pasta.
 3. **conferir** — o painel confere o que mudou: nada do que é intocável, nenhum import fora do `package.json` (quebraria no GitHub), nenhuma credencial no código, e `npm run build` passando. Sem alteração, o ajuste termina como "sem mudança".
 4. **enviar** — um commit normal, com o autor "Claude (Painel Sites Express)" e a marca `Ajuste-Painel: <id>` no fim da mensagem. Se o GitHub andou durante o ajuste (alguém editou no Lovable), o commit vai para cima do que chegou (rebase só local; o histórico do GitHub nunca é reescrito — o Lovable perderia o que não estava lá) e o build é conferido de novo; mexendo nas mesmas linhas, é **conflito** e nada é enviado. O push publica a área de aprovação sozinho (o workflow dela roda a cada push), e o painel passa a acompanhá-la.
 
