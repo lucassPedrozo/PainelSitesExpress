@@ -5,6 +5,9 @@ import {
   MAX_BUILD_ENV,
   MAX_FTP_LOGIN as MAX_LOGIN,
   MAX_FTP_PASSWORD as MAX_PASSWORD,
+  MAX_PORT,
+  MIN_PORT,
+  PORT_PATTERN,
   SERVER_DIR_PATTERN,
 } from "@shared/deploy-rules.js";
 import type { PublicationSettings } from "@/lib/api/deploy";
@@ -101,9 +104,9 @@ export function validateSettings(
   const port = settings.port.trim();
   if (port) {
     const parsed = Number(port);
-    if (!/^\d+$/.test(port) || !Number.isInteger(parsed)) {
+    if (!PORT_PATTERN.test(port) || !Number.isInteger(parsed)) {
       errors.port = "Informe apenas números.";
-    } else if (parsed < 1 || parsed > 65535) {
+    } else if (parsed < MIN_PORT || parsed > MAX_PORT) {
       errors.port = "A porta precisa estar entre 1 e 65535.";
     }
   }

@@ -5,6 +5,9 @@ import {
   MAX_BUILD_ENV,
   MAX_FTP_LOGIN,
   MAX_FTP_PASSWORD,
+  MAX_PORT,
+  MIN_PORT,
+  PORT_PATTERN,
   SERVER_DIR_PATTERN,
 } from "../../../shared/deploy-rules.js";
 import { HttpError } from "../http.js";
@@ -99,10 +102,12 @@ const assertProtocol = (value) => {
   return value;
 };
 
+/** Aceita a porta em texto ou número (`"21"` ou `21`), sempre só com dígitos. */
 export const assertPort = (value) => {
   if (value === undefined || value === null || value === "") return "";
-  const port = Number(value);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  const texto = String(value).trim();
+  const port = Number(texto);
+  if (!PORT_PATTERN.test(texto) || port < MIN_PORT || port > MAX_PORT) {
     throw new HttpError(400, "Porta FTP inválida.");
   }
   return String(port);

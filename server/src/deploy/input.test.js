@@ -48,6 +48,13 @@ describe("entrada do deploy", () => {
     assert.equal(assertPort("21"), "21");
     rejects400(() => assertPort("70000"));
     rejects400(() => assertPort("21.5"));
+    // A mesma regra da tela: só dígitos.
+    rejects400(() => assertPort("1e3"));
+    rejects400(() => assertPort("0x15"));
+    rejects400(() => assertPort("+21"));
+    rejects400(() => assertPort(true));
+    assert.equal(assertPort(21), "21");
+    assert.equal(assertPort(" 990 "), "990");
   });
 
   it("variáveis de build no formato CHAVE=valor, comentários aceitos", () => {

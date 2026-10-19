@@ -2,8 +2,7 @@
  * As regras da configuração de publicação (domínio, FTP, pasta remota e
  * variáveis de build). A API recusa o que não passar (`server/src/deploy/input.js`)
  * e a interface avisa antes de enviar (`web/src/features/deploy/validation.ts`),
- * cada uma com as suas mensagens. A porta fica de fora: as duas não a conferem
- * do mesmo jeito.
+ * cada uma com as suas mensagens.
  */
 
 /** Só o domínio, sem `https://` nem caminho. */
@@ -18,6 +17,11 @@ export const SERVER_DIR_PATTERN = /^[a-z0-9._/-]{1,255}$/i;
 
 /** Cada linha das variáveis de build: `CHAVE=valor`. */
 export const BUILD_ENV_LINE_PATTERN = /^[A-Z_][A-Z0-9_]*=/i;
+
+/** A porta do FTP: só dígitos, de `MIN_PORT` a `MAX_PORT` (nada de "1e3", "0x15" ou "+21"). */
+export const PORT_PATTERN = /^\d+$/;
+export const MIN_PORT = 1;
+export const MAX_PORT = 65535;
 
 export const MAX_FTP_LOGIN = 200;
 export const MAX_FTP_PASSWORD = 512;
