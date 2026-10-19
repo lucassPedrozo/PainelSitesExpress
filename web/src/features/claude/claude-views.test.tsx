@@ -422,7 +422,9 @@ describe("as opções na revisão antes de gerar", () => {
     mostrar(<ClaudeBriefingCard project={projeto} detail={detalhe({ review: revisao() })} busy={false} />);
 
     expect(botao("Gravar opções")).toBeDisabled();
-    await user.type(screen.getByLabelText(/Referências/), "exemplo.com.br\nhttps://outro.com.br");
+    // Colado de uma vez: digitar tecla a tecla neste cartão pesado chegava perto do limite de 5 s.
+    await user.click(screen.getByLabelText(/Referências/));
+    await user.paste("exemplo.com.br\nhttps://outro.com.br");
     expect(screen.getByText("Opções ainda não gravadas.")).toBeInTheDocument();
 
     await user.click(botao("Gravar opções"));
@@ -437,7 +439,8 @@ describe("as opções na revisão antes de gerar", () => {
   it("links demais nas referências: o motivo aparece e o site não é gerado", async () => {
     const user = userEvent.setup();
     mostrar(<ClaudeBriefingCard project={projeto} detail={detalhe({ review: revisao() })} busy={false} />);
-    await user.type(screen.getByLabelText(/Referências/), "a.com\nb.com\nc.com\nd.com\ne.com\nf.com");
+    await user.click(screen.getByLabelText(/Referências/));
+    await user.paste("a.com\nb.com\nc.com\nd.com\ne.com\nf.com");
     expect(screen.getAllByText("As referências têm 6 links; o limite é 5 por site.").length).toBeGreaterThan(0);
     expect(botao("Gerar site")).toBeDisabled();
     expect(botao("Gravar opções")).toBeDisabled();
