@@ -209,8 +209,11 @@ sozinha no `.env` (modo `600`), preservando comentários e ordem. As regras:
 - **Ou tudo entra, ou nada muda.** O pedido é validado inteiro antes de gravar: tipo,
   formato (token `github_pat_`, `https://`), limites, e as regras que
   cruzam campos — abrir o painel para a rede (`SERVER_HOST`) exige a chave do
-  administrador, e apagá-la com a rede aberta é recusado. Quebra de linha é recusada em
-  qualquer valor: injetaria outra variável no `.env`.
+  administrador, e apagá-la com a rede aberta é recusado. Trocar o endereço ao qual um
+  segredo gravado é enviado (o MCP do encurtador, o servidor FTP da área de aprovação)
+  exige digitar o segredo de novo: quem configura não o vê e não pode desviá-lo para
+  outro servidor. Quebra de linha é recusada em qualquer valor: injetaria outra
+  variável no `.env`.
 - **O que só vale ao reiniciar é dito.** Chaves lidas na subida (`PORT`, `SERVER_HOST`,
   Drive, limites do Lovable, encurtador, intervalos de varredura) aparecem com "ao
   reiniciar"; depois de gravadas, um aviso lista as que esperam o reinício. As demais
