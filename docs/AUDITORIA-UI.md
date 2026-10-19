@@ -675,7 +675,8 @@ dependência nova.
 
 ### Dados corrigidos
 
-Numeração da proposta (`docs/proposta-padronizacao/README.md`).
+Numeração da proposta (`docs/proposta-padronizacao/README.md`, apagada depois de
+cumprida; segue no histórico, no commit `f436c30`).
 
 1. **Última atividade** — servidor: a atividade do Drive é o `createdTime` mais
    recente (quando o arquivo entrou na pasta), não o `modifiedTime` do
