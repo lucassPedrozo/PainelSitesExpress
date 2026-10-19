@@ -1,4 +1,4 @@
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition } from "react";
 import { ArrowDownUp, ListFilter, TriangleAlert, X } from "lucide-react";
 import type { TagsController } from "@/features/tags/use-tags";
 import { TagFilterMenu } from "@/features/tags/tag-filter-menu";
@@ -25,13 +25,10 @@ export function ListFilters({
   list,
   tags,
   onManageTags,
-  action,
 }: {
   list: ProjectList;
   tags: TagsController;
   onManageTags: () => void;
-  /** Uma ação sobre o que a lista mostra ("Gerar os 9 em lote"). */
-  action?: ReactNode;
 }) {
   const semDado = list.loading || (Boolean(list.error) && list.projects.length === 0);
   // A aba responde ao clique na hora: ela (e o fundo que desliza até ela)
@@ -132,7 +129,6 @@ export function ListFilters({
       </Select>
 
       <div className="ml-auto flex items-center gap-2">
-        {action}
         {list.filtersActive && (
           <Button variant="ghost" onClick={list.clearFilters}>
             <X />

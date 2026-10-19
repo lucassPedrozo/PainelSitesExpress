@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link2, MoreHorizontal, Plus, Settings2, Sparkles, X } from "lucide-react";
+import { Link2, MoreHorizontal, Plus, Settings2, X } from "lucide-react";
 import { toast } from "sonner";
 import { checkAllSharePreviews, deleteProject, fetchDevAreaStatus, type Project } from "@/lib/api";
 import { formatTime, pluralize, projectIdentity, timeOf } from "@/lib/format";
@@ -391,18 +391,6 @@ export function ProjectsView({ tags, list, onOpenDeployTab }: ProjectsViewProps)
         .join(list.tagFilter.matchAll ? " e " : " ou ")}`,
   ].filter(Boolean) as string[];
 
-  // Com o contador "Gerar" ligado, gerar todos de uma vez — o lote abre a
-  // lista para conferir, e nada é enviado antes da confirmação.
-  const loteGerar =
-    list.group === "gerar" && visible.length > 1 ? (
-      <DisabledHint reason={can("gerar") ? null : noPermission.gerar}>
-        <Button variant="outline" disabled={!can("gerar")} onClick={() => generateMany(visible)}>
-          <Sparkles />
-          Gerar os {visible.length} em lote
-        </Button>
-      </DisabledHint>
-    ) : null;
-
   const vazio = () => {
     if (list.filtersActive) {
       return (
@@ -510,7 +498,7 @@ export function ProjectsView({ tags, list, onOpenDeployTab }: ProjectsViewProps)
             na margem (`margem:`), o cartão deixa ele passar da borda — nada
             encosta nos cantos ali: o topo são os filtros e o fim, o rodapé. */}
         <Card className="min-w-0 gap-0 overflow-clip py-0 margem:overflow-visible">
-          <ListFilters list={list} tags={tags} onManageTags={() => setManagingTags(true)} action={loteGerar} />
+          <ListFilters list={list} tags={tags} onManageTags={() => setManagingTags(true)} />
           {error ? (
             <ErrorNotice
               title="Não foi possível carregar os projetos"

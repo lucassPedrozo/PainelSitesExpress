@@ -27,7 +27,7 @@ const KINDS: Array<{ value: Kind; title: string; hint: string }> = [
   {
     value: "files",
     title: "Só arquivos",
-    hint: "Um lugar para guardar material. Não entra na fila “Fazer agora”.",
+    hint: "Um lugar para guardar material. Fica fora dos contadores e do Dashboard.",
   },
 ];
 

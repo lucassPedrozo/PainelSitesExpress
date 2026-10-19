@@ -123,7 +123,7 @@ export const hasActiveFilters = ({ query, tagFilter, etapa, group }: FilterOptio
  * Ordena sem mexer no array recebido. Cada chave é calculada uma vez por
  * projeto (o estado e a última atividade não são baratos).
  *
- * Prioridade: o grupo do "Fazer agora" (o que quebrou primeiro) e, dentro
+ * Prioridade: o grupo de trabalho (o que quebrou primeiro) e, dentro
  * dele, o que está parado há mais tempo.
  */
 export function sortProjects(projects: Project[], sort: SortKey): Project[] {
