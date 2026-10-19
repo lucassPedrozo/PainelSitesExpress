@@ -14,8 +14,9 @@ const projectRoot = path.resolve(here, "..", "..");
 const underTestRunner = Boolean(process.env.NODE_TEST_CONTEXT);
 
 if (!underTestRunner) {
+  // Um arquivo só, o da raiz: é o que a tela de Configurações grava e o que o
+  // lançador e a varredura de segredos leem.
   dotenv.config({ path: path.join(projectRoot, ".env"), quiet: true });
-  dotenv.config({ path: path.join(projectRoot, "server", ".env"), quiet: true });
 }
 
 export const envPath = path.join(projectRoot, ".env");

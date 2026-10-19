@@ -179,11 +179,10 @@ O arquivo `.env` na raiz define:
 | `DEV_AREA_WATCH_INTERVAL_MS` | Varredura que acha repositórios novos (padrão 3 min; `0` desliga) |
 | `PREVIEW_WATCH_INTERVAL_MS` | Varredura que reconfere os links de cliente (padrão 30 min; `0` desliga) |
 
-Duas fontes de configuração ficam fora da tela de Configurações: a variável
-`JOINVIX_FOOTER_ASSETS_URL`, de onde vêm os arquivos da assinatura Joinvix anexada a
-toda geração no Lovable (sem ela, o repositório `joinvix-footer`), e um segundo arquivo,
-`server/.env`, que a API também carrega, depois do da raiz. O lançador, a varredura de
-segredos e a tela de Configurações só conhecem o `.env` da raiz.
+`JOINVIX_FOOTER_ASSETS_URL` diz de onde vêm os arquivos da assinatura Joinvix anexada
+a toda geração no Lovable (vazia, o repositório `joinvix-footer`). A configuração mora
+num arquivo só, o `.env` da raiz: é ele que a API, o lançador, a varredura de segredos e
+a tela de Configurações leem.
 
 A pasta raiz precisa estar compartilhada com o e-mail da service account
 (o `client_email` do JSON da chave) como leitor.
