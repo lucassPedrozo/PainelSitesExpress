@@ -10,13 +10,17 @@
  * @param {string} lovableName
  * @returns {string}
  */
+const REPO_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
 /**
  * Nome aceito para um repositório novo na organização: começa com letra ou
- * número e tem até 100 letras, números, pontos, hífens e sublinhados. A API
- * recusa e a interface avisa pela mesma regra; o sufixo `.git` é conferido à
- * parte por quem usa.
+ * número, tem até 100 letras, números, pontos, hífens e sublinhados, e não
+ * termina em `.git`. A API recusa e a interface avisa pela mesma regra.
+ *
+ * @param {string} name
+ * @returns {boolean}
  */
-export const REPO_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+export const isValidRepoName = (name) => REPO_NAME_PATTERN.test(name) && !name.endsWith(".git");
 
 export const repoNameOf = (lovableName) =>
   lovableName
